@@ -1,0 +1,47 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ใช้กติกาเดียวกันกับไฟล์แนบทุกชนิด: ภาพไม่เกิน 10 MiB, วิดีโอไม่เกิน 50 MiB
+    function isValidMediaUpload() {
+      return request.resource.size <= 50 * 1024 * 1024
+        && request.resource.contentType.matches('(image|video)/.*')
+        && (
+          (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 10 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/.*')
+            && request.resource.size <= 50 * 1024 * 1024)
+        );
+    }
+
+    match /post_media/{ownerUid}/{postId}/{fileName} {
+      function postDocument() {
+        return /databases/(default)/documents/posts/$(postId);
+      }
+
+      // เจ้าของจัดการไฟล์ของตัวเองได้; ผู้ใช้คนอื่นอ่านได้เฉพาะไฟล์ของโพสต์สาธารณะ
+      // Firebase Console อาจขอเปิดการเชื่อมต่อ Rules ระหว่าง Storage กับ Firestore
+      allow read: if request.auth != null &&
+        (request.auth.uid == ownerUid ||
+         (firestore.exists(postDocument()) &&
+          firestore.get(postDocument()).data.visibility == 'public'));
+
+      // เจ้าของลบไฟล์ได้; การอัปโหลดต้องผ่าน MIME type และขนาดใน isValidMediaUpload()
+      allow write: if request.auth != null &&
+        request.auth.uid == ownerUid &&
+        (request.resource == null || isValidMediaUpload());
+    }
+    // ไฟล์แชทอ่านได้เฉพาะสมาชิกของห้อง; เขียนได้เฉพาะผู้ส่งที่เป็นเจ้าของไฟล์
+    // ขนาดและ MIME type ต้องสอดคล้องกับข้อจำกัดใน ChatService
+    match /chat_media/{conversationId}/{ownerUid}/{fileName} {
+      function conversationHasMember() {
+        return firestore.exists(/databases/(default)/documents/conversations/$(conversationId)) &&
+          request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participantIds;
+      }
+      allow read: if request.auth != null && conversationHasMember();
+      // สมาชิกอัปโหลดหรือลบไฟล์ของตนเองได้ โดยใช้ขีดจำกัดเดียวกับสื่อในโพสต์
+      allow write: if request.auth != null && request.auth.uid == ownerUid && conversationHasMember() &&
+        (request.resource == null || isValidMediaUpload());
+    }
+
+  }
+}

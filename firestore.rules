@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /posts/{postId} {
+      // โพสต์สาธารณะอ่านได้โดยสมาชิก; โพสต์ส่วนตัวอ่านได้เฉพาะเจ้าของ
+      allow read: if signedIn() &&
+        (!('visibility' in resource.data) ||
+         resource.data.visibility == 'public' ||
+         resource.data.userId == request.auth.uid);
+
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll([
+          'userId', 'authorName', 'content', 'tags', 'visibility',
+          'createdAt', 'updatedAt', 'mediaType'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'userId', 'authorName', 'content', 'tags', 'visibility',
+          'createdAt', 'updatedAt', 'mediaPath', 'mediaType'
+        ]) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.authorName is string &&
+        request.resource.data.content is string &&
+        request.resource.data.content.size() <= 1000 &&
+        request.resource.data.tags is list &&
+        request.resource.data.tags.size() <= 5 &&
+        request.resource.data.visibility in ['public', 'private'] &&
+        request.resource.data.mediaType in ['none', 'image', 'video'] &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        ((request.resource.data.mediaType == 'none' &&
+          !('mediaPath' in request.resource.data)) ||
+         (request.resource.data.mediaType in ['image', 'video'] &&
+          request.resource.data.mediaPath is string &&
+          request.resource.data.mediaPath.matches(
+            'post_media/' + request.auth.uid + '/' + postId + '/[^/]+'
+          )));
+
+      // เจ้าของเปลี่ยนได้เฉพาะข้อมูลของโพสต์ ห้ามย้าย ownership
+      allow update: if signedIn() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'content', 'tags', 'visibility', 'updatedAt',
+          'mediaPath', 'mediaType'
+        ]) &&
+        request.resource.data.content is string &&
+        request.resource.data.content.size() <= 1000 &&
+        request.resource.data.tags is list &&
+        request.resource.data.tags.size() <= 5 &&
+        request.resource.data.visibility in ['public', 'private'] &&
+        request.resource.data.mediaType in ['none', 'image', 'video'] &&
+        ((request.resource.data.mediaType == 'none' &&
+          !('mediaPath' in request.resource.data)) ||
+         (request.resource.data.mediaType in ['image', 'video'] &&
+          request.resource.data.mediaPath is string &&
+          request.resource.data.mediaPath.matches(
+            'post_media/' + request.auth.uid + '/' + postId + '/[^/]+'
+          ))) &&
+        request.resource.data.updatedAt == request.time;
+
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /post_reports/{reportId} {
+      // รายงานเป็นข้อมูลส่วนตัว ผู้ใช้ส่งได้ แต่มีเพียงแอดมินที่เปิดดู/ปรับสถานะได้
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll([
+          'postId', 'postOwnerId', 'reporterUid', 'reason',
+          'details', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'postId', 'postOwnerId', 'reporterUid', 'reason',
+          'details', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.reporterUid == request.auth.uid &&
+        request.resource.data.postId is string &&
+        request.resource.data.postOwnerId is string &&
+        request.resource.data.postOwnerId != request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.reason is string &&
+        request.resource.data.details is string &&
+        request.resource.data.details.size() <= 300 &&
+        request.resource.data.createdAt == request.time &&
+        reportId == request.resource.data.postId + '_' + request.auth.uid &&
+        exists(/databases/$(database)/documents/posts/$(request.resource.data.postId)) &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId == request.resource.data.postOwnerId &&
+        (!('visibility' in get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data) ||
+         get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.visibility == 'public') &&
+        !exists(/databases/$(database)/documents/post_reports/$(reportId));
+
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+    match /conversations/{conversationId} {
+      function isParticipant() {
+        return signedIn() && request.auth.uid in resource.data.participantIds;
+      }
+      // Transactions that create a deterministic conversation first read its
+      // document. Allow signed-in users to read a missing ID so they can create
+      // it; existing conversations remain visible to participants only.
+      allow get: if signedIn() &&
+        (!exists(/databases/$(database)/documents/conversations/$(conversationId)) ||
+         isParticipant());
+      allow list: if isParticipant();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['participantIds','participantNames','unreadCounts','lastReadAt','createdAt','updatedAt']) &&
+        request.resource.data.keys().hasOnly(['participantIds','participantNames','unreadCounts','lastReadAt','createdAt','updatedAt']) &&
+        request.resource.data.participantIds is list &&
+        request.resource.data.participantIds.size() == 2 &&
+        request.resource.data.participantIds[0] is string &&
+        request.resource.data.participantIds[1] is string &&
+        request.resource.data.participantIds[0] != request.resource.data.participantIds[1] &&
+        request.resource.data.participantIds.hasAny([request.auth.uid]) &&
+        request.resource.data.participantNames is map &&
+        request.resource.data.unreadCounts is map &&
+        request.resource.data.lastReadAt is map &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.participantIds[0])) &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.participantIds[1])) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if isParticipant() &&
+        request.resource.data.participantIds == resource.data.participantIds &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantNames','unreadCounts','lastReadAt','lastMessageText','lastMessageType','lastMessageSenderId','lastMessageAt','updatedAt']) &&
+        request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function parentHasParticipant() {
+          return signedIn() &&
+            request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds;
+        }
+        allow read: if parentHasParticipant();
+        allow create: if parentHasParticipant() &&
+          request.resource.data.keys().hasAll(['senderId','type','text','createdAt']) &&
+          request.resource.data.keys().hasOnly(['senderId','type','text','mediaPath','createdAt']) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.type in ['text','image','video'] &&
+          request.resource.data.text is string && request.resource.data.text.size() <= 2000 &&
+          request.resource.data.createdAt == request.time &&
+          ((request.resource.data.type == 'text' && !('mediaPath' in request.resource.data)) ||
+           (request.resource.data.type in ['image','video'] &&
+            request.resource.data.mediaPath is string &&
+            request.resource.data.mediaPath.matches('chat_media/' + conversationId + '/' + request.auth.uid + '/[^/]+')));
+        allow update, delete: if false;
+      }
+    }
+
+    // ผู้รับอ่านและทำเครื่องหมายอ่านได้; การสร้างแจ้งเตือนผูกกับสมาชิกในห้องแชท
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.recipientId == request.auth.uid;
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['recipientId','actorId','actorName','type','body','conversationId','isRead','createdAt']) &&
+        request.resource.data.keys().hasOnly(['recipientId','actorId','actorName','type','body','conversationId','isRead','createdAt']) &&
+        request.resource.data.recipientId is string && request.resource.data.recipientId != request.auth.uid &&
+        request.resource.data.actorId == request.auth.uid &&
+        request.resource.data.type == 'message' && request.resource.data.isRead == false &&
+        request.resource.data.body is string && request.resource.data.body.size() <= 2000 &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.conversationId is string &&
+        exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participantIds &&
+        request.resource.data.recipientId in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participantIds;
+      allow update: if signedIn() && resource.data.recipientId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']) && request.resource.data.isRead == true;
+      allow delete: if false;
+    }
+
+  }
+}
