@@ -1,3 +1,4 @@
+// รวมฟอร์ม Login และ Register พร้อมตรวจข้อมูลก่อนส่งให้ AuthService
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 

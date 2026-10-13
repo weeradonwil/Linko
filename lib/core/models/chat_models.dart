@@ -1,3 +1,4 @@
+// โมเดลแปลงข้อมูล conversations และ messages จาก Firestore ให้หน้าจอใช้งานได้สะดวก
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Firestore serverTimestamp จะกลายเป็น Timestamp; รองรับ DateTime ระหว่างทดสอบด้วย

@@ -1,3 +1,4 @@
+// หน้าความคิดเห็นของโพสต์ แสดงรายการสดและเปิดให้สมาชิกเพิ่ม/ลบคอมเมนต์ของตน
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -6,7 +7,7 @@ import '../../core/models/post_comment.dart';
 import '../../core/services/comment_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 
-/// Shows a live comment thread for one post and lets members join the discussion.
+/// แสดงรายการความคิดเห็นของโพสต์เดียวและส่งการกระทำไปยัง CommentService
 class PostCommentsScreen extends StatefulWidget {
   const PostCommentsScreen({super.key, required this.user, required this.post});
 

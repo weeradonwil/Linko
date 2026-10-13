@@ -1,3 +1,4 @@
+// หน้า Feed หลัก เชื่อมการโหลดโพสต์ การจัดการโพสต์ และทางลัดไปฟีเจอร์อื่น
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';

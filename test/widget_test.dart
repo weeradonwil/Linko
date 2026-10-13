@@ -1,3 +1,4 @@
+// ชุดทดสอบ Widget สำหรับฟอร์ม Login/Register โดยไม่เชื่อมต่อ Firebase จริง
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:social_app/screens/login/login.dart';

@@ -1,3 +1,4 @@
+// แสดงห้องสนทนาแบบ real-time และนำผู้ใช้ไปยังห้องที่เลือก
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 

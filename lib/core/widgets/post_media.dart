@@ -1,3 +1,4 @@
+// วิดเจ็ตกลางสำหรับโหลดภาพและเตรียมวิดีโอจาก Firebase Storage ในฟีดและแชท
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';

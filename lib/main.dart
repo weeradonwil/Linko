@@ -1,3 +1,4 @@
+// เริ่ม Flutter โหลดค่าตั้งต้นของแอป และตั้งค่า Firebase ก่อนแสดงหน้าจอแรก
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'screens/auth/auth_gate.dart';
-
 
 Future<void> main() async {
   // อนุญาตให้เรียกโค้ด Flutter ก่อน runApp เช่น การเริ่ม Firebase แบบ async

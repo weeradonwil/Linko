@@ -1,3 +1,4 @@
+// เลือกหน้า Login หรือ Home ตามสถานะการเข้าสู่ระบบที่ Firebase ส่งมา
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 

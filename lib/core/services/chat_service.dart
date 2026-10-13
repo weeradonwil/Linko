@@ -1,3 +1,4 @@
+// จัดการการสนทนา ข้อความ การอ่านแล้ว/ยังไม่อ่าน และไฟล์แนบของบัญชีปัจจุบัน
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';

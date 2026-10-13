@@ -1,3 +1,4 @@
+// แปลง error code จาก Firebase ให้เป็นข้อความอ่านง่ายสำหรับแสดงในแอป
 import 'package:firebase_core/firebase_core.dart';
 
 /// แปลง Firebase error code เป็นข้อความสั้นพร้อมแนวทางตรวจสาเหตุเบื้องต้น

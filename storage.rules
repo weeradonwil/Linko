@@ -1,3 +1,4 @@
+// กฎ Storage แยก path ของสื่อโพสต์กับสื่อแชทและตรวจชนิด/ขนาดไฟล์ก่อนอัปโหลด
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {

@@ -1,3 +1,4 @@
+// หน้าต้นแบบกู้คืนรหัสผ่าน; ปุ่มยังไม่เรียก Firebase Auth เพื่อส่งอีเมล
 import 'package:flutter/material.dart';
 
 /// หน้าจอ UI สำหรับการกู้คืนรหัสผ่าน (ยังไม่เชื่อมต่อ Firebase)
@@ -60,8 +61,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     'กรอกอีเมลที่ใช้สมัครสมาชิก ฟังก์ชันส่งลิงก์จะเปิดใช้งานในภายหลัง',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 28),
                   TextField(

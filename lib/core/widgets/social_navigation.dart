@@ -1,3 +1,4 @@
+// วิดเจ็ตส่วนกลางของ AppBar และแถบนำทาง พร้อม badge จากจำนวนที่ยังไม่อ่าน
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 

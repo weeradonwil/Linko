@@ -1,3 +1,4 @@
+// หน้าสนทนา 1:1 แสดงข้อความใหม่แบบ real-time และส่งข้อความหรือสื่อแนบ
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';

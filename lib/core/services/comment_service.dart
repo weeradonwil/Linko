@@ -1,10 +1,11 @@
+// อ่าน/เขียนความคิดเห็น และสร้าง social notification ให้เจ้าของโพสต์ใน batch เดียวกัน
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/post_comment.dart';
 import '../models/post.dart';
 
-/// Reads and writes comments and creates an in-app notification for the post owner.
+/// อ่านและเขียนความคิดเห็น พร้อมแจ้งเตือนเจ้าของโพสต์เมื่อมีผู้อื่นมาแสดงความคิดเห็น
 class CommentService {
   CommentService({FirebaseAuth? auth, FirebaseFirestore? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -24,20 +25,20 @@ class CommentService {
   CollectionReference<Map<String, dynamic>> _comments(String postId) =>
       _firestore.collection('posts').doc(postId).collection('comments');
 
-  /// Streams a post's comments in chronological order for the conversation view.
+  /// ฟังความคิดเห็นแบบ real-time และเรียงจากเก่าไปใหม่เพื่อแสดงเป็นบทสนทนา
   Stream<List<PostComment>> watchComments(String postId) => _comments(postId)
       .orderBy('createdAt')
       .snapshots()
       .map((snapshot) => snapshot.docs.map(PostComment.fromSnapshot).toList());
 
-  /// Loads a post when opening a comment notification.
+  /// โหลดโพสต์ที่เกี่ยวข้องเมื่อผู้ใช้เปิดการแจ้งเตือนความคิดเห็น
   Future<Post?> getPost(String postId) async {
     final snapshot = await _firestore.collection('posts').doc(postId).get();
     if (!snapshot.exists) return null;
     return Post.fromSnapshot(snapshot);
   }
 
-  /// Saves a comment and its notification together so they cannot get out of sync.
+  /// บันทึกความคิดเห็นและการแจ้งเตือนใน batch เดียว เพื่อไม่ให้ข้อมูลแยกจากกัน
   Future<void> addComment({required Post post, required String content}) async {
     final user = _user;
     final text = content.trim();
@@ -63,7 +64,7 @@ class CommentService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // Do not notify someone about their own comment on their own post.
+    // ไม่สร้างการแจ้งเตือนเมื่อเจ้าของโพสต์แสดงความคิดเห็นในโพสต์ตัวเอง
     if (post.userId.isNotEmpty && post.userId != user.uid) {
       final notification = _firestore.collection('notifications').doc();
       batch.set(notification, {
@@ -82,7 +83,7 @@ class CommentService {
     await batch.commit();
   }
 
-  /// Deletes only the signed-in user's own comment; Firestore Rules enforce ownership too.
+  /// ลบความคิดเห็นของบัญชีปัจจุบัน โดย Firestore Rules ตรวจสิทธิ์เจ้าของซ้ำอีกชั้น
   Future<void> deleteComment({
     required String postId,
     required String commentId,

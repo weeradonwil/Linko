@@ -1,14 +1,18 @@
+// กฎ Firestore ของแอป: ทุก collection เปิดสิทธิ์เฉพาะกรณีที่ประกาศไว้ใน match
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ใช้ helper นี้เพื่อลดการเขียนเงื่อนไขตรวจบัญชีซ้ำในแต่ละ collection
     function signedIn() {
       return request.auth != null;
     }
 
+    // Admin ต้องได้รับ custom claim admin จากระบบที่เชื่อถือได้เท่านั้น
     function isAdmin() {
       return signedIn() && request.auth.token.admin == true;
     }
 
+    // เอกสารโปรไฟล์อ่านได้เมื่อเข้าสู่ระบบ แต่แก้ได้เฉพาะเจ้าของ UID
     match /users/{userId} {
       allow read: if signedIn();
       allow create, update, delete: if signedIn() && request.auth.uid == userId;
@@ -74,7 +78,7 @@ service cloud.firestore {
 
       allow delete: if signedIn() && resource.data.userId == request.auth.uid;
 
-      // Comments inherit the visibility of their parent post.
+      // ความคิดเห็นสืบทอดสิทธิ์อ่านจากโพสต์; เพิ่มได้เฉพาะสมาชิกที่อ่านโพสต์ได้
       match /comments/{commentId} {
         function canReadPost() {
           return signedIn() &&
@@ -129,6 +133,7 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /conversations/{conversationId} {
+      // ใช้ participantIds กลางเพื่อตรวจสมาชิกก่อนเปิดห้องหรือเปลี่ยนสถานะอ่าน
       function isParticipant() {
         return signedIn() && request.auth.uid in resource.data.participantIds;
       }
@@ -162,6 +167,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
+        // ข้อความอ่านได้เฉพาะสมาชิก; สร้างได้โดยผู้ส่งที่ล็อกอินและอยู่ในห้อง
         function parentHasParticipant() {
           return signedIn() &&
             request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds;
@@ -182,7 +188,7 @@ service cloud.firestore {
       }
     }
 
-    // Social notifications are reserved for likes, comments, and follows; chat uses conversation unread counts.
+    // แจ้งเตือนส่วนนี้ใช้กับกิจกรรมทางสังคม; ข้อความแชทนับ unread ใน conversation
     match /notifications/{notificationId} {
       allow read: if signedIn() && resource.data.recipientId == request.auth.uid;
       allow create: if signedIn() &&

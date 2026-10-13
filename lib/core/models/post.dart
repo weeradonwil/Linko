@@ -1,3 +1,4 @@
+// โมเดลโพสต์เก็บข้อมูลที่ใช้ในฟีดและแปลงชนิดข้อมูลจาก Firestore
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// ตัวแทนข้อมูลโพสต์หนึ่งรายการในฟีด พร้อมแปลงข้อมูล Firestore เป็นชนิด Dart

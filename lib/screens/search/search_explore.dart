@@ -1,3 +1,4 @@
+// หน้า Explore รวมคำค้น ตัวกรอง ผู้ใช้แนะนำ แท็กยอดนิยม และโพสต์ที่ค้นพบ
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
