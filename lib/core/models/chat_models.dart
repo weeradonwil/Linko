@@ -103,6 +103,8 @@ class AppNotification {
     required this.createdAt,
     required this.isRead,
     this.conversationId,
+    this.postId,
+    this.commentId,
   });
   final String id;
   final String actorId;
@@ -112,6 +114,8 @@ class AppNotification {
   final DateTime? createdAt;
   final bool isRead;
   final String? conversationId;
+  final String? postId;
+  final String? commentId;
   factory AppNotification.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> s,
   ) {
@@ -125,6 +129,8 @@ class AppNotification {
       createdAt: _dateFrom(d['createdAt']),
       isRead: d['isRead'] as bool? ?? false,
       conversationId: d['conversationId'] as String?,
+      postId: d['postId'] as String?,
+      commentId: d['commentId'] as String?,
     );
   }
 }

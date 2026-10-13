@@ -10,22 +10,24 @@ class NotificationService {
       _firestore = firestore ?? FirebaseFirestore.instance;
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  static const _socialTypes = ['like', 'comment', 'follow'];
   // กรองด้วย recipientId ให้ตรงกับเงื่อนไขอ่านใน Firestore Rules
   Stream<List<AppNotification>> watchNotifications({bool unreadOnly = false}) {
     final user = _auth.currentUser;
     if (user == null) return const Stream.empty();
     Query<Map<String, dynamic>> q = _firestore
         .collection('notifications')
-        .where('recipientId', isEqualTo: user.uid);
+        .where('recipientId', isEqualTo: user.uid)
+        .where('type', whereIn: _socialTypes);
     if (unreadOnly) q = q.where('isRead', isEqualTo: false);
-    return q.limit(100).snapshots().map((s) {
-      final a = s.docs.map(AppNotification.fromSnapshot).toList();
-      a.sort(
-        (x, y) => (y.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-            .compareTo(x.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)),
-      );
-      return a;
-    });
+    return q
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(AppNotification.fromSnapshot).toList(),
+        );
   }
 
   /// Stream จำนวนแจ้งเตือนที่ยังไม่อ่าน เพื่ออัปเดต badge แบบ real-time
@@ -37,6 +39,7 @@ class NotificationService {
         .collection('notifications')
         .where('recipientId', isEqualTo: uid)
         .where('isRead', isEqualTo: false)
+        .where('type', whereIn: _socialTypes)
         .snapshots()
         .map((snapshot) => snapshot.size);
   }
@@ -51,6 +54,7 @@ class NotificationService {
         .collection('notifications')
         .where('recipientId', isEqualTo: uid)
         .where('isRead', isEqualTo: false)
+        .where('type', whereIn: _socialTypes)
         .get();
     for (var i = 0; i < s.docs.length; i += 400) {
       final b = _firestore.batch();

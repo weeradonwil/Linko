@@ -34,12 +34,37 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   bool _sending = false;
   late Stream<List<ChatMessage>> _messages;
   StreamSubscription<List<ChatMessage>>? _readSubscription;
+  bool _receivedInitialMessages = false;
+  String? _lastIncomingMessageId;
   @override
   void initState() {
     super.initState();
     _messages = _service.watchMessages(widget.conversationId);
     unawaited(_markRead());
-    _readSubscription = _messages.listen((_) => unawaited(_markRead()));
+    // ทำเครื่องหมายว่าอ่านแล้วเฉพาะเมื่อมีข้อความใหม่ ไม่เขียนซ้ำทุก snapshot
+    _readSubscription = _messages.listen(_markNewIncomingMessagesRead);
+  }
+
+  void _markNewIncomingMessagesRead(List<ChatMessage> messages) {
+    ChatMessage? latestIncoming;
+    for (final message in messages.reversed) {
+      if (message.senderId != widget.user.uid) {
+        latestIncoming = message;
+        break;
+      }
+    }
+    final latestId = latestIncoming?.id;
+
+    // snapshot แรกครอบคลุมด้วยการทำเครื่องหมายอ่านครั้งเดียวใน initState แล้ว
+    if (!_receivedInitialMessages) {
+      _receivedInitialMessages = true;
+      _lastIncomingMessageId = latestId;
+      return;
+    }
+    if (latestId != null && latestId != _lastIncomingMessageId) {
+      _lastIncomingMessageId = latestId;
+      unawaited(_markRead());
+    }
   }
 
   Future<void> _markRead() async {
@@ -56,7 +81,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     super.dispose();
   }
 
-  // เลือกภาพหรือวิดีโอจากคลัง; การตรวจชนิดและขนาดไฟล์อยู่ใน ChatService
+  // เลือกสื่อจากคลังและย่อภาพก่อนอัปโหลดเพื่อลดเวลาและปริมาณข้อมูล
   Future<void> _chooseMedia() async {
     final image = await showModalBottomSheet<bool>(
       context: context,
@@ -80,7 +105,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
     if (image == null || !mounted) return;
     final file = image
-        ? await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85)
+        ? await _picker.pickImage(
+            source: ImageSource.gallery,
+            imageQuality: 82,
+            maxWidth: 1600,
+            maxHeight: 1600,
+          )
         : await _picker.pickVideo(source: ImageSource.gallery);
     if (file != null && mounted) setState(() => _attachment = file);
   }
@@ -206,6 +236,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   itemBuilder: (context, i) {
                     final message = items[items.length - 1 - i];
                     return _MessageBubble(
+                      key: ValueKey(message.id),
                       message: message,
                       isMine: message.senderId == widget.user.uid,
                       peerInitial: widget.peerName.characters.first
@@ -304,6 +335,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
+    super.key,
     required this.message,
     required this.isMine,
     required this.peerInitial,

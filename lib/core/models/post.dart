@@ -12,6 +12,7 @@ class Post {
     required this.visibility,
     required this.mediaPath,
     this.mediaType = 'none',
+    this.editedAt,
   });
 
   /// ID ของ document ใน posts; ใช้ระบุรายการเวลาแก้ไขหรือลบ
@@ -28,6 +29,9 @@ class Post {
 
   /// เวลาโพสต์จาก Firestore; ใช้เรียงฟีดจากใหม่ไปเก่า
   final DateTime createdAt;
+
+  /// Latest edit time; null means this post has not been edited.
+  final DateTime? editedAt;
 
   /// คำค้นของโพสต์ ใช้แสดงเป็นป้ายกำกับและต่อยอดทำหน้าค้นหาตามแท็ก
   final List<String> tags;
@@ -56,6 +60,7 @@ class Post {
           : storedAuthorName.trim(),
       content: data['content'] as String? ?? '',
       createdAt: timestamp?.toDate() ?? DateTime.now(),
+      editedAt: (data['editedAt'] as Timestamp?)?.toDate(),
       tags: List<String>.from(data['tags'] as List? ?? const []),
       // โพสต์รุ่นก่อนที่ยังไม่มี visibility ให้คงพฤติกรรมเดิมคือเป็นสาธารณะ
       visibility: data['visibility'] as String? ?? 'public',

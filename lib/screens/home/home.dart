@@ -10,6 +10,7 @@ import '../../core/widgets/post_media.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../create_post/create_post.dart';
 import '../chat/chat_list.dart';
+import '../comments/post_comments_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../search/search_explore.dart';
 
@@ -107,6 +108,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+  }
+
+  /// Opens the live comment thread for the selected post.
+  void _openComments(BuildContext context, Post post) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PostCommentsScreen(user: widget.user, post: post),
+      ),
+    );
   }
 
   /// เปิดแบบฟอร์มรายงาน ให้ผู้ใช้เลือกเหตุผลและส่งรายงานไปเก็บใน Firestore
@@ -422,8 +432,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             : () => _reportPost(context, post),
                         onReaction: () =>
                             _showComingSoon(context, 'ระบบความรู้สึก'),
-                        onComment: () =>
-                            _showComingSoon(context, 'ความคิดเห็น'),
+                        onComment: () => _openComments(context, post),
                       );
                     },
                   );
@@ -467,7 +476,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _showComingSoon(context, index == 1 ? 'กลุ่ม' : 'โปรไฟล์');
               }
             },
-            items: const [
+            items: [
               BottomNavigationBarItem(
                 icon: Icon(Icons.home_outlined),
                 activeIcon: Icon(Icons.home_rounded),
@@ -478,7 +487,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'กลุ่ม',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.chat_bubble_outline_rounded),
+                icon: ChatUnreadCountIcon(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                activeIcon: ChatUnreadCountIcon(
+                  icon: Icons.chat_bubble_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 label: 'แชท',
               ),
               BottomNavigationBarItem(
@@ -551,7 +567,10 @@ class _PostCard extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             _formatThailandTimestamp(post.createdAt),
@@ -559,22 +578,33 @@ class _PostCard extends StatelessWidget {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            post.visibility == 'private'
-                                ? Icons.lock_outline_rounded
-                                : Icons.public_rounded,
-                            size: 15,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            post.visibility == 'private'
-                                ? 'ส่วนตัว'
-                                : 'สาธารณะ',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          if (post.editedAt != null)
+                            Text(
+                              '· แก้ไขแล้ว',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                post.visibility == 'private'
+                                    ? Icons.lock_outline_rounded
+                                    : Icons.public_rounded,
+                                size: 15,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                post.visibility == 'private'
+                                    ? 'ส่วนตัว'
+                                    : 'สาธารณะ',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),

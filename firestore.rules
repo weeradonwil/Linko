@@ -53,7 +53,7 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid &&
         request.resource.data.userId == resource.data.userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'content', 'tags', 'visibility', 'updatedAt',
+          'content', 'tags', 'visibility', 'updatedAt', 'editedAt',
           'mediaPath', 'mediaType'
         ]) &&
         request.resource.data.content is string &&
@@ -69,9 +69,33 @@ service cloud.firestore {
           request.resource.data.mediaPath.matches(
             'post_media/' + request.auth.uid + '/' + postId + '/[^/]+'
           ))) &&
-        request.resource.data.updatedAt == request.time;
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.editedAt == request.time;
 
       allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+
+      // Comments inherit the visibility of their parent post.
+      match /comments/{commentId} {
+        function canReadPost() {
+          return signedIn() &&
+            (!('visibility' in get(/databases/$(database)/documents/posts/$(postId)).data) ||
+             get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public' ||
+             get(/databases/$(database)/documents/posts/$(postId)).data.userId == request.auth.uid);
+        }
+
+        allow read: if canReadPost();
+        allow create: if canReadPost() &&
+          request.resource.data.keys().hasAll(['authorId', 'authorName', 'content', 'createdAt']) &&
+          request.resource.data.keys().hasOnly(['authorId', 'authorName', 'content', 'createdAt']) &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.authorName is string &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 1000 &&
+          request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+        allow update: if false;
+      }
     }
 
     match /post_reports/{reportId} {
@@ -158,21 +182,25 @@ service cloud.firestore {
       }
     }
 
-    // ผู้รับอ่านและทำเครื่องหมายอ่านได้; การสร้างแจ้งเตือนผูกกับสมาชิกในห้องแชท
+    // Social notifications are reserved for likes, comments, and follows; chat uses conversation unread counts.
     match /notifications/{notificationId} {
       allow read: if signedIn() && resource.data.recipientId == request.auth.uid;
       allow create: if signedIn() &&
-        request.resource.data.keys().hasAll(['recipientId','actorId','actorName','type','body','conversationId','isRead','createdAt']) &&
-        request.resource.data.keys().hasOnly(['recipientId','actorId','actorName','type','body','conversationId','isRead','createdAt']) &&
+        request.resource.data.keys().hasAll(['recipientId','actorId','actorName','type','body','isRead','createdAt']) &&
+        request.resource.data.keys().hasOnly(['recipientId','actorId','actorName','type','body','postId','commentId','isRead','createdAt']) &&
         request.resource.data.recipientId is string && request.resource.data.recipientId != request.auth.uid &&
         request.resource.data.actorId == request.auth.uid &&
-        request.resource.data.type == 'message' && request.resource.data.isRead == false &&
+        request.resource.data.actorName is string &&
+        request.resource.data.type == 'comment' && request.resource.data.isRead == false &&
         request.resource.data.body is string && request.resource.data.body.size() <= 2000 &&
         request.resource.data.createdAt == request.time &&
-        request.resource.data.conversationId is string &&
-        exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)) &&
-        request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participantIds &&
-        request.resource.data.recipientId in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participantIds;
+        request.resource.data.postId is string && request.resource.data.commentId is string &&
+        exists(/databases/$(database)/documents/posts/$(request.resource.data.postId)) &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId == request.resource.data.recipientId &&
+        existsAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)) &&
+        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorId == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorName == request.resource.data.actorName &&
+        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.content == request.resource.data.body;
       allow update: if signedIn() && resource.data.recipientId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']) && request.resource.data.isRead == true;
       allow delete: if false;

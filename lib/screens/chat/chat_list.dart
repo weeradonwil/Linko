@@ -190,9 +190,7 @@ class ChatListScreen extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary,
+                                    color: Theme.of(context).colorScheme.error,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
@@ -202,6 +200,7 @@ class ChatListScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),

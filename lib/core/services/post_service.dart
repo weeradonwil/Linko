@@ -14,7 +14,7 @@ class PostService {
     FirebaseStorage? storage,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance,
-      _storage = storage ?? FirebaseStorage.instance;
+       _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -114,9 +114,7 @@ class PostService {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'mediaType': media?.type ?? 'none',
-        if (media != null) ...{
-          'mediaPath': media.path,
-        },
+        if (media != null) ...{'mediaPath': media.path},
       });
     } catch (_) {
       // ถ้าบันทึกข้อมูลโพสต์ไม่ได้ ให้ลบไฟล์ที่เพิ่งอัปโหลดเพื่อไม่ทิ้งไฟล์กำพร้า
@@ -151,6 +149,8 @@ class PostService {
         'tags': _cleanTags(tags),
         'visibility': _cleanVisibility(visibility),
         'updatedAt': FieldValue.serverTimestamp(),
+        // Keep an explicit marker so old updatedAt migration values do not look edited.
+        'editedAt': FieldValue.serverTimestamp(),
         if (newMedia != null) ...{
           'mediaPath': newMedia.path,
           'mediaType': newMedia.type,

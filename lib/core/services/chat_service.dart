@@ -28,8 +28,6 @@ class ChatService {
 
   CollectionReference<Map<String, dynamic>> get _conversations =>
       _firestore.collection('conversations');
-  CollectionReference<Map<String, dynamic>> get _notifications =>
-      _firestore.collection('notifications');
   // โหลดเฉพาะห้องของผู้ใช้ แล้วเรียงตามเวลาข้อความล่าสุด
   Stream<List<ConversationSummary>> watchConversations() {
     final uid = _uid;
@@ -62,6 +60,7 @@ class ChatService {
       .limitToLast(100)
       .snapshots()
       .map((s) => s.docs.map(ChatMessage.fromSnapshot).toList());
+
   /// สร้าง ID เดิมให้คู่สมาชิกเดิมเสมอ และใช้ transaction ป้องกันห้องซ้ำ
   Future<String> openConversation({
     required String peerId,
@@ -124,17 +123,9 @@ class ChatService {
       path = m.path;
       type = m.type;
     }
+    // เขียน batch ได้ทันทีโดยไม่อ่าน conversation ซ้ำก่อนส่ง; Firestore Rules
+    // ตรวจสมาชิกและปฏิเสธ batch หากห้องหรือผู้ใช้ไม่มีสิทธิ์ ช่วยลดหนึ่งรอบเครือข่าย
     final ref = _conversations.doc(conversationId);
-    final conv = await ref.get();
-    final ids = List<String>.from(
-      conv.data()?['participantIds'] as List? ?? const [],
-    );
-    if (!conv.exists || !ids.contains(user.uid) || !ids.contains(peerId)) {
-      if (path != null) await _deleteMedia(path);
-      throw const ChatServiceException(
-        'ไม่พบห้องสนทนาหรือไม่มีสิทธิ์ส่งข้อความ',
-      );
-    }
     final preview = body.isNotEmpty
         ? body
         : type == 'image'
@@ -149,6 +140,7 @@ class ChatService {
       if (path != null) 'mediaPath': path,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    // Chat activity is surfaced by the conversation unread count, not the social notification feed.
     batch.update(ref, {
       'lastMessageText': preview,
       'lastMessageType': type,
@@ -158,19 +150,6 @@ class ChatService {
       FieldPath(['unreadCounts', peerId]): FieldValue.increment(1),
       FieldPath(['unreadCounts', user.uid]): 0,
       FieldPath(['lastReadAt', user.uid]): FieldValue.serverTimestamp(),
-    });
-    final notice = _notifications.doc();
-    batch.set(notice, {
-      'recipientId': peerId,
-      'actorId': user.uid,
-      'actorName': user.displayName?.trim().isNotEmpty == true
-          ? user.displayName!.trim()
-          : 'สมาชิก',
-      'type': 'message',
-      'body': preview,
-      'conversationId': conversationId,
-      'isRead': false,
-      'createdAt': FieldValue.serverTimestamp(),
     });
     try {
       await batch.commit();

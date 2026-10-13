@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(
                           height: veryCompact
-                              ? 8
+                              ? 6
                               : compact
                               ? 14
                               : 34,
@@ -279,7 +279,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(
                           height: veryCompact
-                              ? 12
+                              ? 8
                               : compact
                               ? 16
                               : 22,
@@ -310,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(
                           height: veryCompact
-                              ? 14
+                              ? 8
                               : compact
                               ? 18
                               : 28,
@@ -318,9 +318,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         Container(
                           padding: EdgeInsets.fromLTRB(
                             compact ? 18 : 22,
-                            compact ? 17 : 24,
+                            veryCompact
+                                ? 12
+                                : compact
+                                ? 17
+                                : 24,
                             compact ? 18 : 22,
-                            compact ? 14 : 22,
+                            veryCompact
+                                ? 10
+                                : compact
+                                ? 14
+                                : 22,
                           ),
                           decoration: BoxDecoration(
                             color: colors.surface,
@@ -487,7 +495,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   },
                                 ),
                               ],
-                              SizedBox(height: compact ? 14 : 20),
+                              SizedBox(
+                                height: veryCompact
+                                    ? 8
+                                    : compact
+                                    ? 14
+                                    : 20,
+                              ),
                               SizedBox(
                                 height: compact ? 54 : 66,
                                 child: FilledButton(

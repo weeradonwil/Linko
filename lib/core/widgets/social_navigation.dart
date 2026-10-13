@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../services/chat_service.dart';
 import '../services/notification_service.dart';
 
 /// App bar ร่วมที่รวมทางลัดค้นหา แจ้งเตือน เปลี่ยนธีม และออกจากระบบ
@@ -117,7 +118,15 @@ class SocialBottomNavigation extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (i == 3)
+                      if (i == 2)
+                        ChatUnreadCountIcon(
+                          icon: selectedIndex == i ? items[i].$2 : items[i].$1,
+                          color: selectedIndex == i
+                              ? colors.primary
+                              : colors.onSurfaceVariant,
+                          size: 23,
+                        )
+                      else if (i == 3)
                         NotificationCountIcon(
                           icon: selectedIndex == i ? items[i].$2 : items[i].$1,
                           color: selectedIndex == i
@@ -170,6 +179,84 @@ class SocialBottomNavigation extends StatelessWidget {
 }
 
 /// แสดงจำนวนแจ้งเตือนที่ยังไม่อ่านเหนือไอคอน และเปลี่ยนสีไอคอนเมื่อมีรายการใหม่
+/// Shows the total unread chat count on the Chat tab, separate from social alerts.
+class ChatUnreadCountIcon extends StatefulWidget {
+  const ChatUnreadCountIcon({
+    required this.icon,
+    this.color,
+    this.size = 24,
+    super.key,
+  });
+
+  final IconData icon;
+  final Color? color;
+  final double size;
+
+  @override
+  State<ChatUnreadCountIcon> createState() => _ChatUnreadCountIconState();
+}
+
+class _ChatUnreadCountIconState extends State<ChatUnreadCountIcon> {
+  // Sum the per-room counters from the existing real-time conversation stream.
+  late final Stream<int> _unreadCount = ChatService().watchConversations().map(
+    (rooms) => rooms.fold<int>(0, (total, room) => total + room.unreadCount),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: _unreadCount,
+      initialData: 0,
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+        final colors = Theme.of(context).colorScheme;
+        return SizedBox(
+          width: widget.size + 6,
+          height: widget.size + 6,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                child: Icon(
+                  widget.icon,
+                  color: count > 0 ? colors.primary : widget.color,
+                  size: widget.size,
+                ),
+              ),
+              if (count > 0)
+                Positioned(
+                  top: -5,
+                  right: -7,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: colors.error,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: colors.surface, width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      count > 99 ? '99+' : count.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class NotificationCountIcon extends StatefulWidget {
   const NotificationCountIcon({
     required this.icon,

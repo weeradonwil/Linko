@@ -24,3 +24,9 @@ Collection ย่อย 8 ตัว
 - ไฟล์แนบแชทใช้ Storage path `chat_media/{conversationId}/{senderUid}/{fileName}`; ไฟล์ภาพจำกัด 10 MB และวิดีโอ 50 MB
 - `users` เพิ่ม `displayNameLower` สำหรับค้นหาชื่อ; ผู้ใช้เดิมที่ยังไม่มี field นี้ใช้ fallback ค้นหาในสมาชิก 150 รายล่าสุด
 - ค้นหาโพสต์จากโพสต์สาธารณะ 80 รายการล่าสุด และคำนวณแท็กยอดนิยมจาก 100 รายการล่าสุด เพื่อให้เหมาะกับขอบเขตเดโม
+
+## Comment and social notification behavior
+- `posts/{postId}/comments/{commentId}` stores `authorId`, `authorName`, `content`, and `createdAt`.
+- A comment and its owner's notification are written in one Firestore batch. A user's own comment does not notify that same user.
+- `notifications/{notificationId}` uses `recipientId`, `actorId`, `actorName`, `type: comment`, `body`, `postId`, `commentId`, `isRead`, and `createdAt`.
+- The Notifications page and unread badge include social events (`like`, `comment`, `follow`); chat is tracked by each conversation's `unreadCounts` and does not create a social notification.

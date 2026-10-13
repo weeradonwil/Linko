@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/chat_models.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/comment_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../chat/chat_list.dart';
-import '../chat/chat_room.dart';
+import '../comments/post_comments_screen.dart';
 import '../search/search_explore.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _unreadOnly = false;
   final _service = NotificationService();
+  final _commentService = CommentService();
   void _go(int i) {
     if (i == 0) {
       Navigator.of(context).popUntil((r) => r.isFirst);
@@ -68,17 +70,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (!item.isRead) await _service.markRead(item.id);
     } catch (_) {}
     if (!mounted) return;
-    if (item.type == 'message' && item.conversationId != null) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ChatRoomScreen(
-            user: widget.user,
-            conversationId: item.conversationId!,
-            peerId: item.actorId,
-            peerName: item.actorName,
+    if (item.type == 'comment' && item.postId != null) {
+      try {
+        final post = await _commentService.getPost(item.postId!);
+        if (!mounted) return;
+        if (post == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ไม่พบโพสต์นี้ อาจถูกลบไปแล้ว')),
+          );
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PostCommentsScreen(user: widget.user, post: post),
           ),
-        ),
-      );
+        );
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(firebaseErrorMessage(error, action: 'เปิดโพสต์')),
+          ),
+        );
+      }
     }
   }
 
@@ -159,7 +173,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       title: _unreadOnly
                           ? 'ไม่มีรายการที่ยังไม่ได้อ่าน'
                           : 'ยังไม่มีการแจ้งเตือน',
-                      detail: 'การแจ้งเตือนข้อความใหม่จะแสดงที่นี่',
+                      detail:
+                          'การถูกใจ ความคิดเห็น และผู้ติดตามใหม่จะแสดงที่นี่',
                     );
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
@@ -196,7 +211,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        n.actorName + ' ส่งข้อความถึงคุณ',
+                                        _notificationTitle(n),
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleSmall
@@ -269,6 +284,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         '/' +
         date.year.toString();
   }
+
+  String _notificationTitle(AppNotification item) => switch (item.type) {
+    'comment' => '${item.actorName} แสดงความคิดเห็นในโพสต์ของคุณ',
+    'like' => '${item.actorName} ถูกใจโพสต์ของคุณ',
+    'follow' => '${item.actorName} เริ่มติดตามคุณ',
+    _ => '${item.actorName} มีกิจกรรมใหม่',
+  };
 }
 
 class _NoticeState extends StatelessWidget {

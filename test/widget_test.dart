@@ -7,7 +7,7 @@ void main() {
   testWidgets('แสดงฟอร์มเข้าสู่ระบบและแจ้งเมื่อยังไม่กรอกข้อมูล', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    await _pumpLogin(tester);
 
     expect(find.text('ยินดีต้อนรับ'), findsOneWidget);
     await tester.tap(find.text('เข้าสู่ระบบ'));
@@ -19,9 +19,9 @@ void main() {
 
   // ตรวจว่าการสลับโหมดสมัครสมาชิกทำให้ช่องชื่อแสดงขึ้น
   testWidgets('แสดงช่องชื่อในโหมดสมัครสมาชิก', (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    await _pumpLogin(tester);
 
-    await tester.tap(find.text('ยังไม่มีบัญชี? สมัครสมาชิก'));
+    await tester.tap(find.text('สมัครสมาชิก').last);
     await tester.pump();
 
     expect(find.text('สร้างบัญชีใหม่'), findsOneWidget);
@@ -62,9 +62,17 @@ void main() {
 
 /// เปิดโหมดสมัครสมาชิก โดยไม่จำเป็นต้องเริ่ม Firebase ใน Widget test
 Future<void> _openRegistration(WidgetTester tester) async {
-  await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
-  await tester.tap(find.text('ยังไม่มีบัญชี? สมัครสมาชิก'));
+  await _pumpLogin(tester);
+  // The prompt and action are separate TextSpans in the login screen.
+  await tester.tap(find.text('สมัครสมาชิก').last);
   await tester.pump();
+}
+
+/// Use a phone-sized viewport so registration layout tests match the app's target device.
+Future<void> _pumpLogin(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(393, 852));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
 }
 
 /// กรอกข้อมูลที่ทำให้ฟอร์มผ่านช่องชื่อและอีเมล เพื่อทดสอบกฎรหัสผ่านโดยตรง

@@ -510,8 +510,14 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                       ),
                     ),
                     Text(
-                      _date(post.createdAt),
-                      style: Theme.of(context).textTheme.labelSmall,
+                      post.editedAt == null
+                          ? _date(post.createdAt)
+                          : '${_date(post.createdAt)} · แก้ไขแล้ว',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),

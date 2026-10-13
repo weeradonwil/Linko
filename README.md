@@ -1,17 +1,154 @@
-# social_app
+# Linko — สรุปความคืบหน้าโปรเจกต์ Social Network
 
-A new Flutter project.
+> **เทคโนโลยี:** Flutter / Dart / Firebase Authentication / Cloud Firestore / Firebase Storage  
+> **ขอบเขต:** Social Network บน Android หรือ iOS (ไม่มี Story, Reels และ Marketplace)  
+> **สถานะเอกสาร:** สรุปจากรายงาน Week 2–3, ข้อมูลโปรเจกต์ที่เคยส่งมา และผลวิเคราะห์ล่าสุดจาก Codex ที่ผู้ใช้แจ้ง  
+> **ข้อจำกัด:** การมีโค้ดหรือหน้าจอไม่ได้หมายความว่าทดสอบการทำงานกับ Firebase จริงแล้ว สถานะด้านล่างจึงแยก "มีโค้ด" ออกจาก "ยืนยันว่าทำงานได้"
 
-## Getting Started
+## 1. สถานะตามข้อกำหนดอาจารย์ทั้ง 10 ข้อ
 
-This project is a starting point for a Flutter application.
+| ข้อ | ระบบ | สถานะ | รายละเอียด |
+|---|---|---|---|
+| 1 | ระบบสมาชิก | 🟡 บางส่วน | มีสมัครสมาชิก / Login / Logout; แก้ไขโปรไฟล์ยังไม่เสร็จ และ Forgot Password ยังเป็น UI |
+| 2 | ระบบโพสต์ | 🟢 มีโค้ดแล้ว | สร้าง อ่าน แก้ไข ลบโพสต์ พร้อมข้อความ รูปภาพ และวิดีโอสั้น; ควรทดสอบกับ Firebase จริงต่อ |
+| 3 | Feed / Timeline | 🟢 มีโค้ดแล้ว | แสดงฟีดเรียงตามเวลา (ใหม่ก่อน) |
+| 4 | Like / Dislike / Emoji / Comment | 🔴 ยังไม่เสร็จ | ปุ่มใน Feed ยังแสดง "กำลังพัฒนา" และยังไม่บันทึก Reaction/Comment จริง |
+| 5 | Chat 1-1 | 🟡 มีโค้ด รอทดสอบ | มี Chat List / Chat Room และโค้ดสำหรับข้อความ รูปภาพ วิดีโอ แต่ยังไม่ได้ทดสอบครบด้วยสองบัญชี/สอง Emulator |
+| 6 | Groups / Pages | 🔴 ยังไม่เสร็จ | ยังไม่มีระบบสร้าง เข้าร่วม แก้ไข ออก ลบกลุ่ม/เพจ พร้อม Group Feed ที่ครบเท่า Feed หลัก |
+| 7 | Profile / Follow / Search | 🟡 บางส่วน | ค้นหาผู้ใช้ได้ระดับหนึ่ง แต่ Profile, Public/Private, Follow/Unfollow ยังไม่ครบ |
+| 8 | Report Post | 🟡 มีโค้ด รอทดสอบ | มีหน้าหรือ Dialog สำหรับรายงานและโค้ดบันทึก `post_reports`; ยังไม่ยืนยันการทำงานจริงครบถ้วน |
+| 9 | ฟีเจอร์ตาม Pain Point ผู้ใช้จริง | 🔴 ยังไม่ยืนยัน | ยังไม่มีหลักฐานการเก็บ Pain Point และฟีเจอร์ที่พัฒนาเพื่อตอบโจทย์นั้น |
+| 10 | Cloud Database | 🟡 เชื่อมต่อแล้ว แต่รอตรวจ | ใช้ Firebase อยู่แล้ว; ยังไม่ยืนยันว่า Security Rules / Indexes ใน Firebase Console ตรงกับไฟล์ล่าสุดและถูก Deploy แล้ว |
 
-A few resources to get you started if this is your first Flutter project:
+**คำอธิบายสถานะ:** 🟢 มีโค้ดหลักแล้ว • 🟡 ทำบางส่วนหรือมีโค้ดแต่ต้องทดสอบ • 🔴 ยังไม่เสร็จ
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## 2. สถานะหน้าจอ 19 หน้า
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+| ลำดับ | หน้าจอ | สถานะ / งานที่เหลือ |
+|---|---|---|
+| 1 | Login | มีโค้ดและ UI แล้ว |
+| 2 | Register | มีโค้ดและ UI แล้ว |
+| 3 | Home / Feed | มีโค้ดแล้ว; Reaction/Comment ใน Feed ยังไม่ทำงานจริง |
+| 4 | Create / Edit Post | มีโค้ด CRUD แล้ว |
+| 5 | Chat List | มีโค้ด; รอทดสอบ Firestore และสองบัญชี |
+| 6 | Chat Room | มีโค้ด; รอทดสอบข้อความ/รูป/วิดีโอแบบ Real-time |
+| 7 | Notifications | มี In-app Notification สำหรับข้อความ; รอทดสอบการอ่าน/ไม่อ่าน |
+| 8 | Search / Explore | มีโค้ดค้นหาเบื้องต้น; ยังจำกัดชุดข้อมูลและต้องทดสอบ |
+| 9 | Groups | ยังไม่เสร็จ / เมนูอาจขึ้น "กำลังพัฒนา" |
+| 10 | Group Detail / Group Feed | ยังไม่เสร็จ |
+| 11 | Create / Edit Group | ยังไม่เสร็จ |
+| 12 | Group Management | ยังไม่เสร็จ |
+| 13 | Profile | ยังไม่เสร็จ / เมนูอาจขึ้น "กำลังพัฒนา" |
+| 14 | Edit Profile | ยังไม่เสร็จ |
+| 15 | Followers / Following | ยังไม่เสร็จ |
+| 16 | Post Detail / Comments | ยังไม่เสร็จ |
+| 17 | Report Post | มี UI/Dialog และโค้ดรายงาน; รอทดสอบ |
+| 18 | Settings / Privacy | ยังไม่เสร็จเป็นระบบครบถ้วน; มี Dark/Light Theme แล้ว |
+| 19 | Forgot Password | มี UI แต่ยังไม่ได้เชื่อมการส่งอีเมลรีเซ็ตรหัสผ่าน |
+
+> บางรายการสามารถทำเป็น Dialog หรือใช้หน้าจอร่วมกันได้ ไม่จำเป็นต้องมีไฟล์ Screen แยกครบ 19 ไฟล์
+
+## 3. สิ่งที่พัฒนาแล้ว (มีโค้ดหรือหน้าจอ)
+
+### 3.1 ระบบบัญชีและ UI
+- สมัครสมาชิก / เข้าสู่ระบบ / ออกจากระบบ ด้วย Firebase Authentication
+- มีข้อมูลสมาชิกใน Firestore (`users`)
+- ธีม Dark Mode / Light Mode และ UI ของ Linko
+- Bottom Navigation หลัก 5 เมนู: หน้าหลัก, กลุ่ม, แชท, แจ้งเตือน, โปรไฟล์
+
+### 3.2 ระบบโพสต์และฟีด
+- Create / Read / Update / Delete โพสต์
+- รองรับข้อความ, รูปภาพ, วิดีโอสั้น และ Hashtag
+- มีฟีดเรียงจากโพสต์ล่าสุดไปเก่าสุด
+- มีโค้ดสำหรับการมองเห็นโพสต์และจัดการสิทธิ์บางส่วน ซึ่งต้องตรวจ Security Rules ประกอบ
+
+### 3.3 ฟีเจอร์ที่มีโค้ดใน Week 4
+- Chat List และ Chat Room แบบ 1-1
+- ส่งข้อความ และแนบรูปภาพ/วิดีโอในแชท
+- In-app Notifications สำหรับข้อความ
+- สถานะอ่านแล้ว/ยังไม่อ่านตามที่ออกแบบในโค้ด
+- Search / Explore สำหรับผู้ใช้, โพสต์ และ Hashtag
+- ฟอร์มรายงานโพสต์และการส่งข้อมูลรายงาน
+
+**ยังไม่นับว่าเสร็จสมบูรณ์จนกว่าจะทดสอบระบบจริงผ่าน**
+
+## 4. สิ่งที่ยังไม่เสร็จหรือยังไม่มีระบบจริง
+
+### 4.1 ฟีเจอร์หลักที่โจทย์บังคับ
+- [ ] Like โพสต์ พร้อมบันทึกและแสดงสถานะจาก Firestore
+- [ ] Dislike โพสต์ พร้อมบันทึกและแสดงสถานะจาก Firestore
+- [ ] Emoji Reactions อื่น ๆ
+- [ ] Comments: เพิ่ม / อ่าน / จัดการตามสิทธิ์
+- [ ] Groups / Pages: สร้าง / เข้าร่วม / แก้ไข / ออก / ลบ
+- [ ] Group Feed: โพสต์และปฏิกิริยาเหมือน Feed หลัก
+- [ ] Profile: ดูโปรไฟล์ตนเองและผู้ใช้อื่น
+- [ ] Edit Profile: แก้ไขข้อมูลและรูปโปรไฟล์
+- [ ] Follow / Unfollow และรายชื่อ Followers / Following
+- [ ] โปรไฟล์ Public / Private และการควบคุมสิทธิ์จริง
+- [ ] ฟีเจอร์เพิ่มเติมจาก Pain Point ของผู้ใช้จริง
+
+### 4.2 ฟีเจอร์เสริมและจุดที่ควรปรับปรุง
+- [ ] Forgot Password เชื่อม Firebase Auth ให้ส่งอีเมลรีเซ็ตรหัสผ่านได้
+- [ ] Search รองรับข้อมูลจำนวนมากกว่าแนวทางดึงผู้ใช้ล่าสุด 150 ราย / โพสต์สาธารณะล่าสุด 80 ราย
+- [ ] เพิ่มระบบจัดการรายงานโพสต์สำหรับผู้ดูแล (แนะนำ; ไม่ได้ระบุว่าเป็นหน้าบังคับแยกต่างหาก)
+- [ ] ตรวจและปรับความเร็วการโหลดรูปจาก Firebase Storage
+- [ ] ตรวจ UX ระหว่างอัปโหลดรูปภาพ/วิดีโอ โดยแสดงสถานะระหว่างรอ
+
+**Push Notification:** ยังไม่มี แต่โจทย์ Week 4 อนุญาตให้ใช้ *In-app หรือ Push* จึงไม่จำเป็นต้องทำ Push หาก In-app ทำงานครบแล้ว
+
+## 5. กำลังพัฒนา / ต้องตรวจสอบก่อนปิด Week 4
+
+| งาน | สิ่งที่ต้องตรวจสอบ |
+|---|---|
+| Firestore Rules | ไฟล์ `firestore.rules` เวอร์ชันล่าสุดถูก Deploy/Publish ไป Firebase โปรเจกต์จริงหรือยัง |
+| Firestore Indexes | Indexes รองรับ Query ของ Chat / Notifications / Search หรือไม่ |
+| Firebase Storage Rules | สิทธิ์อ่าน/เขียนรูปภาพและวิดีโอของผู้ใช้แต่ละคนถูกต้องหรือไม่ |
+| Chat Text | ใช้ผู้ใช้ 2 บัญชีทดสอบการส่งและรับข้อความแบบ Real-time |
+| Chat Media | ส่งรูปภาพ/วิดีโอ เปิดดูไฟล์และจัดการข้อผิดพลาดได้จริง |
+| Notifications | สร้างรายการใหม่, ตัวนับ, สถานะอ่านแล้ว/ยังไม่อ่าน |
+| Search | ค้นหาผู้ใช้ โพสต์ Hashtag และกรองข้อมูลด้วยข้อมูลจริง |
+| Performance | ทดสอบซ้ำกรณีโหลดรูปช้า และรออัปโหลดไฟล์นาน |
+
+## 6. งานทดสอบและส่งโปรเจกต์
+
+**ข้อมูลจาก Codex:** ใน `test/` มี 4 กรณีทดสอบ เน้น Auth; ยังไม่มีการทดสอบ Chat, Notifications หรือ Search ครบถ้วน
+
+- [ ] เพิ่ม Test Cases ให้ได้อย่างน้อย **10 เคส** ตามโจทย์ (ปัจจุบันมีโค้ดทดสอบ 4 กรณี)
+- [ ] ทดสอบ Chat, Notifications, Search และการส่งไฟล์ด้วยสองบัญชี / สอง Emulator หรืออุปกรณ์ที่เหมาะสม
+- [ ] ทดสอบบน **อุปกรณ์จริง Android หรือ iOS** ก่อนส่งงาน
+- [ ] ตรวจ Accessibility และ UX
+- [ ] บันทึกบั๊ก พร้อมวิธีแก้และผลทดสอบซ้ำ
+- [ ] ปรับปรุง `README.md` สำหรับโปรเจกต์ Linko
+- [ ] เตรียม GitHub Repository และ APK/TestFlight
+- [ ] เตรียม Demo สด **7–10 นาที**
+
+## 7. กำหนดส่งแต่ละสัปดาห์
+
+| สัปดาห์ | กำหนดส่ง | ขอบเขต |
+|---|---|---|
+| Week 2 | 30 ก.ย. 2569 | ปัญหา/ผู้ใช้เป้าหมาย, User Flow, Wireframe, โครงสร้างโปรเจกต์, Theme |
+| Week 3 | 7 ต.ค. 2569 | Auth, CRUD, Schema, 2–3 ฟีเจอร์หลัก, Error Handling |
+| Week 4 | 14 ต.ค. 2569 | Chat/Notifications แบบ In-app หรือ Push, อัปโหลดไฟล์/รูปภาพ, Search/Filter |
+| Week 5 | 21 ต.ค. 2569 | Accessibility, UX เสถียร, Test Cases ≥10, บั๊กและการแก้ไข |
+| Week 6 | ภายใน 4 พ.ย. 2569 | Demo 7–10 นาที, GitHub, APK/TestFlight, README |
+
+## 8. ลำดับพัฒนาที่แนะนำ
+
+1. **ปิด Week 4 ให้สมบูรณ์:** ตรวจ Deploy Rules/Indexes และทดสอบ Chat, Notifications, Search, Storage
+2. **ทำ Reaction / Comments:** เพื่อให้ Feed หลักครบและนำ Widget ไปใช้ซ้ำใน Group Feed ได้
+3. **ทำ Groups / Pages:** CRUD กลุ่ม, สมาชิก, สิทธิ์ และฟีดในกลุ่ม
+4. **ทำ Profile / Follow / Privacy:** โปรไฟล์, การติดตาม, สาธารณะ/ส่วนตัว
+5. **ปิดส่วนค้าง:** Forgot Password, Pain Point, ทดสอบ/ปรับประสิทธิภาพ
+6. **เตรียมส่งงาน:** Test ≥10, อุปกรณ์จริง, README, GitHub, APK/TestFlight และ Demo
+
+## 9. สรุปภาพรวม
+
+- **พัฒนาไปมากที่สุด:** Authentication, CRUD Posts และ Home Feed
+- **มีโค้ดแต่ยังไม่ยืนยันว่าทำงานครบ:** Chat, In-app Notifications, Search, Report Post
+- **ยังเป็นงานหลักที่ต้องสร้างต่อ:** Reaction / Comments, Groups / Pages, Profile / Follow / Privacy
+- **ต้องตรวจบน Firebase จริง:** Security Rules, Indexes และสิทธิ์ไฟล์ Storage
+- **ต้องเตรียมก่อนส่ง:** ทดสอบอย่างน้อย 10 เคสบนระบบและทดสอบแอปบนอุปกรณ์จริง
+
+---
+
+*เอกสารนี้เป็นภาพรวมความคืบหน้าตามข้อมูลที่มี ไม่ใช่ผลทดสอบยืนยันว่าทุกฟีเจอร์ทำงานได้จริงบน Firebase Production*
