@@ -11,6 +11,8 @@ import '../../core/widgets/social_navigation.dart';
 import '../chat/chat_list.dart';
 import '../comments/post_comments_screen.dart';
 import '../search/search_explore.dart';
+import '../profile/profile.dart';
+import '../groups/groups_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({
@@ -44,10 +46,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ),
       );
-    } else if (i != 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(i == 1 ? 'กลุ่มกำลังพัฒนา' : 'โปรไฟล์กำลังพัฒนา'),
+    } else if (i == 1) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GroupsScreen(user: widget.user),
+        ),
+      );
+    } else if (i == 4) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ProfileScreen(user: widget.user),
         ),
       );
     }

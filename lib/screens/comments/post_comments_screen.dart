@@ -33,11 +33,22 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
     if (_sending) return;
     setState(() => _sending = true);
     try {
-      await _service.addComment(
+      final result = await _service.addComment(
         post: widget.post,
         content: _textController.text,
       );
       _textController.clear();
+      if (!result.notificationsComplete && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.eligibleFollowers == null
+                  ? 'ส่งความคิดเห็นแล้ว แต่โหลดรายชื่อผู้ติดตามเพื่อแจ้งเตือนไม่สำเร็จ'
+                  : 'ส่งความคิดเห็นแล้ว แต่แจ้งเตือนผู้ติดตามได้ ${result.notifiedFollowers}/${result.eligibleFollowers} คน',
+            ),
+          ),
+        );
+      }
       if (mounted) FocusScope.of(context).unfocus();
     } catch (error) {
       if (mounted) {

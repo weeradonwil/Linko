@@ -9,6 +9,8 @@ import '../../core/services/chat_service.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../notifications/notifications_screen.dart';
 import '../search/search_explore.dart';
+import '../profile/profile.dart';
+import '../groups/groups_screen.dart';
 import 'chat_room.dart';
 
 /// แสดงรายการห้องจาก Firestore แบบ real-time และเปิดห้องแชทที่เลือก
@@ -23,9 +25,6 @@ class ChatListScreen extends StatelessWidget {
   final bool isDarkMode;
   final VoidCallback? onToggleTheme;
 
-  void _showMessage(BuildContext context, String message) =>
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
   void _go(BuildContext context, int index) {
     switch (index) {
       case 0:
@@ -45,10 +44,14 @@ class ChatListScreen extends StatelessWidget {
         );
         return;
       case 1:
-        _showMessage(context, 'กลุ่มกำลังพัฒนา');
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => GroupsScreen(user: user)),
+        );
         return;
       case 4:
-        _showMessage(context, 'โปรไฟล์กำลังพัฒนา');
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ProfileScreen(user: user)),
+        );
         return;
     }
   }

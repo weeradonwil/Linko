@@ -15,7 +15,41 @@ service cloud.firestore {
     // เอกสารโปรไฟล์อ่านได้เมื่อเข้าสู่ระบบ แต่แก้ได้เฉพาะเจ้าของ UID
     match /users/{userId} {
       allow read: if signedIn();
-      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+      allow create, delete: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'displayNameLower', 'isPrivate'
+        ]) &&
+        request.resource.data.displayName is string &&
+        request.resource.data.displayName.size() > 0 &&
+        request.resource.data.displayName.size() <= 60 &&
+        request.resource.data.displayNameLower is string &&
+        request.resource.data.isPrivate is bool;
+
+      // สมาชิกอ่านความสัมพันธ์ได้ แต่สร้าง/ลบได้เฉพาะความสัมพันธ์ของตนเอง
+      match /followers/{followerUid} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == followerUid &&
+          followerUid != userId &&
+          exists(/databases/$(database)/documents/users/$(userId)) &&
+          request.resource.data.keys().hasOnly(['uid', 'createdAt']) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == followerUid;
+        allow update: if false;
+      }
+
+      match /following/{followedUid} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.auth.uid == userId &&
+          followedUid != userId &&
+          exists(/databases/$(database)/documents/users/$(followedUid)) &&
+          request.resource.data.keys().hasOnly(['uid', 'createdAt']) &&
+          request.resource.data.uid == followedUid &&
+          request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
     }
 
     match /posts/{postId} {
@@ -99,6 +133,23 @@ service cloud.firestore {
           request.resource.data.createdAt == request.time;
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
         allow update: if false;
+      }
+
+      // แต่ละบัญชีมี reaction ได้หนึ่งรายการต่อโพสต์ และจัดการได้เฉพาะของตัวเอง
+      match /reactions/{reactorUid} {
+        function canReadPost() {
+          let post = get(/databases/$(database)/documents/posts/$(postId)).data;
+          return signedIn() &&
+            (!('visibility' in post) || post.visibility == 'public' ||
+             post.userId == request.auth.uid);
+        }
+        allow read: if canReadPost();
+        allow create, update: if canReadPost() && request.auth.uid == reactorUid &&
+          request.resource.data.keys().hasOnly(['uid', 'reaction', 'updatedAt']) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.reaction in ['like', 'love', 'haha', 'wow', 'sad', 'angry'] &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if canReadPost() && request.auth.uid == reactorUid;
       }
     }
 
@@ -202,14 +253,76 @@ service cloud.firestore {
         request.resource.data.createdAt == request.time &&
         request.resource.data.postId is string && request.resource.data.commentId is string &&
         exists(/databases/$(database)/documents/posts/$(request.resource.data.postId)) &&
-        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId == request.resource.data.recipientId &&
-        existsAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)) &&
-        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorId == request.auth.uid &&
-        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorName == request.resource.data.actorName &&
-        getAfter(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.content == request.resource.data.body;
+        exists(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)) &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId is string &&
+        (!('visibility' in get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data) ||
+         get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.visibility == 'public') &&
+        exists(/databases/$(database)/documents/users/$(get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId)/followers/$(request.resource.data.recipientId)) &&
+        notificationId == 'comment_' + request.resource.data.commentId + '_' + request.resource.data.recipientId &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorId == request.auth.uid &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorName == request.resource.data.actorName &&
+        get(/databases/$(database)/documents/posts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.content == request.resource.data.body;
       allow update: if signedIn() && resource.data.recipientId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']) && request.resource.data.isRead == true;
       allow delete: if false;
+    }
+
+    // กลุ่มสาธารณะค้นพบได้; การอ่านสมาชิกและโพสต์ในกลุ่มต้องเป็นสมาชิกอยู่แล้ว
+    match /groups/{groupId} {
+      function isGroupMember() {
+        return signedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      }
+      allow read: if signedIn() &&
+        (resource.data.visibility == 'public' || resource.data.ownerId == request.auth.uid || isGroupMember());
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly(['name', 'description', 'ownerId', 'visibility', 'createdAt', 'updatedAt']) &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 60 &&
+        request.resource.data.description is string && request.resource.data.description.size() <= 300 &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.visibility in ['public', 'private'] &&
+        request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && resource.data.ownerId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'updatedAt']) &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 60 &&
+        request.resource.data.description is string && request.resource.data.description.size() <= 300 &&
+        request.resource.data.updatedAt == request.time;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /members/{memberUid} {
+        function publicGroup() {
+          return exists(/databases/$(database)/documents/groups/$(groupId)) &&
+            get(/databases/$(database)/documents/groups/$(groupId)).data.visibility == 'public';
+        }
+        allow read: if signedIn() &&
+          (resource.data.uid == request.auth.uid || publicGroup() || isGroupMember());
+        allow create: if signedIn() && request.auth.uid == memberUid &&
+          request.resource.data.keys().hasOnly(['uid', 'displayName', 'createdAt']) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.displayName is string && request.resource.data.createdAt == request.time &&
+          (publicGroup() ||
+           getAfter(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid);
+        allow delete: if signedIn() &&
+          (request.auth.uid == memberUid ||
+           get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid);
+        allow update: if false;
+      }
+
+      match /posts/{groupPostId} {
+        allow read: if isGroupMember();
+        allow create: if isGroupMember() &&
+          request.resource.data.keys().hasOnly(['authorId', 'authorName', 'content', 'createdAt']) &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.authorName is string &&
+          request.resource.data.content is string && request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 1000 && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if isGroupMember() &&
+          (resource.data.authorId == request.auth.uid ||
+           get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid);
+      }
     }
 
   }

@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import '../../core/models/post.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/post_service.dart';
+import '../../core/services/reaction_service.dart';
+import '../../core/models/social_reaction.dart';
 import '../../core/widgets/post_media.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../create_post/create_post.dart';
@@ -14,6 +16,8 @@ import '../chat/chat_list.dart';
 import '../comments/post_comments_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../search/search_explore.dart';
+import '../profile/profile.dart';
+import '../groups/groups_screen.dart';
 
 /// หน้าฟีดหลังล็อกอิน: แสดงโพสต์เรียงเวลาและเปิดทางสร้าง/จัดการโพสต์ของตนเอง
 class HomeScreen extends StatefulWidget {
@@ -42,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static final _legacyMigrationRunning = <String>{};
 
   final _feedScrollController = ScrollController();
+  final _reactionService = ReactionService();
   int _feedGeneration = 0;
 
   void _restartFeed() {
@@ -202,10 +207,67 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showComingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$feature กำลังพัฒนา')));
+  /// สลับ reaction ของผู้ใช้ปัจจุบัน; เลือกแบบเดิมซ้ำจะยกเลิก reaction
+  Future<void> _setReaction(
+    BuildContext context,
+    Post post,
+    String reaction,
+  ) async {
+    try {
+      await _reactionService.toggleReaction(
+        postId: post.id,
+        reaction: reaction,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('บันทึกความรู้สึกไม่สำเร็จ: $error')),
+      );
+    }
+  }
+
+  /// ให้เลือกอีโมจิได้หลายแบบสำหรับโพสต์เดียว
+  Future<void> _chooseReaction(BuildContext context, Post post) async {
+    final reaction = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Wrap(
+            alignment: WrapAlignment.spaceAround,
+            spacing: 12,
+            runSpacing: 12,
+            children: SocialReaction.options
+                .map(
+                  (choice) => InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => Navigator.pop(context, choice.id),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            choice.emoji,
+                            style: const TextStyle(fontSize: 28),
+                          ),
+                          Text(
+                            choice.label,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ),
+    );
+    if (reaction != null && context.mounted) {
+      await _setReaction(context, post, reaction);
+    }
   }
 
   @override
@@ -431,8 +493,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         onReport: isOwner
                             ? null
                             : () => _reportPost(context, post),
-                        onReaction: () =>
-                            _showComingSoon(context, 'ระบบความรู้สึก'),
+                        currentUid: widget.user.uid,
+                        reactionService: _reactionService,
+                        onReaction: (reaction) =>
+                            _setReaction(context, post, reaction),
+                        onChooseReaction: () => _chooseReaction(context, post),
+                        onAuthorTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ProfileScreen(
+                              user: widget.user,
+                              profileUid: post.userId,
+                            ),
+                          ),
+                        ),
                         onComment: () => _openComments(context, post),
                       );
                     },
@@ -473,8 +546,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 );
-              } else if (index == 1 || index == 4) {
-                _showComingSoon(context, index == 1 ? 'กลุ่ม' : 'โปรไฟล์');
+              } else if (index == 1) {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => GroupsScreen(user: widget.user),
+                  ),
+                );
+              } else if (index == 4) {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ProfileScreen(user: widget.user),
+                  ),
+                );
               }
             },
             items: [
@@ -527,7 +610,11 @@ class _PostCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onReport,
+    required this.currentUid,
+    required this.reactionService,
     required this.onReaction,
+    required this.onChooseReaction,
+    required this.onAuthorTap,
     required this.onComment,
   });
 
@@ -536,7 +623,11 @@ class _PostCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onReport;
-  final VoidCallback onReaction;
+  final String currentUid;
+  final ReactionService reactionService;
+  final ValueChanged<String> onReaction;
+  final VoidCallback onChooseReaction;
+  final VoidCallback onAuthorTap;
   final VoidCallback onComment;
 
   @override
@@ -553,19 +644,26 @@ class _PostCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  child: Text(post.authorName.characters.first.toUpperCase()),
+                InkWell(
+                  onTap: onAuthorTap,
+                  borderRadius: BorderRadius.circular(22),
+                  child: CircleAvatar(
+                    radius: 20,
+                    child: Text(post.authorName.characters.first.toUpperCase()),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        post.authorName,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      InkWell(
+                        onTap: onAuthorTap,
+                        child: Text(
+                          post.authorName,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       Wrap(
@@ -686,31 +784,80 @@ class _PostCard extends StatelessWidget {
             const SizedBox(height: 14),
             Divider(color: theme.colorScheme.outlineVariant, height: 1),
             const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: _PostAction(
-                    icon: Icons.thumb_up_alt_rounded,
-                    label: 'ถูกใจ',
-                    color: theme.colorScheme.primary,
-                    onPressed: onReaction,
-                  ),
-                ),
-                Expanded(
-                  child: _PostAction(
-                    icon: Icons.thumb_down_alt_outlined,
-                    label: 'ไม่ถูกใจ',
-                    onPressed: onReaction,
-                  ),
-                ),
-                Expanded(
-                  child: _PostAction(
-                    icon: Icons.mode_comment_outlined,
-                    label: 'แสดงความคิดเห็น',
-                    onPressed: onComment,
-                  ),
-                ),
-              ],
+            StreamBuilder(
+              stream: reactionService.watchReactions(post.id),
+              builder: (context, snapshot) {
+                final docs = snapshot.data?.docs ?? const [];
+                final ownReaction = docs.where((doc) => doc.id == currentUid);
+                final selected = ownReaction.isEmpty
+                    ? null
+                    : ownReaction.first.data()['reaction'] as String?;
+                final counts = <String, int>{};
+                for (final doc in docs) {
+                  final value = doc.data()['reaction'] as String?;
+                  if (value != null) {
+                    counts.update(
+                      value,
+                      (count) => count + 1,
+                      ifAbsent: () => 1,
+                    );
+                  }
+                }
+                return Column(
+                  children: [
+                    if (counts.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 4),
+                          child: Wrap(
+                            spacing: 8,
+                            children: counts.entries
+                                .map(
+                                  (entry) => Text(
+                                    '${SocialReaction.byId(entry.key)?.emoji ?? '👍'} ${entry.value}',
+                                    style: theme.textTheme.labelMedium,
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PostAction(
+                            icon: selected == null
+                                ? Icons.thumb_up_alt_outlined
+                                : Icons.favorite_rounded,
+                            label: selected == null
+                                ? 'ถูกใจ'
+                                : '${SocialReaction.byId(selected)?.emoji ?? '👍'} ${SocialReaction.byId(selected)?.label ?? 'ถูกใจ'}',
+                            color: selected == null
+                                ? null
+                                : theme.colorScheme.primary,
+                            onPressed: () => onReaction(selected ?? 'like'),
+                          ),
+                        ),
+                        Expanded(
+                          child: _PostAction(
+                            icon: Icons.add_reaction_outlined,
+                            label: 'อารมณ์อื่น',
+                            onPressed: onChooseReaction,
+                          ),
+                        ),
+                        Expanded(
+                          child: _PostAction(
+                            icon: Icons.mode_comment_outlined,
+                            label: 'ความคิดเห็น',
+                            onPressed: onComment,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),

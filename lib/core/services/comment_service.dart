@@ -1,11 +1,11 @@
-// อ่าน/เขียนความคิดเห็น และสร้าง social notification ให้เจ้าของโพสต์ใน batch เดียวกัน
+// อ่าน/เขียนความคิดเห็น และแจ้งเตือนผู้ติดตามเจ้าของโพสต์
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/post_comment.dart';
 import '../models/post.dart';
 
-/// อ่านและเขียนความคิดเห็น พร้อมแจ้งเตือนเจ้าของโพสต์เมื่อมีผู้อื่นมาแสดงความคิดเห็น
+/// อ่านและเขียนความคิดเห็น พร้อมแจ้งเตือนเฉพาะผู้ติดตามเจ้าของโพสต์
 class CommentService {
   CommentService({FirebaseAuth? auth, FirebaseFirestore? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -38,8 +38,11 @@ class CommentService {
     return Post.fromSnapshot(snapshot);
   }
 
-  /// บันทึกความคิดเห็นและการแจ้งเตือนใน batch เดียว เพื่อไม่ให้ข้อมูลแยกจากกัน
-  Future<void> addComment({required Post post, required String content}) async {
+  /// บันทึกความคิดเห็นก่อน แล้วส่งแจ้งเตือนให้ผู้ติดตามโดยไม่แจ้งเตือนเจ้าของโพสต์โดยตรง
+  Future<CommentDeliveryResult> addComment({
+    required Post post,
+    required String content,
+  }) async {
     final user = _user;
     final text = content.trim();
     if (text.isEmpty) {
@@ -56,31 +59,78 @@ class CommentService {
     final authorName = displayName == null || displayName.isEmpty
         ? 'สมาชิก'
         : displayName;
-    final batch = _firestore.batch();
-    batch.set(comment, {
+    await comment.set({
       'authorId': user.uid,
       'authorName': authorName,
       'content': text,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // ไม่สร้างการแจ้งเตือนเมื่อเจ้าของโพสต์แสดงความคิดเห็นในโพสต์ตัวเอง
-    if (post.userId.isNotEmpty && post.userId != user.uid) {
-      final notification = _firestore.collection('notifications').doc();
-      batch.set(notification, {
-        'recipientId': post.userId,
-        'actorId': user.uid,
-        'actorName': authorName,
-        'type': 'comment',
-        'body': text,
-        'postId': post.id,
-        'commentId': comment.id,
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+    // ผู้ติดตามต้องเปิดโพสต์นั้นได้ก่อน จึงไม่ส่งเตือนสำหรับโพสต์ส่วนตัว
+    if (post.userId.isEmpty || post.visibility != 'public') {
+      return const CommentDeliveryResult(
+        notificationsComplete: true,
+        eligibleFollowers: 0,
+        notifiedFollowers: 0,
+      );
     }
+    QuerySnapshot<Map<String, dynamic>> followers;
+    try {
+      followers = await _firestore
+          .collection('users')
+          .doc(post.userId)
+          .collection('followers')
+          .get();
+    } catch (_) {
+      return const CommentDeliveryResult(
+        notificationsComplete: false,
+        eligibleFollowers: null,
+        notifiedFollowers: 0,
+      );
+    }
+    final recipients = followers.docs
+        .where((follower) => follower.id != user.uid)
+        .toList();
+    var notifiedFollowers = 0;
+    final notifications = _firestore.collection('notifications');
 
-    await batch.commit();
+    // Firestore จำกัด 500 writes ต่อ batch; ส่งแจ้งเตือนเป็นชุดละ 450 รายการ
+    for (var offset = 0; offset < recipients.length; offset += 450) {
+      final batch = _firestore.batch();
+      final end = (offset + 450).clamp(0, recipients.length);
+      for (final follower in recipients.sublist(offset, end)) {
+        final notification = notifications.doc(
+          'comment_${comment.id}_${follower.id}',
+        );
+        batch.set(notification, {
+          'recipientId': follower.id,
+          'actorId': user.uid,
+          'actorName': authorName,
+          'type': 'comment',
+          'body': text,
+          'postId': post.id,
+          'commentId': comment.id,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      try {
+        await batch.commit();
+        notifiedFollowers += end - offset;
+      } catch (_) {
+        // Comment ถูกบันทึกแล้ว; แจ้งผลการเตือนแยกเพื่อไม่ให้ผู้ใช้ส่งซ้ำ
+        return CommentDeliveryResult(
+          notificationsComplete: false,
+          eligibleFollowers: recipients.length,
+          notifiedFollowers: notifiedFollowers,
+        );
+      }
+    }
+    return CommentDeliveryResult(
+      notificationsComplete: true,
+      eligibleFollowers: recipients.length,
+      notifiedFollowers: notifiedFollowers,
+    );
   }
 
   /// ลบความคิดเห็นของบัญชีปัจจุบัน โดย Firestore Rules ตรวจสิทธิ์เจ้าของซ้ำอีกชั้น
@@ -91,6 +141,19 @@ class CommentService {
     _user;
     await _comments(postId).doc(commentId).delete();
   }
+}
+
+/// ผลการแจ้งเตือนแยกจากผลบันทึก Comment เพื่อรายงานกรณีส่งได้ไม่ครบ
+class CommentDeliveryResult {
+  const CommentDeliveryResult({
+    required this.notificationsComplete,
+    required this.eligibleFollowers,
+    required this.notifiedFollowers,
+  });
+
+  final bool notificationsComplete;
+  final int? eligibleFollowers;
+  final int notifiedFollowers;
 }
 
 class CommentServiceException implements Exception {
