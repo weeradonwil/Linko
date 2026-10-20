@@ -1,6 +1,7 @@
 // ชุดทดสอบ Widget สำหรับฟอร์ม Login/Register โดยไม่เชื่อมต่อ Firebase จริง
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:social_app/screens/login/forgot_password.dart';
 import 'package:social_app/screens/login/login.dart';
 
 void main() {
@@ -58,6 +59,21 @@ void main() {
     await tester.pump();
 
     expect(find.text('รหัสผ่านไม่ตรงกัน'), findsOneWidget);
+  });
+
+  testWidgets('ตรวจอีเมลก่อนขอส่งลิงก์รีเซ็ตรหัสผ่าน', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: ForgotPasswordScreen()));
+
+    await tester.tap(find.text('ส่งลิงก์รีเซ็ตรหัสผ่าน'));
+    await tester.pump();
+    expect(find.text('กรุณากรอกอีเมล'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField), 'not-an-email');
+    await tester.tap(find.text('ส่งลิงก์รีเซ็ตรหัสผ่าน'));
+    await tester.pump();
+    expect(find.text('รูปแบบอีเมลไม่ถูกต้อง'), findsOneWidget);
   });
 }
 

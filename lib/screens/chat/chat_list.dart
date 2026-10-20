@@ -187,31 +187,94 @@ class ChatListScreen extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (conversation.unreadCount > 0)
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Text(
-                                    conversation.unreadCount > 99
-                                        ? '99+'
-                                        : conversation.unreadCount.toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (conversation.unreadCount > 0)
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Text(
+                                        conversation.unreadCount > 99
+                                            ? '99+'
+                                            : conversation.unreadCount
+                                                  .toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
                                     ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _time(conversation.lastMessageAt),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall,
                                   ),
-                                ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _time(conversation.lastMessageAt),
-                                style: Theme.of(context).textTheme.labelSmall,
+                                ],
+                              ),
+                              PopupMenuButton<String>(
+                                tooltip: 'ตัวเลือกแชท',
+                                onSelected: (value) async {
+                                  if (value != 'hide') return;
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text(
+                                        'ลบแชทนี้ออกจากรายการ?',
+                                      ),
+                                      content: const Text(
+                                        'ข้อความของคุณและอีกฝ่ายจะยังอยู่ แชทจะถูกซ่อนจากบัญชีนี้',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, false),
+                                          child: const Text('กลับ'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, true),
+                                          child: const Text('ลบแชท'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed != true || !context.mounted)
+                                    return;
+                                  try {
+                                    await ChatService().hideConversation(
+                                      conversation.id,
+                                    );
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'ลบแชทไม่สำเร็จ: $error',
+                                              ),
+                                            ),
+                                          );
+                                    }
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'hide',
+                                    child: Text('ลบแชท'),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

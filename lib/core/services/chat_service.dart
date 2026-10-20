@@ -41,6 +41,7 @@ class ChatService {
                 (d) => (d.data()['participantIds'] as List? ?? []).length == 2,
               )
               .map((d) => ConversationSummary.fromSnapshot(d, uid))
+              .where((conversation) => !conversation.isHidden)
               .toList();
           items.sort(
             (a, b) =>
@@ -76,7 +77,13 @@ class ChatService {
         .replaceAll('=', '');
     final ref = _conversations.doc(id);
     await _firestore.runTransaction((tx) async {
-      if ((await tx.get(ref)).exists) return;
+      if ((await tx.get(ref)).exists) {
+        tx.update(ref, {
+          FieldPath(['hiddenFor', uid]): false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return;
+      }
       final me = _auth.currentUser!;
       final name = me.displayName?.trim();
       tx.set(ref, {
@@ -92,6 +99,56 @@ class ChatService {
       });
     });
     return id;
+  }
+
+  /// ซ่อนห้องแชทเฉพาะบัญชีนี้ โดยเก็บข้อความของทั้งสองฝ่ายไว้ในห้องเดิม
+  Future<void> hideConversation(String conversationId) async {
+    final uid = _uid;
+    await _conversations.doc(conversationId).update({
+      FieldPath(['hiddenFor', uid]): true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// แทนข้อความที่ส่งด้วยสถานะยกเลิกที่ผู้ร่วมสนทนาทั้งสองฝ่ายเห็น
+  Future<void> unsendMessage({
+    required String conversationId,
+    required ChatMessage message,
+  }) async {
+    final uid = _uid;
+    if (message.senderId != uid || message.isUnsent) {
+      throw const ChatServiceException('ยกเลิกได้เฉพาะข้อความที่คุณส่ง');
+    }
+    final conversationRef = _conversations.doc(conversationId);
+    final messageRef = conversationRef.collection('messages').doc(message.id);
+    final batch = _firestore.batch();
+    batch.update(messageRef, {
+      'type': 'deleted',
+      'text': 'ยกเลิกข้อความนี้',
+      'mediaPath': FieldValue.delete(),
+      'deletedAt': FieldValue.serverTimestamp(),
+    });
+    final latestMessages = await conversationRef
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+    if (latestMessages.docs.isNotEmpty &&
+        latestMessages.docs.first.id == message.id) {
+      batch.update(conversationRef, {
+        'lastMessageText': 'ยกเลิกข้อความนี้',
+        'lastMessageType': 'deleted',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    if (message.mediaPath != null) {
+      try {
+        await _deleteMedia(message.mediaPath!);
+      } catch (_) {
+        // A cleanup issue must not undo the successful message cancellation.
+      }
+    }
   }
 
   // เก็บเวลาอ่านและจำนวนที่ยังไม่อ่านแยกตาม UID ของผู้ใช้แต่ละคน
@@ -147,10 +204,12 @@ class ChatService {
       'lastMessageType': type,
       'lastMessageSenderId': user.uid,
       'lastMessageAt': FieldValue.serverTimestamp(),
+      'lastMessageId': msg.id,
       'updatedAt': FieldValue.serverTimestamp(),
       FieldPath(['unreadCounts', peerId]): FieldValue.increment(1),
       FieldPath(['unreadCounts', user.uid]): 0,
       FieldPath(['lastReadAt', user.uid]): FieldValue.serverTimestamp(),
+      FieldPath(['hiddenFor', user.uid]): false,
     });
     try {
       await batch.commit();

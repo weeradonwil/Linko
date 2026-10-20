@@ -2,8 +2,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../models/social_reaction.dart';
-
 /// อ่านและบันทึก reaction; Firestore Rules บังคับให้เจ้าของแก้ได้เฉพาะเอกสารตนเอง
 class ReactionService {
   ReactionService({FirebaseAuth? auth, FirebaseFirestore? firestore})
@@ -13,9 +11,7 @@ class ReactionService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
-  static final supportedReactions = SocialReaction.options
-      .map((reaction) => reaction.id)
-      .toSet();
+  static const supportedReactions = {'like', 'dislike'};
 
   String get _uid {
     final user = _auth.currentUser;
@@ -37,20 +33,46 @@ class ReactionService {
     required String postId,
     required String reaction,
   }) async {
+    final uid = _uid;
+    final user = _auth.currentUser!;
     if (!supportedReactions.contains(reaction)) {
       throw const ReactionServiceException('ไม่รองรับ reaction นี้');
     }
-    final reference = _reactions(postId).doc(_uid);
+    final reference = _reactions(postId).doc(uid);
     final current = await reference.get();
     if (current.data()?['reaction'] == reaction) {
       await reference.delete();
       return;
     }
-    await reference.set({
-      'uid': _uid,
+    final batch = _firestore.batch();
+    batch.set(reference, {
+      'uid': uid,
       'reaction': reaction,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // Alert the post owner only when a Like is added or changed to Like.
+    if (reaction == 'like' && current.data()?['reaction'] != 'like') {
+      final post = await _firestore.collection('posts').doc(postId).get();
+      final recipientId = post.data()?['userId'] as String?;
+      if (recipientId != null && recipientId != uid) {
+        final actorName = user.displayName?.trim();
+        batch.set(_firestore.collection('notifications').doc(), {
+          'recipientId': recipientId,
+          'actorId': uid,
+          'actorName': actorName == null || actorName.isEmpty
+              ? 'สมาชิก'
+              : actorName,
+          'type': 'like',
+          'body': '',
+          'postId': postId,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    await batch.commit();
   }
 }
 

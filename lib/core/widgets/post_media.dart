@@ -11,15 +11,21 @@ import 'package:video_player/video_player.dart';
 /// แสดงไฟล์ของโพสต์โดยอ่านผ่าน Storage SDK แทน download URL
 /// ทุกการอ่านจึงถูกตรวจด้วย Firebase Storage Rules รวมถึงไฟล์ของโพสต์ส่วนตัว
 class PostMedia extends StatelessWidget {
-  const PostMedia({required this.path, required this.type, super.key});
+  const PostMedia({
+    required this.path,
+    required this.type,
+    this.thumbnailPath,
+    super.key,
+  });
 
   final String path;
   final String type;
+  final String? thumbnailPath;
 
   @override
   Widget build(BuildContext context) {
     return type == 'video'
-        ? _StorageVideo(path: path)
+        ? _StorageVideo(path: path, thumbnailPath: thumbnailPath)
         : _StorageImage(path: path);
   }
 }
@@ -117,9 +123,10 @@ class _StorageImageState extends State<_StorageImage> {
 }
 
 class _StorageVideo extends StatefulWidget {
-  const _StorageVideo({required this.path});
+  const _StorageVideo({required this.path, this.thumbnailPath});
 
   final String path;
+  final String? thumbnailPath;
 
   @override
   State<_StorageVideo> createState() => _StorageVideoState();
@@ -130,19 +137,13 @@ class _StorageVideoState extends State<_StorageVideo> {
   Future<void>? _initialization;
 
   @override
-  void initState() {
-    super.initState();
-    // Initialize a paused network player so its first frame appears without a tap.
-    _initialization = _prepareVideo();
-  }
-
-  @override
   void didUpdateWidget(covariant _StorageVideo oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.path != widget.path) {
+    if (oldWidget.path != widget.path ||
+        oldWidget.thumbnailPath != widget.thumbnailPath) {
       _disposeVideo();
       _controller = null;
-      _initialization = _prepareVideo();
+      _initialization = null;
     }
   }
 
@@ -202,21 +203,15 @@ class _StorageVideoState extends State<_StorageVideo> {
       future: _initialization,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return _MediaMessage(
-            icon: Icons.videocam_off_outlined,
-            onPressed: () => _startPlayback(retry: true),
-          );
+          return _videoPoster(failed: true);
         }
         final controller = _controller;
         if (_initialization == null) {
-          return _MediaMessage(
-            icon: Icons.play_circle_outline,
-            onPressed: _startPlayback,
-          );
+          return _videoPoster();
         }
         if (snapshot.connectionState != ConnectionState.done ||
             controller == null) {
-          return const _MediaLoading();
+          return _videoPoster(isLoading: true);
         }
         return AspectRatio(
           aspectRatio: controller.value.aspectRatio,
@@ -254,6 +249,50 @@ class _StorageVideoState extends State<_StorageVideo> {
           ),
         );
       },
+    );
+  }
+
+  /// Shows the small cached cover while the video player waits for its first frame.
+  Widget _videoPoster({bool isLoading = false, bool failed = false}) {
+    final colors = Theme.of(context).colorScheme;
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          fit: StackFit.expand,
+          alignment: Alignment.center,
+          children: [
+            ColoredBox(color: colors.surfaceContainerHighest),
+            if (widget.thumbnailPath != null)
+              _StorageImage(path: widget.thumbnailPath!),
+            const ColoredBox(color: Color(0x26000000)),
+            Center(
+              child: IconButton.filledTonal(
+                tooltip: isLoading
+                    ? 'กำลังเตรียมวิดีโอ'
+                    : failed
+                    ? 'ลองโหลดวิดีโออีกครั้ง'
+                    : 'เล่นวิดีโอ',
+                onPressed: isLoading
+                    ? null
+                    : () => _startPlayback(retry: failed),
+                icon: isLoading
+                    ? const SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        failed
+                            ? Icons.refresh_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 34,
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

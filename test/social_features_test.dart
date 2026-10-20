@@ -4,23 +4,18 @@ import 'package:social_app/core/models/social_reaction.dart';
 import 'package:social_app/core/services/reaction_service.dart';
 
 void main() {
-  test('มี reaction like และอีโมจิอื่นครบตามรายการที่รองรับ', () {
-    expect(ReactionService.supportedReactions, {
-      'like',
-      'love',
-      'haha',
-      'wow',
-      'sad',
-      'angry',
-    });
-    expect(SocialReaction.options, hasLength(6));
+  test('รองรับ reaction like และ dislike ตามรายการปัจจุบัน', () {
+    expect(ReactionService.supportedReactions, {'like', 'dislike'});
+    expect(SocialReaction.options, hasLength(2));
+    expect(SocialReaction.byId('like')?.emoji, '👍');
+    expect(SocialReaction.byId('dislike')?.emoji, '👎');
   });
 
-  test('reaction ID ทุกตัวไม่ซ้ำและค้นหา emoji กับชื่อได้', () {
+  test('reaction ID ไม่ซ้ำ และ reaction เก่าถูกแสดงเป็น Like', () {
     final ids = SocialReaction.options.map((reaction) => reaction.id).toList();
     expect(ids.toSet(), hasLength(ids.length));
-    expect(SocialReaction.byId('love')?.emoji, '❤️');
-    expect(SocialReaction.byId('haha')?.label, 'ฮ่าๆ');
+    expect(SocialReaction.byId('love')?.id, 'like');
+    expect(SocialReaction.byId('haha')?.id, 'like');
     expect(SocialReaction.byId('unknown'), isNull);
   });
 }

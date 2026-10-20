@@ -24,13 +24,52 @@ service firebase.storage {
       allow read: if request.auth != null &&
         (request.auth.uid == ownerUid ||
          (firestore.exists(postDocument()) &&
-          firestore.get(postDocument()).data.visibility == 'public'));
+          firestore.get(postDocument()).data.userId == ownerUid &&
+          ((firestore.get(postDocument()).data.visibility == 'public' &&
+            firestore.get(postDocument()).data.get('authorIsPrivate', false) != true) ||
+           (firestore.get(postDocument()).data.visibility == 'followers' &&
+            firestore.get(postDocument()).data.get('authorIsPrivate', false) == true &&
+            firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid))))));
 
       // เจ้าของลบไฟล์ได้; การอัปโหลดต้องผ่าน MIME type และขนาดใน isValidMediaUpload()
       allow write: if request.auth != null &&
-        request.auth.uid == ownerUid &&
+        (request.auth.uid == ownerUid ||
+         (request.resource == null && request.auth.token.get('admin', false) == true)) &&
         (request.resource == null || isValidMediaUpload());
     }
+
+    match /group_media/{groupId}/{postId}/{ownerUid}/{fileName} {
+      function groupPath() {
+        return /databases/(default)/documents/groups/$(groupId);
+      }
+      function isGroupMember() {
+        return firestore.exists(/databases/(default)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      }
+      allow read: if request.auth != null && isGroupMember() &&
+        firestore.exists(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)) &&
+        firestore.get(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)).data.authorId == ownerUid;
+      allow write: if request.auth != null && request.auth.uid == ownerUid &&
+        isGroupMember() &&
+        firestore.exists(groupPath()) &&
+        (request.resource == null || isValidMediaUpload());
+    }
+
+    // Group avatars are editable by the owner and readable by signed-in members.
+    match /group_images/{groupId}/{ownerUid}/{fileName} {
+      function groupDocument() {
+        return /databases/(default)/documents/groups/$(groupId);
+      }
+      // Group avatars are discoverable with group metadata; private posts/media
+      // remain protected by the separate group_media rule.
+      allow read: if request.auth != null && firestore.exists(groupDocument());
+      allow write: if request.auth != null && request.auth.uid == ownerUid &&
+        firestore.exists(groupDocument()) &&
+        firestore.get(groupDocument()).data.ownerId == request.auth.uid &&
+        (request.resource == null ||
+         (request.resource.size <= 5 * 1024 * 1024 &&
+          request.resource.contentType.matches('image/.*')));
+    }
+
     // ไฟล์แชทอ่านได้เฉพาะสมาชิกของห้อง; เขียนได้เฉพาะผู้ส่งที่เป็นเจ้าของไฟล์
     // ขนาดและ MIME type ต้องสอดคล้องกับข้อจำกัดใน ChatService
     match /chat_media/{conversationId}/{ownerUid}/{fileName} {
@@ -42,6 +81,16 @@ service firebase.storage {
       // สมาชิกอัปโหลดหรือลบไฟล์ของตนเองได้ โดยใช้ขีดจำกัดเดียวกับสื่อในโพสต์
       allow write: if request.auth != null && request.auth.uid == ownerUid && conversationHasMember() &&
         (request.resource == null || isValidMediaUpload());
+    }
+
+    // Profile images are private to their owner for writes and readable by signed-in users.
+    match /profile_images/{ownerUid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        request.auth.uid == ownerUid &&
+        (request.resource == null ||
+          (request.resource.size <= 5 * 1024 * 1024 &&
+           request.resource.contentType.matches('image/.*')));
     }
 
   }

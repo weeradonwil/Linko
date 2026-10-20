@@ -1,7 +1,10 @@
-// หน้าต้นแบบกู้คืนรหัสผ่าน; ปุ่มยังไม่เรียก Firebase Auth เพื่อส่งอีเมล
+// หน้ากู้คืนรหัสผ่านและตรวจอีเมลก่อนขอลิงก์จาก Firebase Auth
 import 'package:flutter/material.dart';
 
-/// หน้าจอ UI สำหรับการกู้คืนรหัสผ่าน (ยังไม่เชื่อมต่อ Firebase)
+import '../../core/services/auth_service.dart';
+import '../../core/utils/firebase_error_message.dart';
+
+/// ขออีเมลสำหรับส่งลิงก์รีเซ็ตรหัสผ่านผ่าน Firebase Authentication
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({this.initialEmail = '', super.key});
 
@@ -12,7 +15,9 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
   late final TextEditingController _emailController;
+  bool _sending = false;
 
   @override
   void initState() {
@@ -26,10 +31,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  void _showNotReadyMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ฟังก์ชันรีเซ็ตรหัสผ่านยังไม่พร้อมใช้งาน')),
-    );
+  Future<void> _sendResetLink() async {
+    if (_sending || !_formKey.currentState!.validate()) return;
+    setState(() => _sending = true);
+    try {
+      await AuthService().sendPasswordResetEmail(_emailController.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('หากอีเมลนี้ลงทะเบียนไว้ ระบบจะส่งลิงก์รีเซ็ตให้'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(firebaseErrorMessage(error, action: 'ส่งลิงก์')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override
@@ -58,26 +80,44 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'กรอกอีเมลที่ใช้สมัครสมาชิก ฟังก์ชันส่งลิงก์จะเปิดใช้งานในภายหลัง',
+                    'กรอกอีเมลที่ใช้สมัครสมาชิก แล้วตรวจกล่องจดหมายเพื่อรีเซ็ตรหัสผ่าน',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 28),
-                  TextField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: const InputDecoration(
-                      labelText: 'อีเมล',
-                      prefixIcon: Icon(Icons.mail_outline),
+                  Form(
+                    key: _formKey,
+                    child: TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'อีเมล',
+                        prefixIcon: Icon(Icons.mail_outline),
+                      ),
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+                        if (email.isEmpty) return 'กรุณากรอกอีเมล';
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                            .hasMatch(email)) {
+                          return 'รูปแบบอีเมลไม่ถูกต้อง';
+                        }
+                        return null;
+                      },
                     ),
                   ),
                   const SizedBox(height: 20),
                   FilledButton(
-                    onPressed: _showNotReadyMessage,
-                    child: const Text('ส่งลิงก์รีเซ็ตรหัสผ่าน'),
+                    onPressed: _sending ? null : _sendResetLink,
+                    child: _sending
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('ส่งลิงก์รีเซ็ตรหัสผ่าน'),
                   ),
                 ],
               ),

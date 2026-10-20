@@ -501,7 +501,11 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           if (post.mediaPath != null)
             SizedBox(
               height: 190,
-              child: PostMedia(path: post.mediaPath!, type: post.mediaType),
+              child: PostMedia(
+                path: post.mediaPath!,
+                type: post.mediaType,
+                thumbnailPath: post.thumbnailPath,
+              ),
             ),
           Padding(
             padding: const EdgeInsets.all(14),

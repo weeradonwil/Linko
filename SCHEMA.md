@@ -1,66 +1,64 @@
-# Linko Firestore Schema
+# Linko Firestore and Storage Schema
 
-เอกสารนี้อธิบาย path ที่แอปอ่าน/เขียนอยู่ในปัจจุบัน ให้ตรวจ `firestore.rules` ประกอบก่อนเปลี่ยนฟิลด์หรือสิทธิ์
+เอกสารนี้สรุป path ที่แอปใช้อยู่ ให้ตรวจ `firestore.rules` และ `storage.rules` ประกอบก่อนเปลี่ยนข้อมูลหรือสิทธิ์
 
 ## Collections หลัก
 
 ### `users/{uid}`
 
-- `uid`, `displayName`, `displayNameLower`, `isPrivate`, `createdAt`
-- เจ้าของแก้ชื่อที่แสดงและค่า `isPrivate` ได้; อีเมลล็อกอินอยู่ใน Firebase Authentication ไม่ได้เก็บในเอกสารนี้
+- `uid`, `displayName`, `displayNameLower`, `bio`, `isPrivate`, `createdAt`; อาจมี `avatarPath`
+- เจ้าของแก้ชื่อ, Bio, รูปโปรไฟล์ และสถานะส่วนตัวได้
+- รูปโปรไฟล์เก็บที่ `profile_images/{uid}/{fileName}`; ผู้ใช้ที่ล็อกอินอ่านได้ เจ้าของเท่านั้นที่เขียน/ลบได้
 
 ### `posts/{postId}`
 
-- `userId`, `authorName`, `content`, `tags`, `visibility`, `createdAt`, `updatedAt`, `editedAt`, `mediaType`, `mediaPath`
-- `editedAt` มีเมื่อผู้เขียนแก้โพสต์; `mediaPath` มีเมื่อแนบรูปหรือวิดีโอ
-
-### `groups/{groupId}`
-
-- `name`, `description`, `ownerId`, `visibility`, `createdAt`, `updatedAt`
-- โค้ดหน้าจอสร้างกลุ่มเป็นกลุ่มสาธารณะ; เจ้าของแก้ชื่อ/คำอธิบายและลบกลุ่มได้
-
-### `conversations/{conversationId}`
-
-- `participantIds`, `participantNames`, `unreadCounts`, `lastReadAt`, `createdAt`, `updatedAt`
-- `lastMessageText`, `lastMessageType`, `lastMessageSenderId`, `lastMessageAt` เพิ่มเมื่อมีข้อความ
-
-### `notifications/{notificationId}`
-
-- `recipientId`, `actorId`, `actorName`, `type`, `body`, `isRead`, `createdAt`
-- Comment เพิ่ม `postId` และ `commentId`; ID ใช้รูปแบบ `comment_{commentId}_{recipientUid}` เพื่อป้องกันรายการซ้ำ
+- `userId`, `authorName`, `content`, `tags`, `visibility`, `authorIsPrivate`, `createdAt`, `updatedAt`, `mediaType`
+- อาจมี `editedAt`, `mediaPath`, `thumbnailPath`
+- `visibility`: `public`, `followers` หรือ `private`; การอ่านโพสต์ผู้ติดตามต้องมีเอกสารอนุมัติใน `users/{ownerUid}/followers/{viewerUid}`
+- สื่อเก็บที่ `post_media/{ownerUid}/{postId}/{fileName}`; ภาพปกวิดีโออาจอยู่ในโฟลเดอร์เดียวกัน
 
 ### `post_reports/{reportId}`
 
 - `postId`, `postOwnerId`, `reporterUid`, `reason`, `details`, `status`, `createdAt`
-- หนึ่งผู้ใช้ส่งรายงานได้หนึ่งรายการต่อโพสต์ตาม ID `{postId}_{reporterUid}`
+- หลังตรวจสอบอาจมี `reviewedBy`, `reviewedAt`; สถานะที่หน้าผู้ดูแลใช้คือ `open`, `resolved`, `dismissed`, `removed`
+- ID รายงานมีรูปแบบ `{postId}_{reporterUid}`; การลบโพสต์จากรายงานต้องใช้บัญชีที่มี custom claim `admin: true`
+
+### `groups/{groupId}` และโพสต์ในกลุ่ม
+
+- กลุ่ม: `name`, `description`, `ownerId`, `visibility`, `memberCount`, `createdAt`, `updatedAt`; อาจมี `avatarPath`
+- `groups/{groupId}/posts/{postId}`: `authorId`, `authorName`, `content`, `createdAt`, `mediaType`; อาจมี `mediaPath`, `thumbnailPath`
+- สมาชิกเก็บใน `groups/{groupId}/members/{uid}`; `memberCount` เปลี่ยนพร้อมการเพิ่ม/ลบสมาชิก
+- คำขอกลุ่มส่วนตัวเก็บใน `groups/{groupId}/join_requests/{requesterUid}` โดยมี `uid`, `displayName`, `createdAt`; เจ้าของหรือผู้ดูแลที่มี `admin: true` อนุมัติ/ปฏิเสธได้
+- reaction อยู่ที่ `groups/{groupId}/posts/{postId}/reactions/{uid}` เป็น `like` หรือ `dislike`
+- รูปประจำกลุ่มเก็บที่ `group_images/{groupId}/{ownerUid}/{fileName}`; เจ้าของกลุ่มเป็นผู้เปลี่ยนรูป
+- สื่อโพสต์เก็บที่ `group_media/{groupId}/{postId}/{ownerUid}/{fileName}`; สมาชิกในกลุ่มอ่านได้
+
+### `conversations/{conversationId}`
+
+- `participantIds`, `participantNames`, `unreadCounts`, `lastReadAt`, `createdAt`, `updatedAt`; อาจมี `hiddenFor`
+- ข้อมูลสรุปข้อความล่าสุด: `lastMessageText`, `lastMessageType`, `lastMessageSenderId`, `lastMessageAt`, `lastMessageId`
+- ข้อความอยู่ใน `conversations/{conversationId}/messages/{messageId}`: `senderId`, `type`, `text`, `createdAt`; อาจมี `mediaPath`
+- ยกเลิกข้อความโดยเปลี่ยนเป็น `type: deleted`; ซ่อนห้องเป็นสถานะเฉพาะผู้ใช้ ไม่ลบข้อความของอีกฝ่าย
+- ไฟล์แนบอยู่ใน `chat_media/{conversationId}/{senderUid}/{fileName}`
+
+### `notifications/{notificationId}`
+
+- `recipientId`, `actorId`, `actorName`, `type`, `body`, `isRead`, `createdAt`
+- Like Notification มี `postId` และส่งให้เจ้าของโพสต์; Comment Notification มี `postId`/`commentId` และส่งให้ผู้ติดตามเจ้าของโพสต์; Follow Notification แจ้งบัญชีที่ถูกติดตาม
 
 ## Subcollections
 
-### ความสัมพันธ์ติดตาม
+### Follow และคำขอติดตาม
 
-- `users/{profileUid}/followers/{followerUid}`: `uid` ของผู้ติดตามและ `createdAt`
-- `users/{followerUid}/following/{profileUid}`: `uid` ของโปรไฟล์ที่ติดตามและ `createdAt`
-- FollowService เขียน/ลบสอง path นี้ด้วย batch เดียวเพื่อรักษาความสอดคล้อง
+- `users/{profileUid}/followers/{followerUid}` และ `users/{followerUid}/following/{profileUid}` เก็บความสัมพันธ์ที่ได้รับอนุมัติ
+- `users/{profileUid}/follow_requests/{requesterUid}` เก็บคำขอที่รอเจ้าของอนุมัติ; ผู้รับคำขออนุมัติหรือปฏิเสธได้
 
-### Reaction และ Comment
+### Reactions และ Comments
 
-- `posts/{postId}/reactions/{uid}`: `uid`, `reaction`, `updatedAt`; หนึ่งผู้ใช้เลือกได้หนึ่งค่า (`like`, `love`, `haha`, `wow`, `sad`, `angry`)
+- `posts/{postId}/reactions/{uid}`: `uid`, `reaction`, `updatedAt`; reaction คือ `like` หรือ `dislike`
 - `posts/{postId}/comments/{commentId}`: `authorId`, `authorName`, `content`, `createdAt`
-- เมื่อมี Comment ในโพสต์สาธารณะ ระบบส่ง notification เฉพาะสมาชิกใน `users/{postOwnerUid}/followers`; ผู้แสดงความคิดเห็นจะไม่ได้แจ้งเตือนตัวเอง
 
-### กลุ่ม
+## ข้อจำกัดการอัปโหลด
 
-- `groups/{groupId}/members/{uid}`: `uid`, `displayName`, `createdAt`
-- `groups/{groupId}/posts/{groupPostId}`: `authorId`, `authorName`, `content`, `createdAt`
-- สมาชิกอ่าน/เขียนโพสต์ในกลุ่มได้; เจ้าของกลุ่มลบโพสต์และเอกสารย่อยเมื่อลบกลุ่มได้
-
-### แชท
-
-- `conversations/{conversationId}/messages/{messageId}`: `senderId`, `type`, `text`, `createdAt`, `mediaPath` เมื่อเป็นไฟล์แนบ
-- ไฟล์แนบเก็บใน Storage ที่ `chat_media/{conversationId}/{senderUid}/{fileName}`; ภาพไม่เกิน 10 MiB และวิดีโอไม่เกิน 50 MiB
-
-## หมายเหตุ
-
-- ผู้ใช้ยืนยัน Deploy Rules และ Indexes รุ่นปัจจุบันไปยัง `social-network-app-c22eb` แล้ว; หลังเปลี่ยนไฟล์ Rules/Indexes อีกให้ Deploy ใหม่และทดสอบสิทธิ์ด้วยสองบัญชี
-- โปรไฟล์ส่วนตัวและการอนุมัติคำขอติดตามยังไม่ได้ทำงานครบ แม้ schema มี `isPrivate`
-- Group Feed รองรับข้อความเท่านั้น; ยังไม่รองรับสื่อหรือ reaction
+- รูปภาพไม่เกิน 10 MiB; วิดีโอไม่เกิน 50 MiB
+- Rules ใน working tree มีการเปลี่ยนหลัง deploy ครั้งก่อน ต้อง deploy และทดสอบสิทธิ์บนโปรเจกต์ Firebase เป้าหมายก่อนใช้งานจริง

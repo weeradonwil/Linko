@@ -44,7 +44,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final post = widget.post;
     _contentController.text = post?.content ?? '';
     _tagsController.text = post?.tags.map((tag) => '#$tag').join(', ') ?? '';
-    _visibility = post?.visibility ?? 'public';
+    _visibility = post?.visibility == 'followers'
+        ? 'public'
+        : post?.visibility ?? 'public';
   }
 
   @override
@@ -97,6 +99,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           tags: tags,
           visibility: _visibility,
           oldMediaPath: widget.post!.mediaPath,
+          oldThumbnailPath: widget.post!.thumbnailPath,
           newAttachment: _attachment,
           removeMedia: _removeExistingMedia,
         );
@@ -291,6 +294,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             PostMedia(
               path: existingPost!.mediaPath!,
               type: existingPost.mediaType,
+              thumbnailPath: existingPost.thumbnailPath,
             )
           else
             Padding(

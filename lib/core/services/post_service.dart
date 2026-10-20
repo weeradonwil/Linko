@@ -1,8 +1,12 @@
 // รวมการเข้าถึง posts และ post_reports รวมถึงอัปโหลด/ลบสื่อที่เป็นของโพสต์
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/post.dart';
 
@@ -40,31 +44,165 @@ class PostService {
   /// Filter.or ทำให้เงื่อนไขที่ส่งไป Firestore ตรงกับสิทธิ์ใน Rules
   Stream<List<Post>> watchFeed() {
     final userId = _currentUser.uid;
-    return _posts
-        .where(
-          Filter.or(
-            Filter('visibility', isEqualTo: 'public'),
-            // Firestore Rules รับรองได้ว่าผลลัพธ์มีเฉพาะโพสต์ public
-            // หรือโพสต์ที่เจ้าของตรงกับบัญชีปัจจุบัน
-            Filter('userId', isEqualTo: userId),
+    final controller = StreamController<List<Post>>();
+    final sourcePosts = <String, Map<String, Post>>{};
+    final subscriptions = <StreamSubscription<dynamic>>[];
+    final followedSubscriptions = <StreamSubscription<dynamic>>[];
+
+    void emitPosts() {
+      final merged = <String, Post>{};
+      for (final source in sourcePosts.values) {
+        merged.addAll(source);
+      }
+      final result = merged.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (result.length > 100) result.removeRange(100, result.length);
+      if (!controller.isClosed) controller.add(result);
+    }
+
+    void reportFeedError(String sourceId, Object error, StackTrace stackTrace) {
+      debugPrint('Feed query [$sourceId] failed: $error');
+      if (!controller.isClosed) {
+        controller.addError(FeedQueryException(sourceId, error), stackTrace);
+      }
+    }
+
+    void attach(String sourceId, Query<Map<String, dynamic>> query) {
+      subscriptions.add(
+        query.snapshots().listen(
+          (snapshot) {
+            sourcePosts[sourceId] = {
+              for (final doc in snapshot.docs) doc.id: Post.fromSnapshot(doc),
+            };
+            emitPosts();
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            reportFeedError(sourceId, error, stackTrace);
+          },
+        ),
+      );
+    }
+
+    attach(
+      'public',
+      _posts
+          .where('visibility', isEqualTo: 'public')
+          .orderBy('createdAt', descending: true)
+          .limit(50),
+    );
+    attach('own', _posts.where('userId', isEqualTo: userId).limit(50));
+
+    subscriptions.add(
+      _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('following')
+          .snapshots()
+          .listen(
+            (following) async {
+              await Future.wait(
+                followedSubscriptions.map(
+                  (subscription) => subscription.cancel(),
+                ),
+              );
+              followedSubscriptions.clear();
+              sourcePosts.removeWhere((key, _) => key.startsWith('follow:'));
+              for (final followed in following.docs) {
+                final sourceId = 'follow:${followed.id}';
+                final subscription = _posts
+                    .where('userId', isEqualTo: followed.id)
+                    .where('visibility', isEqualTo: 'followers')
+                    .orderBy('createdAt', descending: true)
+                    .limit(30)
+                    .snapshots()
+                    .listen(
+                      (snapshot) {
+                        sourcePosts[sourceId] = {
+                          for (final doc in snapshot.docs)
+                            doc.id: Post.fromSnapshot(doc),
+                        };
+                        emitPosts();
+                      },
+                      onError: (Object error, StackTrace stackTrace) {
+                        reportFeedError(sourceId, error, stackTrace);
+                      },
+                    );
+                followedSubscriptions.add(subscription);
+              }
+              emitPosts();
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              reportFeedError('following-list', error, stackTrace);
+            },
           ),
-        )
-        .orderBy('createdAt', descending: true)
-        .limit(50)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map(Post.fromSnapshot).toList());
+    );
+
+    controller.onCancel = () async {
+      await Future.wait([
+        ...subscriptions.map((subscription) => subscription.cancel()),
+        ...followedSubscriptions.map((subscription) => subscription.cancel()),
+      ]);
+    };
+    return controller.stream;
+  }
+
+  /// Updates account privacy and affected post audiences in one atomic batch.
+  Future<void> updateProfilePrivacy(bool isPrivate) async {
+    final userId = _currentUser.uid;
+    final userRef = _firestore.collection('users').doc(userId);
+    final userSnapshot = await userRef.get();
+    final wasPrivate = userSnapshot.data()?['isPrivate'] == true;
+    if (wasPrivate == isPrivate) return;
+
+    final snapshot = await _posts.where('userId', isEqualTo: userId).get();
+    final affected = snapshot.docs.where((post) {
+      final data = post.data();
+      final visibility = data['visibility'] as String? ?? 'public';
+      final targetVisibility = isPrivate && visibility == 'public'
+          ? 'followers'
+          : !isPrivate && visibility == 'followers'
+          ? 'public'
+          : visibility;
+      return targetVisibility != visibility ||
+          data['authorIsPrivate'] != isPrivate ||
+          !data.containsKey('visibility');
+    }).toList();
+    if (affected.length > 499) {
+      throw const PostServiceException(
+        'Too many posts to change profile privacy in one atomic update.',
+      );
+    }
+
+    final batch = _firestore.batch();
+    for (final post in affected) {
+      batch.update(post.reference, {
+        'visibility':
+            isPrivate && (post.data()['visibility'] ?? 'public') == 'public'
+            ? 'followers'
+            : !isPrivate && post.data()['visibility'] == 'followers'
+            ? 'public'
+            : post.data()['visibility'] ?? (isPrivate ? 'followers' : 'public'),
+        'authorIsPrivate': isPrivate,
+      });
+    }
+    batch.update(userRef, {'isPrivate': isPrivate});
+    await batch.commit();
   }
 
   /// เพิ่มฟิลด์ใหม่ให้โพสต์เก่าของเจ้าของ โดยคงโพสต์เดิมไว้เป็นสาธารณะเหมือนเดิม
   /// วิธีนี้ทำให้ข้อมูลเก่ายังใช้กับ schema ใหม่ได้หลังติดตั้ง Firestore Rules ชุดนี้
   Future<void> normalizeOwnedPosts() async {
     final userId = _currentUser.uid;
+    final userSnapshot = await _firestore.collection('users').doc(userId).get();
+    final isPrivateProfile = userSnapshot.data()?['isPrivate'] == true;
     final snapshot = await _posts.where('userId', isEqualTo: userId).get();
     final postsNeedingUpdate = snapshot.docs.where(
       (document) =>
           !document.data().containsKey('visibility') ||
           !document.data().containsKey('tags') ||
-          !document.data().containsKey('mediaType'),
+          !document.data().containsKey('mediaType') ||
+          document.data()['authorIsPrivate'] != isPrivateProfile ||
+          (isPrivateProfile && document.data()['visibility'] == 'public'),
     );
 
     // Firestore จำกัดจำนวนการเขียนต่อ batch; แบ่งชุดละ 400 รายการ
@@ -75,7 +213,10 @@ class PostService {
       for (final document in documents.sublist(start, end)) {
         final data = document.data();
         batch.update(document.reference, {
-          if (!data.containsKey('visibility')) 'visibility': 'public',
+          if (!data.containsKey('visibility') ||
+              (isPrivateProfile && data['visibility'] == 'public'))
+            'visibility': isPrivateProfile ? 'followers' : 'public',
+          'authorIsPrivate': isPrivateProfile,
           if (!data.containsKey('tags')) 'tags': <String>[],
           if (!data.containsKey('mediaType')) 'mediaType': 'none',
           'updatedAt': FieldValue.serverTimestamp(),
@@ -85,8 +226,7 @@ class PostService {
     }
   }
 
-  /// Schema ของ posts/{postId}: userId, authorName, content, tags, visibility,
-  /// createdAt, updatedAt, mediaType (none/image/video) และ mediaPath (ถ้ามีสื่อ)
+  /// Schema ของ posts/{postId}: ข้อมูลโพสต์ เวลา mediaType และ path สื่อ/ภาพปก
   Future<void> createPost({
     required String content,
     required List<String> tags,
@@ -94,6 +234,14 @@ class PostService {
     XFile? attachment,
   }) async {
     final user = _currentUser;
+    final ownerProfile = await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final isPrivateProfile = ownerProfile.data()?['isPrivate'] == true;
+    final effectiveVisibility = isPrivateProfile && visibility == 'public'
+        ? 'followers'
+        : _cleanVisibility(visibility);
     final cleanContent = content.trim();
     if (cleanContent.isEmpty && attachment == null) {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
@@ -111,15 +259,22 @@ class PostService {
         'authorName': (name == null || name.isEmpty) ? 'สมาชิก' : name,
         'content': cleanContent,
         'tags': _cleanTags(tags),
-        'visibility': _cleanVisibility(visibility),
+        'visibility': effectiveVisibility,
+        'authorIsPrivate': isPrivateProfile,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'mediaType': media?.type ?? 'none',
         if (media != null) ...{'mediaPath': media.path},
+        if (media?.thumbnailPath != null) 'thumbnailPath': media!.thumbnailPath,
       });
     } catch (_) {
       // ถ้าบันทึกข้อมูลโพสต์ไม่ได้ ให้ลบไฟล์ที่เพิ่งอัปโหลดเพื่อไม่ทิ้งไฟล์กำพร้า
-      if (media != null) await _deleteStorageFile(media.path);
+      if (media != null) {
+        await _deleteStorageFile(media.path);
+        if (media.thumbnailPath != null) {
+          await _deleteStorageFile(media.thumbnailPath!);
+        }
+      }
       rethrow;
     }
   }
@@ -131,10 +286,19 @@ class PostService {
     required List<String> tags,
     required String visibility,
     required String? oldMediaPath,
+    required String? oldThumbnailPath,
     XFile? newAttachment,
     bool removeMedia = false,
   }) async {
     final ownerUid = _currentUser.uid;
+    final ownerProfile = await _firestore
+        .collection('users')
+        .doc(ownerUid)
+        .get();
+    final isPrivateProfile = ownerProfile.data()?['isPrivate'] == true;
+    final effectiveVisibility = isPrivateProfile && visibility == 'public'
+        ? 'followers'
+        : _cleanVisibility(visibility);
     final cleanContent = content.trim();
     if (cleanContent.isEmpty && newAttachment == null && !removeMedia) {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
@@ -148,31 +312,45 @@ class PostService {
       await _posts.doc(postId).update({
         'content': cleanContent,
         'tags': _cleanTags(tags),
-        'visibility': _cleanVisibility(visibility),
+        'visibility': effectiveVisibility,
+        'authorIsPrivate': isPrivateProfile,
         'updatedAt': FieldValue.serverTimestamp(),
         // Keep an explicit marker so old updatedAt migration values do not look edited.
         'editedAt': FieldValue.serverTimestamp(),
         if (newMedia != null) ...{
           'mediaPath': newMedia.path,
           'mediaType': newMedia.type,
+          if (newMedia.thumbnailPath != null)
+            'thumbnailPath': newMedia.thumbnailPath
+          else
+            'thumbnailPath': FieldValue.delete(),
         },
         if (removeMedia) ...{
           'mediaPath': FieldValue.delete(),
           'mediaType': 'none',
+          'thumbnailPath': FieldValue.delete(),
         },
       });
     } catch (_) {
       if (newMedia != null) {
         await _deleteStorageFile(newMedia.path);
+        if (newMedia.thumbnailPath != null) {
+          await _deleteStorageFile(newMedia.thumbnailPath!);
+        }
       }
       rethrow;
     }
 
     // ลบสื่อเก่าหลัง Firestore เปลี่ยนไปใช้ไฟล์ใหม่เรียบร้อยแล้ว
-    if ((newMedia != null || removeMedia) &&
-        oldMediaPath != null &&
-        _belongsToPost(oldMediaPath, ownerUid, postId)) {
-      await _deleteStorageFile(oldMediaPath);
+    if (newMedia != null || removeMedia) {
+      if (oldMediaPath != null &&
+          _belongsToPost(oldMediaPath, ownerUid, postId)) {
+        await _deleteStorageFile(oldMediaPath);
+      }
+      if (oldThumbnailPath != null &&
+          _belongsToPost(oldThumbnailPath, ownerUid, postId)) {
+        await _deleteStorageFile(oldThumbnailPath);
+      }
     }
   }
 
@@ -185,6 +363,11 @@ class PostService {
     final mediaPath = post.mediaPath;
     if (mediaPath != null && _belongsToPost(mediaPath, user.uid, post.id)) {
       await _deleteStorageFile(mediaPath);
+    }
+    final thumbnailPath = post.thumbnailPath;
+    if (thumbnailPath != null &&
+        _belongsToPost(thumbnailPath, user.uid, post.id)) {
+      await _deleteStorageFile(thumbnailPath);
     }
     await _posts.doc(post.id).delete();
   }
@@ -208,7 +391,43 @@ class PostService {
     });
   }
 
-  Future<({String path, String type})> _uploadAttachment(
+  /// Removes a reported post and its media and child documents for an admin.
+  Future<void> removeReportedPost(String postId) async {
+    final user = _currentUser;
+    final token = await user.getIdTokenResult(true);
+    if (token.claims?['admin'] != true) {
+      throw const PostServiceException('Administrator access is required.');
+    }
+
+    final postReference = _posts.doc(postId);
+    final snapshot = await postReference.get();
+    if (!snapshot.exists) return;
+    final data = snapshot.data()!;
+    for (final path in [
+      data['mediaPath'] as String?,
+      data['thumbnailPath'] as String?,
+    ]) {
+      if (path != null &&
+          path.startsWith('post_media/${data['userId']}/$postId/')) {
+        await _deleteStorageFile(path);
+      }
+    }
+
+    for (final childCollection in ['comments', 'reactions']) {
+      final children = await postReference.collection(childCollection).get();
+      for (var start = 0; start < children.docs.length; start += 450) {
+        final batch = _firestore.batch();
+        final end = (start + 450).clamp(0, children.docs.length);
+        for (final child in children.docs.sublist(start, end)) {
+          batch.delete(child.reference);
+        }
+        await batch.commit();
+      }
+    }
+    await postReference.delete();
+  }
+
+  Future<({String path, String type, String? thumbnailPath})> _uploadAttachment(
     String postId,
     XFile file,
   ) async {
@@ -236,6 +455,10 @@ class PostService {
 
     final extension = _fileExtension(file.name, isImage ? 'jpg' : 'mp4');
     final contentType = file.mimeType ?? _contentTypeForExtension(extension);
+    // สร้างภาพตัวอย่างเฉพาะบน Android/iOS; แพลตฟอร์มอื่นยังอัปโหลดวิดีโอได้
+    final thumbnailBytes = isImage
+        ? null
+        : await _createVideoThumbnail(file.path);
     // ตั้งชื่อไฟล์ใหม่ทุกครั้ง เพื่อให้การแทนสื่อไม่เขียนทับ path เก่าก่อน update สำเร็จ
     final uniqueName =
         'media_${DateTime.now().microsecondsSinceEpoch}.$extension';
@@ -243,7 +466,47 @@ class PostService {
     final reference = _storage.ref(path);
     await reference.putData(bytes, SettableMetadata(contentType: contentType));
 
-    return (path: path, type: type);
+    String? thumbnailPath;
+    if (thumbnailBytes != null) {
+      final thumbnailName =
+          'thumbnail_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final candidatePath = 'post_media/$userId/$postId/$thumbnailName';
+      try {
+        await _storage
+            .ref(candidatePath)
+            .putData(
+              thumbnailBytes,
+              SettableMetadata(contentType: 'image/jpeg'),
+            );
+        thumbnailPath = candidatePath;
+      } catch (_) {
+        // ภาพปกเป็นส่วนเสริม; เก็บวิดีโอได้แม้สร้างหรืออัปโหลดภาพปกไม่สำเร็จ
+        await _deleteStorageFile(candidatePath);
+      }
+    }
+
+    return (path: path, type: type, thumbnailPath: thumbnailPath);
+  }
+
+  /// สร้าง JPEG ขนาดเล็กจากเฟรมแรกที่มีภาพ เพื่อลดเวลารอเฟรมจากวิดีโอจริง
+  Future<Uint8List?> _createVideoThumbnail(String videoPath) async {
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return null;
+    }
+    try {
+      return await VideoThumbnail.thumbnailData(
+        video: videoPath,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 720,
+        timeMs: 1000,
+        quality: 68,
+      );
+    } catch (_) {
+      // ถอดเฟรมไม่ได้ก็ยังอัปโหลดวิดีโอต้นฉบับต่อได้
+      return null;
+    }
   }
 
   Future<void> _deleteStorageFile(String path) async {
@@ -309,6 +572,18 @@ class PostService {
     final match = RegExp(r'\.([a-zA-Z0-9]+)$').firstMatch(name);
     return match?.group(1)?.toLowerCase() ?? fallback;
   }
+}
+
+/// Adds the Firestore query source to an error so feed access failures are
+/// easier to distinguish between public, own, following, and followed posts.
+class FeedQueryException implements Exception {
+  const FeedQueryException(this.sourceId, this.cause);
+
+  final String sourceId;
+  final Object cause;
+
+  @override
+  String toString() => '[$sourceId] $cause';
 }
 
 /// ข้อผิดพลาดที่ตรวจพบก่อนส่งข้อมูลหรืออัปโหลดไป Firebase

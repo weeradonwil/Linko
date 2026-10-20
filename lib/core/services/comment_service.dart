@@ -67,7 +67,7 @@ class CommentService {
     });
 
     // ผู้ติดตามต้องเปิดโพสต์นั้นได้ก่อน จึงไม่ส่งเตือนสำหรับโพสต์ส่วนตัว
-    if (post.userId.isEmpty || post.visibility != 'public') {
+    if (post.userId.isEmpty || post.visibility == 'private') {
       return const CommentDeliveryResult(
         notificationsComplete: true,
         eligibleFollowers: 0,

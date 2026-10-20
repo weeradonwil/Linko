@@ -1,0 +1,28 @@
+group 'xyz.justsoft.video_thumbnail'
+version '1.0-SNAPSHOT'
+
+// Use the repositories configured for the current Android toolchain.
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+// Flutter registers this module as an Android library plugin.
+apply plugin: 'com.android.library'
+
+android {
+    // Match the current Flutter app compile SDK so AndroidX metadata checks pass.
+    compileSdkVersion 36
+    namespace 'xyz.justsoft.video_thumbnail'
+
+    defaultConfig {
+        minSdkVersion 16
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+}

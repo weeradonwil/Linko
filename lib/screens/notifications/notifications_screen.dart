@@ -73,13 +73,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  // เมื่อเปิดแจ้งเตือนข้อความ ให้ทำเครื่องหมายอ่านแล้วและไปยังห้องสนทนา
+  // เปิดโพสต์ที่เกี่ยวข้อง หรือโปรไฟล์ของผู้ที่เริ่มติดตาม
   Future<void> _open(AppNotification item) async {
     try {
       if (!item.isRead) await _service.markRead(item.id);
     } catch (_) {}
     if (!mounted) return;
-    if (item.type == 'comment' && item.postId != null) {
+    if ((item.type == 'comment' || item.type == 'like') &&
+        item.postId != null) {
       try {
         final post = await _commentService.getPost(item.postId!);
         if (!mounted) return;
@@ -102,6 +103,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         );
       }
+    } else if (item.type == 'follow' && item.actorId.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ProfileScreen(user: widget.user, profileUid: item.actorId),
+        ),
+      );
     }
   }
 

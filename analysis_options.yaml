@@ -18,6 +18,8 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # This upstream demo uses obsolete null-safety and is not part of the app.
+    - packages/video_thumbnail/example/**
 
 linter:
   # The lint rules applied to this project can be customized in the

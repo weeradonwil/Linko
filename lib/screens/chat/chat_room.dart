@@ -74,6 +74,40 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     } catch (_) {}
   }
 
+  /// ขอให้ผู้ใช้ยืนยันก่อนแทนข้อความที่ส่งแล้วด้วยสถานะยกเลิก
+  Future<void> _unsendMessage(ChatMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ยกเลิกข้อความ'),
+        content: const Text('ข้อความนี้จะถูกยกเลิกสำหรับทุกคนในแชท'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('กลับ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ยกเลิกข้อความ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _service.unsendMessage(
+        conversationId: widget.conversationId,
+        message: message,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ยกเลิกข้อความไม่สำเร็จ: $error')),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _readSubscription?.cancel();
@@ -242,6 +276,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       isMine: message.senderId == widget.user.uid,
                       peerInitial: widget.peerName.characters.first
                           .toUpperCase(),
+                      onUnsend: () => _unsendMessage(message),
                     );
                   },
                 );
@@ -340,10 +375,12 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.isMine,
     required this.peerInitial,
+    required this.onUnsend,
   });
   final ChatMessage message;
   final bool isMine;
   final String peerInitial;
+  final VoidCallback onUnsend;
   String _time(DateTime? d) => d == null
       ? ''
       : d.hour.toString().padLeft(2, '0') +
@@ -353,85 +390,106 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final bubbleColor = isMine ? colors.primary : colors.surfaceContainerHigh;
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isMine) ...[
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: colors.primary.withValues(alpha: .2),
-                child: Text(
-                  peerInitial,
-                  style: TextStyle(color: colors.primary, fontSize: 12),
+    return GestureDetector(
+      onLongPress: isMine && !message.isUnsent ? onUnsend : null,
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isMine) ...[
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: colors.primary.withValues(alpha: .2),
+                  child: Text(
+                    peerInitial,
+                    style: TextStyle(color: colors.primary, fontSize: 12),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 7),
-            ],
-            Flexible(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.sizeOf(context).width * .76,
-                ),
-                child: Container(
-                  padding: message.mediaPath == null
-                      ? const EdgeInsets.symmetric(horizontal: 15, vertical: 11)
-                      : const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(20),
-                      topRight: const Radius.circular(20),
-                      bottomLeft: Radius.circular(isMine ? 20 : 5),
-                      bottomRight: Radius.circular(isMine ? 5 : 20),
+                const SizedBox(width: 7),
+              ],
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width * .76,
+                  ),
+                  child: Container(
+                    padding: message.mediaPath == null
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 15,
+                            vertical: 11,
+                          )
+                        : const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(20),
+                        topRight: const Radius.circular(20),
+                        bottomLeft: Radius.circular(isMine ? 20 : 5),
+                        bottomRight: Radius.circular(isMine ? 5 : 20),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (message.mediaPath != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(15),
-                          child: SizedBox(
-                            width: 260,
-                            height: 190,
-                            child: PostMedia(
-                              path: message.mediaPath!,
-                              type: message.type,
+                    child: message.isUnsent
+                        ? Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              'ยกเลิกข้อความนี้',
+                              style: TextStyle(
+                                color: isMine
+                                    ? Colors.white70
+                                    : colors.onSurfaceVariant,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (message.mediaPath != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(15),
+                                  child: SizedBox(
+                                    width: 260,
+                                    height: 190,
+                                    child: PostMedia(
+                                      path: message.mediaPath!,
+                                      type: message.type,
+                                    ),
+                                  ),
+                                ),
+                              if (message.text.isNotEmpty)
+                                Padding(
+                                  padding: message.mediaPath == null
+                                      ? EdgeInsets.zero
+                                      : const EdgeInsets.fromLTRB(8, 7, 8, 4),
+                                  child: Text(
+                                    message.text,
+                                    style: TextStyle(
+                                      color: isMine
+                                          ? Colors.white
+                                          : colors.onSurface,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
-                      if (message.text.isNotEmpty)
-                        Padding(
-                          padding: message.mediaPath == null
-                              ? EdgeInsets.zero
-                              : const EdgeInsets.fromLTRB(8, 7, 8, 4),
-                          child: Text(
-                            message.text,
-                            style: TextStyle(
-                              color: isMine ? Colors.white : colors.onSurface,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                    ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Text(
-                _time(message.createdAt),
-                style: Theme.of(context).textTheme.labelSmall,
+              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  _time(message.createdAt),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

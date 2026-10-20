@@ -10,6 +10,8 @@ class SocialGroup {
     required this.ownerId,
     required this.visibility,
     required this.createdAt,
+    this.avatarPath,
+    this.memberCount,
   });
 
   final String id;
@@ -18,6 +20,8 @@ class SocialGroup {
   final String ownerId;
   final String visibility;
   final DateTime? createdAt;
+  final String? avatarPath;
+  final int? memberCount;
 
   factory SocialGroup.fromSnapshot(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -31,6 +35,33 @@ class SocialGroup {
       ownerId: data['ownerId'] as String? ?? '',
       visibility: data['visibility'] as String? ?? 'public',
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
+      avatarPath: data['avatarPath'] as String?,
+      memberCount: data['memberCount'] as int?,
+    );
+  }
+}
+
+/// คำขอเข้ากลุ่มส่วนตัวที่รอเจ้าของอนุมัติ
+class GroupJoinRequest {
+  const GroupJoinRequest({
+    required this.uid,
+    required this.displayName,
+    required this.createdAt,
+  });
+
+  final String uid;
+  final String displayName;
+  final DateTime? createdAt;
+
+  factory GroupJoinRequest.fromSnapshot(
+    QueryDocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final data = snapshot.data();
+    final timestamp = data['createdAt'];
+    return GroupJoinRequest(
+      uid: data['uid'] as String? ?? snapshot.id,
+      displayName: data['displayName'] as String? ?? 'สมาชิก',
+      createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
     );
   }
 }
@@ -43,6 +74,9 @@ class GroupPost {
     required this.authorName,
     required this.content,
     required this.createdAt,
+    this.mediaPath,
+    this.mediaType = 'none',
+    this.thumbnailPath,
   });
 
   final String id;
@@ -50,6 +84,9 @@ class GroupPost {
   final String authorName;
   final String content;
   final DateTime? createdAt;
+  final String? mediaPath;
+  final String mediaType;
+  final String? thumbnailPath;
 
   factory GroupPost.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -62,6 +99,9 @@ class GroupPost {
       authorName: data['authorName'] as String? ?? 'สมาชิก',
       content: data['content'] as String? ?? '',
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
+      mediaPath: data['mediaPath'] as String?,
+      mediaType: data['mediaType'] as String? ?? 'none',
+      thumbnailPath: data['thumbnailPath'] as String?,
     );
   }
 }

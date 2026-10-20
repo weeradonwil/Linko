@@ -19,6 +19,7 @@ class ConversationSummary {
     required this.lastMessageSenderId,
     required this.lastMessageAt,
     required this.unreadCount,
+    this.isHidden = false,
   });
   final String id;
   final List<String> participantIds;
@@ -28,6 +29,7 @@ class ConversationSummary {
   final String lastMessageSenderId;
   final DateTime? lastMessageAt;
   final int unreadCount;
+  final bool isHidden;
   String peerId(String uid) =>
       participantIds.firstWhere((id) => id != uid, orElse: () => '');
   String peerName(String uid) {
@@ -58,6 +60,7 @@ class ConversationSummary {
       lastMessageSenderId: d['lastMessageSenderId'] as String? ?? '',
       lastMessageAt: _dateFrom(d['lastMessageAt']),
       unreadCount: (unread[uid] as num?)?.toInt() ?? 0,
+      isHidden: (d['hiddenFor'] as Map?)?[uid] == true,
     );
   }
 }
@@ -71,6 +74,7 @@ class ChatMessage {
     required this.text,
     required this.createdAt,
     this.mediaPath,
+    this.isUnsent = false,
   });
   final String id;
   final String senderId;
@@ -78,6 +82,7 @@ class ChatMessage {
   final String text;
   final DateTime? createdAt;
   final String? mediaPath;
+  final bool isUnsent;
   factory ChatMessage.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> s,
   ) {
@@ -89,6 +94,7 @@ class ChatMessage {
       text: d['text'] as String? ?? '',
       createdAt: _dateFrom(d['createdAt']),
       mediaPath: d['mediaPath'] as String?,
+      isUnsent: d['type'] == 'deleted',
     );
   }
 }

@@ -2,6 +2,8 @@
 
 บันทึกการเปลี่ยนแปลงและผลตรวจของ Profile, Like/Reaction, Follow, Groups และ Comment Notification
 
+> บันทึกก่อนหัวข้อ 2026-10-20 เป็นสถานะ ณ เวลาที่ทำรายการนั้น; หัวข้อ 2026-10-20 คือสถานะล่าสุดของ working tree
+
 ## 2026-10-14 — เพิ่มฟีเจอร์สังคม
 
 ### โครงสร้างที่ตรวจพบก่อนแก้
@@ -51,3 +53,85 @@
 - ยังไม่มี Dislike, รูปโปรไฟล์, Bio, Follow Request/การอนุมัติบัญชีส่วนตัว หรือ Pages
 - Group Feed ปัจจุบันรองรับข้อความเท่านั้น
 - Firestore Rules และ Indexes รุ่นนี้ Deploy แล้ว แต่ยังไม่มีผลทดสอบ permission/runtime กับ Firebase จริง
+
+## 2026-10-20 — ปิดงานฟีเจอร์ที่ค้างจากการตรวจระบบ
+
+### สิ่งที่เพิ่ม/ปรับ
+
+- เชื่อม Forgot Password กับ Firebase Auth และเพิ่ม Bio ในข้อมูลสมาชิก/หน้า Profile
+- เพิ่มโปรไฟล์ส่วนตัว, คำขอติดตาม, อนุมัติ/ปฏิเสธคำขอ และการกรองโพสต์ตามสิทธิ์ผู้ติดตาม
+- เพิ่มสื่อรูป/วิดีโอและ Like/Dislike ใน Group Feed พร้อมจัดการไฟล์เมื่อโพสต์หรือกลุ่มถูกลบ
+- เพิ่มหน้าผู้ดูแลจัดการรายงาน: ปิดรายงาน, ยุติรายงาน หรือเอาโพสต์ออก; ต้องกำหนด Firebase custom claim `admin: true`
+- ปรับ Firestore/Storage Rules และ Firestore index ให้ครอบคลุมฟีเจอร์ด้านบน
+- ปรับสถานะติดตามให้ยังกดดำเนินการได้เมื่อ stream สถานะมีปัญหา พร้อมข้อความชี้ไปที่ Firestore Rules; ไม่ให้ notification failure ยกเลิกความสัมพันธ์ติดตาม
+- เพิ่มปุ่มเปิดห้องแชท 1:1 บนโปรไฟล์ที่ติดตามแล้ว
+- เพิ่มรูปกลุ่มทั้งตอนสร้างและแก้ไข พร้อมแสดงในรายการ/หน้ากลุ่ม และลบไฟล์เก่าเมื่อเปลี่ยนรูปสำเร็จ
+- ปรับการ์ดโปรไฟล์และลดปุ่มกล้องเปลี่ยนรูปให้เล็กลง
+- เก็บ `video_thumbnail` เวอร์ชันที่ปรับ Gradle ไว้ใน `packages/video_thumbnail`; เป็น local path dependency ที่ต้องรวมเมื่อ clone/build
+- อัปเดต README และ Schema ให้แยกฟีเจอร์ที่มีโค้ดออกจากสิ่งที่ยังรอ deploy/ทดสอบ
+
+### ผลตรวจในเครื่อง
+
+| รายการ | ผล |
+|---|---|
+| `flutter test` | ผ่าน 7/7 กรณี |
+| `flutter analyze --no-pub` | 0 errors, 0 warnings; 59 info-level lints |
+| Firestore และ Storage Emulator | โหลด Rules สำเร็จ; เป็นการตรวจ rules ไม่ใช่การทดสอบ flow/สิทธิ์ทุกกรณี |
+| `firestore.indexes.json` | JSON ถูกต้อง |
+
+### ยังต้องทำ
+
+- Deploy `firestore.rules`, `firestore.indexes.json` และ `storage.rules` รุ่นนี้ไปยัง Firebase project เป้าหมาย
+- ทดสอบสิทธิ์และ flow จริงด้วยผู้ใช้หลายบัญชี/โทรศัพท์ โดยเฉพาะ private profile, media, notification และ admin moderation
+- ตั้งค่า App Check, พัฒนา Pages และบันทึกหลักฐาน Pain Point หากเป็นข้อกำหนด
+- ยังไม่มีการ deploy production หรือ push GitHub ในการเปลี่ยนแปลงรอบนี้
+
+## 2026-10-20 — แชทจากโปรไฟล์และรูปประจำกลุ่ม
+
+### เปลี่ยนแปลง
+
+- เพิ่มปุ่มข้อความบนโปรไฟล์เมื่อผู้ชมติดตามบัญชีนั้นแล้ว; เปิดห้องเดิมหรือสร้างห้อง 1:1 ก่อนนำเข้าหน้าแชท
+- ปรับให้ปุ่มติดตามลองทำรายการได้แม้ stream สถานะติดตามมี error และแสดงคำแนะนำเมื่อ Firestore Rules ยังไม่ deploy
+- แยกการบันทึกความสัมพันธ์ติดตามออกจาก notification เพื่อให้ notification failure ไม่ย้อนยกเลิกการติดตาม
+- เพิ่มเลือกรูปกลุ่มตอนสร้าง/แก้ไข, แสดง avatar ในรายการและหน้ากลุ่ม และจัดเก็บไฟล์ใต้ `group_images/`
+- ปรับการ์ดโปรไฟล์/สถิติ และย่อปุ่มเปลี่ยนรูปโปรไฟล์
+- เพิ่ม Firestore/Storage Rules สำหรับ path รูปกลุ่ม; ต้อง deploy Rules ล่าสุดก่อนใช้งานกับ Firebase จริง
+
+### ผลตรวจ
+
+| รายการ | ผล |
+|---|---|
+| `dart format` | ผ่านสำหรับไฟล์ Dart ที่แก้ |
+| `dart analyze lib test` | 0 errors, 0 warnings; 51 info-level lints |
+| `git diff --check` | ผ่าน |
+| `firestore.indexes.json` | JSON ถูกต้อง |
+| `flutter test` | รอบนี้รันไม่ได้: Flutter SDK ต้องเขียน `bin/cache/lockfile` ในตำแหน่งนอก workspace ที่ sandbox ปฏิเสธ |
+| Firestore และ Storage Emulator | เริ่มทำงานและโหลด Rules สำเร็จ; มีเพียง warning ของ Java/การเชื่อมต่อ CLI ที่ไม่กระทบการเริ่ม emulator |
+
+ยังต้องทดสอบ permission/runtime ด้วยสองบัญชี และ deploy `firestore.rules`, `firestore.indexes.json`, `storage.rules` ก่อนทดสอบบนโทรศัพท์จริง
+
+## 2026-10-20 — ปรับ UX/UI และสิทธิ์การเข้าร่วมกลุ่ม
+
+### เปลี่ยนแปลง
+
+- ปรับการ์ดรายการกลุ่มให้แสดงรูป ชื่อ เจ้าของจริงจาก `users`, ประเภทกลุ่ม และจำนวนสมาชิก พร้อมปุ่มตามสถานะสมาชิก/คำขอ
+- ปรับรายละเอียดกลุ่มให้แสดงเจ้าของ ประเภท จำนวนสมาชิก คำอธิบาย และเงื่อนไขเข้าร่วม; เจ้าของเปิดหน้าจัดการและดูคำขอได้
+- กลุ่มสาธารณะเข้าร่วมทันที; กลุ่มส่วนตัวส่งคำขอ ยกเลิกคำขอ และรอเจ้าของหรือผู้ดูแลอนุมัติ/ปฏิเสธ
+- เพิ่ม `memberCount` และ collection `join_requests`; อัปเดต Firestore Rules ให้กันคำขอซ้ำ จำกัดสิทธิ์อนุมัติ และปิดโพสต์/สมาชิกกลุ่มส่วนตัวสำหรับผู้ที่ยังไม่ได้รับอนุมัติ
+- ให้ผู้ใช้ที่ลงชื่อเข้าใช้เห็นรูปกลุ่มในรายการได้; สื่อและโพสต์ส่วนตัวยังคงต้องเป็นสมาชิกที่อนุมัติแล้ว
+- เพิ่มชุดทดสอบ Firestore/Auth Emulator ที่ `tool/group_rules_emulator_test.mjs` และ config แยกที่ `firebase.emulator.test.json`
+
+### ผลตรวจ
+
+| รายการ | ผล |
+|---|---|
+| Firestore/Auth Emulator: เข้ากลุ่มสาธารณะ ออกจากกลุ่ม อัปเดตจำนวนสมาชิก และป้องกันสมาชิกซ้ำ | ผ่าน |
+| Firestore/Auth Emulator: ส่ง/ยกเลิก/ส่งใหม่ ป้องกันคำขอซ้ำ และเจ้าของอนุมัติหรือปฏิเสธ | ผ่าน |
+| Firestore/Auth Emulator: อ่านโพสต์/รายชื่อสมาชิกส่วนตัว | ผ่าน; ก่อนอนุมัติถูกปฏิเสธ และสมาชิกที่อนุมัติแล้วอ่านโพสต์ได้ |
+| Firestore/Auth Emulator: ผู้ใช้ที่ไม่ใช่เจ้าของพยายามอนุมัติ | ผ่าน; ถูกปฏิเสธและจำนวนสมาชิกไม่เปลี่ยน |
+| Storage Emulator | เริ่มทำงานกับ Rules ล่าสุดได้; รอบนี้ยังไม่ได้ทดสอบ upload/download ไฟล์กลุ่ม |
+| `dart analyze` ไฟล์ Group UI/Service/Model | แสดง `No issues found`; process คืน exit code 1 เพราะ Dart พยายามแก้ telemetry file นอก workspace ที่ไม่มีสิทธิ์เขียน |
+| `flutter test` | ยังไม่มีผล: คำสั่งไม่แสดง output เกิน 90 วินาที จึงหยุดไว้; Emulator tests ข้างต้นทำงานครบ |
+| `git diff --check` | ผ่าน; ไม่พบ whitespace error |
+
+ยังไม่ได้ deploy Rules ขึ้น Firebase จริง; ต้อง deploy `firestore.rules` และ `storage.rules` ก่อนให้ผู้ใช้จริงใช้ flow คำขอส่วนตัว

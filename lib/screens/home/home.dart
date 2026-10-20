@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../core/models/post.dart';
@@ -226,50 +227,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// ให้เลือกอีโมจิได้หลายแบบสำหรับโพสต์เดียว
-  Future<void> _chooseReaction(BuildContext context, Post post) async {
-    final reaction = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Wrap(
-            alignment: WrapAlignment.spaceAround,
-            spacing: 12,
-            runSpacing: 12,
-            children: SocialReaction.options
-                .map(
-                  (choice) => InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => Navigator.pop(context, choice.id),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            choice.emoji,
-                            style: const TextStyle(fontSize: 28),
-                          ),
-                          Text(
-                            choice.label,
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-      ),
-    );
-    if (reaction != null && context.mounted) {
-      await _setReaction(context, post, reaction);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // ใช้ชื่อจาก Firebase Auth ถ้าไม่มีชื่อให้แสดงคำว่า "สมาชิก"
@@ -450,9 +407,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (snapshot.hasError) {
                     // สถานะผิดพลาด เช่น อ่าน posts ไม่ได้ตาม Rules
                     debugPrint('Feed stream failed: ${snapshot.error}');
-                    return const _FeedMessage(
+                    return _FeedMessage(
                       icon: Icons.cloud_off_outlined,
                       message: 'โหลดฟีดไม่สำเร็จ กรุณาตรวจการเชื่อมต่อและ Firestore Rules',
+                      details: kDebugMode ? snapshot.error.toString() : null,
+                      onRetry: _restartFeed,
                     );
                   }
 
@@ -497,7 +456,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         reactionService: _reactionService,
                         onReaction: (reaction) =>
                             _setReaction(context, post, reaction),
-                        onChooseReaction: () => _chooseReaction(context, post),
                         onAuthorTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => ProfileScreen(
@@ -613,7 +571,6 @@ class _PostCard extends StatelessWidget {
     required this.currentUid,
     required this.reactionService,
     required this.onReaction,
-    required this.onChooseReaction,
     required this.onAuthorTap,
     required this.onComment,
   });
@@ -626,7 +583,6 @@ class _PostCard extends StatelessWidget {
   final String currentUid;
   final ReactionService reactionService;
   final ValueChanged<String> onReaction;
-  final VoidCallback onChooseReaction;
   final VoidCallback onAuthorTap;
   final VoidCallback onComment;
 
@@ -690,6 +646,8 @@ class _PostCard extends StatelessWidget {
                               Icon(
                                 post.visibility == 'private'
                                     ? Icons.lock_outline_rounded
+                                    : post.visibility == 'followers'
+                                    ? Icons.group_outlined
                                     : Icons.public_rounded,
                                 size: 15,
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -698,6 +656,8 @@ class _PostCard extends StatelessWidget {
                               Text(
                                 post.visibility == 'private'
                                     ? 'ส่วนตัว'
+                                    : post.visibility == 'followers'
+                                    ? 'Followers'
                                     : 'สาธารณะ',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -775,11 +735,19 @@ class _PostCard extends StatelessWidget {
             ],
             if (post.mediaPath != null && post.mediaType == 'image') ...[
               const SizedBox(height: 10),
-              PostMedia(path: post.mediaPath!, type: post.mediaType),
+              PostMedia(
+                path: post.mediaPath!,
+                type: post.mediaType,
+                thumbnailPath: post.thumbnailPath,
+              ),
             ],
             if (post.mediaPath != null && post.mediaType == 'video') ...[
               const SizedBox(height: 10),
-              PostMedia(path: post.mediaPath!, type: post.mediaType),
+              PostMedia(
+                path: post.mediaPath!,
+                type: post.mediaType,
+                thumbnailPath: post.thumbnailPath,
+              ),
             ],
             const SizedBox(height: 14),
             Divider(color: theme.colorScheme.outlineVariant, height: 1),
@@ -791,13 +759,16 @@ class _PostCard extends StatelessWidget {
                 final ownReaction = docs.where((doc) => doc.id == currentUid);
                 final selected = ownReaction.isEmpty
                     ? null
-                    : ownReaction.first.data()['reaction'] as String?;
-                final counts = <String, int>{};
+                    : SocialReaction.byId(
+                        ownReaction.first.data()['reaction'] as String?,
+                      )?.id;
+                final counts = <String, int>{'like': 0, 'dislike': 0};
                 for (final doc in docs) {
                   final value = doc.data()['reaction'] as String?;
-                  if (value != null) {
+                  final normalized = SocialReaction.byId(value)?.id;
+                  if (normalized != null && counts.containsKey(normalized)) {
                     counts.update(
-                      value,
+                      normalized,
                       (count) => count + 1,
                       ifAbsent: () => 1,
                     );
@@ -805,7 +776,7 @@ class _PostCard extends StatelessWidget {
                 }
                 return Column(
                   children: [
-                    if (counts.isNotEmpty)
+                    if (counts.values.any((count) => count > 0))
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Padding(
@@ -813,6 +784,7 @@ class _PostCard extends StatelessWidget {
                           child: Wrap(
                             spacing: 8,
                             children: counts.entries
+                                .where((entry) => entry.value > 0)
                                 .map(
                                   (entry) => Text(
                                     '${SocialReaction.byId(entry.key)?.emoji ?? '👍'} ${entry.value}',
@@ -827,23 +799,26 @@ class _PostCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _PostAction(
-                            icon: selected == null
-                                ? Icons.thumb_up_alt_outlined
-                                : Icons.favorite_rounded,
-                            label: selected == null
-                                ? 'ถูกใจ'
-                                : '${SocialReaction.byId(selected)?.emoji ?? '👍'} ${SocialReaction.byId(selected)?.label ?? 'ถูกใจ'}',
-                            color: selected == null
-                                ? null
-                                : theme.colorScheme.primary,
-                            onPressed: () => onReaction(selected ?? 'like'),
+                            icon: selected == 'like'
+                                ? Icons.thumb_up_alt
+                                : Icons.thumb_up_alt_outlined,
+                            label: 'ถูกใจ',
+                            color: selected == 'like'
+                                ? theme.colorScheme.primary
+                                : null,
+                            onPressed: () => onReaction('like'),
                           ),
                         ),
                         Expanded(
                           child: _PostAction(
-                            icon: Icons.add_reaction_outlined,
-                            label: 'อารมณ์อื่น',
-                            onPressed: onChooseReaction,
+                            icon: selected == 'dislike'
+                                ? Icons.thumb_down_alt
+                                : Icons.thumb_down_alt_outlined,
+                            label: 'ไม่ถูกใจ',
+                            color: selected == 'dislike'
+                                ? theme.colorScheme.error
+                                : null,
+                            onPressed: () => onReaction('dislike'),
                           ),
                         ),
                         Expanded(
@@ -919,10 +894,17 @@ class _PostAction extends StatelessWidget {
 /// สถานะว่าง/ผิดพลาดของฟีด ใช้รูปแบบเดียวกันทั้งสองกรณี
 class _FeedMessage extends StatelessWidget {
   /// Widget กลางสำหรับสถานะว่างหรือผิดพลาด รับไอคอน/ข้อความจากจุดเรียกใช้
-  const _FeedMessage({required this.icon, required this.message});
+  const _FeedMessage({
+    required this.icon,
+    required this.message,
+    this.details,
+    this.onRetry,
+  });
 
   final IconData icon;
   final String message;
+  final String? details;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -935,6 +917,31 @@ class _FeedMessage extends StatelessWidget {
             Icon(icon, size: 42, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
+            if (details != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 112),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    details!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+            ],
+            if (onRetry != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('ลองอีกครั้ง'),
+              ),
+            ],
           ],
         ),
       ),

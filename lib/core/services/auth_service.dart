@@ -45,6 +45,7 @@ class AuthService {
         'uid': user.uid,
         'displayName': cleanName,
         'displayNameLower': cleanName.toLowerCase(),
+        'bio': '',
         'isPrivate': false,
         //คือเวลาที่สร้างโพสต์ ใช้เรียงฟีดและแสดงวัน/เวลา
         'createdAt': FieldValue.serverTimestamp(),
@@ -68,6 +69,10 @@ class AuthService {
       password: password,
     );
   }
+
+  /// ขอให้ Firebase Auth ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลที่ระบุ
+  Future<void> sendPasswordResetEmail(String email) =>
+      _auth.sendPasswordResetEmail(email: email.trim());
 
   /// ออกจากระบบ; AuthGate จะตรวจพบสถานะใหม่และกลับไปหน้าเข้าสู่ระบบ
   Future<void> signOut() => _auth.signOut();

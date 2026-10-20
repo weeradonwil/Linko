@@ -13,6 +13,7 @@ class Post {
     required this.visibility,
     required this.mediaPath,
     this.mediaType = 'none',
+    this.thumbnailPath,
     this.editedAt,
   });
 
@@ -46,6 +47,9 @@ class Post {
   /// ชนิดสื่อที่แนบ: none, image หรือ video
   final String mediaType;
 
+  /// Path ภาพตัวอย่างของวิดีโอ; ใช้แสดงเฟรมก่อนเริ่มเล่นไฟล์จริง
+  final String? thumbnailPath;
+
   /// อ่าน document แล้วสร้าง Post; ใช้เวลาปัจจุบันชั่วคราวหาก serverTimestamp
   /// ยังไม่ได้รับค่ากลับมาในระหว่างบันทึกแบบออฟไลน์
   factory Post.fromSnapshot(DocumentSnapshot<Map<String, dynamic>> snapshot) {
@@ -67,6 +71,7 @@ class Post {
       visibility: data['visibility'] as String? ?? 'public',
       mediaPath: data['mediaPath'] as String?,
       mediaType: data['mediaType'] as String? ?? 'none',
+      thumbnailPath: data['thumbnailPath'] as String?,
     );
   }
 }
