@@ -9,7 +9,6 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/services/group_reaction_service.dart';
 import '../../core/models/social_group.dart';
 import '../../core/services/group_service.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/widgets/post_media.dart';
 import '../profile/profile.dart';
 
@@ -1279,7 +1278,7 @@ class _GroupJoinRequestsSheet extends StatelessWidget {
                           IconButton(
                             tooltip: 'อนุมัติ',
                             onPressed: () => _respond(context, request, true),
-                            color: AppTheme.primary,
+                            color: Theme.of(context).colorScheme.primary,
                             icon: const Icon(Icons.check_circle_outline),
                           ),
                           IconButton(
@@ -1559,15 +1558,16 @@ class _GroupVisibilityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPrivate = visibility == 'private';
+    final colors = Theme.of(context).colorScheme;
     final color = isPrivate
-        ? AppTheme.primary
-        : Theme.of(context).colorScheme.onSurfaceVariant;
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: isPrivate
-            ? AppTheme.primary.withValues(alpha: .12)
-            : Theme.of(context).colorScheme.surfaceContainerHigh,
+            ? colors.primaryContainer
+            : colors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(

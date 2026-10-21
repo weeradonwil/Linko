@@ -3,17 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/services/auth_service.dart';
+import '../../core/widgets/appearance_settings.dart';
 import 'forgot_password.dart';
 
 /// หน้าเดียวสำหรับเข้าสู่ระบบและสมัครสมาชิกด้วยอีเมล
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({this.isDarkMode = false, this.onToggleTheme, super.key});
-
-  /// บอกหน้าจอว่า Theme ที่กำลังแสดงเป็นแบบมืดหรือไม่ เพื่อเลือกไอคอนให้ถูก
-  final bool isDarkMode;
-
-  /// คำสั่งจาก SocialApp; เป็น null ได้ใน Widget test หรือกรณีไม่ต้องการปุ่ม
-  final VoidCallback? onToggleTheme;
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -205,22 +200,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             const Spacer(),
-                            if (widget.onToggleTheme != null)
-                              IconButton(
-                                tooltip: widget.isDarkMode
-                                    ? 'เปลี่ยนเป็นโหมดสว่าง'
-                                    : 'เปลี่ยนเป็นโหมดมืด',
-                                onPressed: widget.onToggleTheme,
-                                iconSize: compact ? 26 : 30,
-                                visualDensity: compact
-                                    ? VisualDensity.compact
-                                    : VisualDensity.standard,
-                                icon: Icon(
-                                  widget.isDarkMode
-                                      ? Icons.light_mode_outlined
-                                      : Icons.dark_mode_outlined,
-                                ),
-                              ),
+                            AppearanceButton(
+                              iconSize: compact ? 26 : 30,
+                              visualDensity: compact
+                                  ? VisualDensity.compact
+                                  : VisualDensity.standard,
+                            ),
                           ],
                         ),
                         SizedBox(

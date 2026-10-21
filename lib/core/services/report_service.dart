@@ -1,7 +1,8 @@
+// อ่านคิวรายงานโพสต์และบันทึกผลการตรวจของผู้ดูแลลง Firestore
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// Reads and closes the moderation queue; Firestore Rules restrict this to admins.
+/// จัดการรายงานค้างตรวจ; สิทธิ์ผู้ดูแลบังคับอีกชั้นด้วย admin claim ใน Firestore Rules
 class ReportService {
   ReportService({FirebaseAuth? auth, FirebaseFirestore? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -10,12 +11,14 @@ class ReportService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
+  /// ฟังเฉพาะรายงานที่ยังเปิดอยู่ โดยให้รายการใหม่แสดงก่อน
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOpenReports() => _firestore
       .collection('post_reports')
       .where('status', isEqualTo: 'open')
       .orderBy('createdAt', descending: true)
       .snapshots();
 
+  /// ปิดรายงานด้วยสถานะที่รองรับ พร้อมผู้ตรวจและเวลาจาก server สำหรับตรวจสอบย้อนหลัง
   Future<void> closeReport({
     required String reportId,
     required String status,

@@ -288,6 +288,7 @@ service cloud.firestore {
           ? participantIds[1]
           : participantIds[0];
       }
+      // ซ่อน/เปิดห้องได้เฉพาะสถานะของตนเอง และต้องเก็บสถานะของคู่สนทนาไว้
       function canChangeOwnHiddenState() {
         let participantIds = resource.data.participantIds;
         let oldHidden = resource.data.get('hiddenFor', {});
@@ -298,6 +299,7 @@ service cloud.firestore {
           newHidden.get(otherParticipantUid(), false) ==
             oldHidden.get(otherParticipantUid(), false);
       }
+      // ล้าง unread และบันทึกเวลาอ่านของตนเอง โดยห้ามแก้สถานะอ่านของอีกฝ่าย
       function canUpdateOwnReadState() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
         let oldUnread = resource.data.get('unreadCounts', {});
@@ -316,6 +318,8 @@ service cloud.firestore {
             oldRead.get(otherParticipantUid(), null) &&
           request.resource.data.updatedAt == request.time;
       }
+      // ตรวจสรุปห้องเทียบกับข้อความใหม่หลัง batch ผ่าน getAfter()
+      // เพื่อให้ข้อความ ตัวอย่างล่าสุด และตัวนับ unread ถูกบันทึกด้วยกันอย่างถูกต้อง
       function canUpdateForNewMessage() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
         let oldUnread = resource.data.get('unreadCounts', {});
@@ -325,8 +329,9 @@ service cloud.firestore {
         let messageId = request.resource.data.get('lastMessageId', '');
         let safeMessageId = messageId is string && messageId.matches('[^/]+') ? messageId : '__invalid_message_id__';
         let messagePath = /databases/$(database)/documents/conversations/$(conversationId)/messages/$(safeMessageId);
-        // Repeated text, message type and sender may keep their previous values.
-        // Require a new message ID and activity state; validate preview values below.
+        // affectedKeys() นับเฉพาะ field ที่ค่าเปลี่ยนจริง ไม่ใช่ทุก field ที่ส่งมา
+        // ข้อความ ชนิด และผู้ส่งซ้ำค่าเดิมได้ จึงไม่บังคับสาม field นี้ใน hasAll()
+        // แต่ยังบังคับ ID/สถานะกิจกรรมใหม่ และตรวจค่าตัวอย่างกับข้อความจริงด้านล่าง
         return changed.hasAll([
             'lastMessageAt', 'lastMessageId', 'unreadCounts', 'lastReadAt',
             'updatedAt'
@@ -367,6 +372,8 @@ service cloud.firestore {
           (!changed.hasAny(['hiddenFor']) || canChangeOwnHiddenState()) &&
           request.resource.data.updatedAt == request.time;
       }
+      // อนุญาตให้เจ้าของยกเลิกข้อความล่าสุด และต้องตรงกับข้อความที่เปลี่ยนเป็น deleted
+      // ไม่บังคับ preview เปลี่ยนค่า เพราะข้อความเดิมอาจเป็นคำว่า "ยกเลิกข้อความนี้" อยู่แล้ว
       function canUpdateForUnsentLatestMessage() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
         let messageId = resource.data.get('lastMessageId', '');
@@ -386,7 +393,7 @@ service cloud.firestore {
       }
       function canUpdateOwnHiddenStateOnly() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
-        // Opening an already-visible room can write the same hidden state again.
+        // เปิดห้องที่มองเห็นอยู่แล้วอาจเขียน hiddenFor=false ซ้ำ จึงไม่บังคับว่าค่าต้องเปลี่ยน
         return changed.hasOnly(['hiddenFor', 'updatedAt']) &&
           canChangeOwnHiddenState() &&
           request.resource.data.updatedAt == request.time;

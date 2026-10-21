@@ -15,15 +15,8 @@ import '../profile/profile.dart';
 import '../groups/groups_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({
-    super.key,
-    required this.user,
-    this.isDarkMode = false,
-    this.onToggleTheme,
-  });
+  const NotificationsScreen({super.key, required this.user});
   final User user;
-  final bool isDarkMode;
-  final VoidCallback? onToggleTheme;
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
@@ -39,11 +32,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } else if (i == 2) {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ChatListScreen(
-            user: widget.user,
-            isDarkMode: widget.isDarkMode,
-            onToggleTheme: widget.onToggleTheme,
-          ),
+          builder: (_) => ChatListScreen(user: widget.user),
         ),
       );
     } else if (i == 1) {
@@ -121,16 +110,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         appBar: LinkoAppBar(
           onSearch: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => SearchExploreScreen(
-                user: widget.user,
-                isDarkMode: widget.isDarkMode,
-                onToggleTheme: widget.onToggleTheme,
-              ),
+              builder: (_) => SearchExploreScreen(user: widget.user),
             ),
           ),
           onNotifications: () => setState(() => _unreadOnly = false),
-          isDarkMode: widget.isDarkMode,
-          onToggleTheme: widget.onToggleTheme,
           onSignOut: () => AuthService().signOut(),
         ),
         body: Column(

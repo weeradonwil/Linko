@@ -9,10 +9,7 @@ import '../login/login.dart';
 /// AuthGate รับแจ้งเตือนจาก Firebase เมื่อสถานะบัญชีเปลี่ยน แล้วเลือกแสดงหน้า Login หรือ Home
 /// ถ้ายังไม่มีบัญชีที่ล็อกอินจะแสดง Login; ถ้ามีบัญชีจะแสดง Home
 class AuthGate extends StatelessWidget {
-  const AuthGate({required this.onToggleTheme, super.key});
-
-  /// ฟังก์ชันจาก SocialApp สำหรับเปลี่ยนและบันทึกโหมดสี
-  final ValueChanged<bool> onToggleTheme;
+  const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -20,9 +17,6 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: AuthService().authStateChanges,
       builder: (context, snapshot) {
-        // ส่งสถานะธีมปัจจุบันและปุ่มสลับธีมให้หน้าที่กำลังแสดง
-        final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-
         // ระหว่างรอ Firebase คืนสถานะ ให้แสดงตัวโหลดแทนหน้าจอว่าง
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -46,16 +40,8 @@ class AuthGate extends StatelessWidget {
 
         // data เป็น User เมื่อเข้าสู่ระบบแล้ว และเป็น null เมื่อยังไม่ได้ล็อกอิน
         final user = snapshot.data;
-        return user == null
-            ? LoginScreen(
-                isDarkMode: isDarkMode,
-                onToggleTheme: () => onToggleTheme(isDarkMode),
-              )
-            : HomeScreen(
-                user: user,
-                isDarkMode: isDarkMode,
-                onToggleTheme: () => onToggleTheme(isDarkMode),
-              );
+        // แต่ละหน้ารับธีมจากส่วนกลาง จึงไม่ส่ง bool ที่อาจค้างหลังสลับโหมด
+        return user == null ? const LoginScreen() : HomeScreen(user: user);
       },
     );
   }

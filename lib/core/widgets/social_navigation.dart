@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 
 import '../services/chat_service.dart';
 import '../services/notification_service.dart';
+import 'appearance_settings.dart';
 
 /// App bar ร่วมที่รวมทางลัดค้นหา แจ้งเตือน เปลี่ยนธีม และออกจากระบบ
 class LinkoAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -11,14 +12,10 @@ class LinkoAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.onSearch,
     required this.onNotifications,
-    this.onToggleTheme,
-    this.isDarkMode = false,
     this.onSignOut,
   });
   final VoidCallback onSearch;
   final VoidCallback onNotifications;
-  final VoidCallback? onToggleTheme;
-  final bool isDarkMode;
   final VoidCallback? onSignOut;
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -57,14 +54,7 @@ class LinkoAppBar extends StatelessWidget implements PreferredSizeWidget {
             icon: Icons.notifications_none_rounded,
           ),
         ),
-        if (onToggleTheme != null)
-          IconButton(
-            tooltip: isDarkMode ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด',
-            onPressed: onToggleTheme,
-            icon: Icon(
-              isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-            ),
-          ),
+        const AppearanceButton(),
         if (onSignOut != null)
           IconButton(
             tooltip: 'ออกจากระบบ',
@@ -242,8 +232,8 @@ class _ChatUnreadCountIconState extends State<ChatUnreadCountIcon> {
                     alignment: Alignment.center,
                     child: Text(
                       count > 99 ? '99+' : count.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: colors.onError,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                       ),
@@ -320,8 +310,8 @@ class _NotificationCountIconState extends State<NotificationCountIcon> {
                     alignment: Alignment.center,
                     child: Text(
                       count > 99 ? '99+' : count.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onError,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                       ),

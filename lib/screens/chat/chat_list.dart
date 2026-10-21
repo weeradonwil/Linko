@@ -15,16 +15,8 @@ import 'chat_room.dart';
 
 /// แสดงรายการห้องจาก Firestore แบบ real-time และเปิดห้องแชทที่เลือก
 class ChatListScreen extends StatelessWidget {
-  const ChatListScreen({
-    super.key,
-    required this.user,
-    this.isDarkMode = false,
-    this.onToggleTheme,
-  });
+  const ChatListScreen({super.key, required this.user});
   final User user;
-  final bool isDarkMode;
-  final VoidCallback? onToggleTheme;
-
   void _go(BuildContext context, int index) {
     switch (index) {
       case 0:
@@ -35,11 +27,7 @@ class ChatListScreen extends StatelessWidget {
       case 3:
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => NotificationsScreen(
-              user: user,
-              isDarkMode: isDarkMode,
-              onToggleTheme: onToggleTheme,
-            ),
+            builder: (_) => NotificationsScreen(user: user),
           ),
         );
         return;
@@ -57,22 +45,10 @@ class ChatListScreen extends StatelessWidget {
   }
 
   void _openSearch(BuildContext context) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => SearchExploreScreen(
-        user: user,
-        isDarkMode: isDarkMode,
-        onToggleTheme: onToggleTheme,
-      ),
-    ),
+    MaterialPageRoute<void>(builder: (_) => SearchExploreScreen(user: user)),
   );
   void _openNotifications(BuildContext context) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => NotificationsScreen(
-        user: user,
-        isDarkMode: isDarkMode,
-        onToggleTheme: onToggleTheme,
-      ),
-    ),
+    MaterialPageRoute<void>(builder: (_) => NotificationsScreen(user: user)),
   );
 
   @override
@@ -83,8 +59,6 @@ class ChatListScreen extends StatelessWidget {
         appBar: LinkoAppBar(
           onSearch: () => _openSearch(context),
           onNotifications: () => _openNotifications(context),
-          isDarkMode: isDarkMode,
-          onToggleTheme: onToggleTheme,
           onSignOut: () => AuthService().signOut(),
         ),
         body: Column(
@@ -123,11 +97,7 @@ class ChatListScreen extends StatelessWidget {
                       action: 'ลองอีกครั้ง',
                       onPressed: () => Navigator.of(context).pushReplacement(
                         MaterialPageRoute<void>(
-                          builder: (_) => ChatListScreen(
-                            user: user,
-                            isDarkMode: isDarkMode,
-                            onToggleTheme: onToggleTheme,
-                          ),
+                          builder: (_) => ChatListScreen(user: user),
                         ),
                       ),
                     );
@@ -207,8 +177,10 @@ class ChatListScreen extends StatelessWidget {
                                             ? '99+'
                                             : conversation.unreadCount
                                                   .toString(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary,
                                           fontSize: 10,
                                           fontWeight: FontWeight.w700,
                                         ),

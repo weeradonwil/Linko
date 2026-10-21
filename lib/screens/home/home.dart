@@ -12,6 +12,7 @@ import '../../core/services/reaction_service.dart';
 import '../../core/models/social_reaction.dart';
 import '../../core/widgets/post_media.dart';
 import '../../core/widgets/social_navigation.dart';
+import '../../core/widgets/appearance_settings.dart';
 import '../create_post/create_post.dart';
 import '../chat/chat_list.dart';
 import '../comments/post_comments_screen.dart';
@@ -22,21 +23,10 @@ import '../groups/groups_screen.dart';
 
 /// หน้าฟีดหลังล็อกอิน: แสดงโพสต์เรียงเวลาและเปิดทางสร้าง/จัดการโพสต์ของตนเอง
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    required this.user,
-    this.isDarkMode = false,
-    this.onToggleTheme,
-    super.key,
-  });
+  const HomeScreen({required this.user, super.key});
 
   /// User ที่ AuthGate ส่งมา จึงเป็นบัญชีที่ล็อกอินอยู่ในขณะนี้
   final User user;
-
-  /// Theme ที่กำลังแสดง ใช้แสดงไอคอน/คำอธิบายของปุ่มสลับ
-  final bool isDarkMode;
-
-  /// ฟังก์ชันจาก SocialApp สำหรับเปลี่ยนและจำโหมดสีที่ผู้ใช้เลือก
-  final VoidCallback? onToggleTheme;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -282,11 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'ค้นหา',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => SearchExploreScreen(
-                    user: widget.user,
-                    isDarkMode: widget.isDarkMode,
-                    onToggleTheme: widget.onToggleTheme,
-                  ),
+                  builder: (_) => SearchExploreScreen(user: widget.user),
                 ),
               ),
               icon: const Icon(Icons.search_rounded),
@@ -295,29 +281,14 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'แจ้งเตือน',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => NotificationsScreen(
-                    user: widget.user,
-                    isDarkMode: widget.isDarkMode,
-                    onToggleTheme: widget.onToggleTheme,
-                  ),
+                  builder: (_) => NotificationsScreen(user: widget.user),
                 ),
               ),
               icon: NotificationCountIcon(
                 icon: Icons.notifications_none_rounded,
               ),
             ),
-            if (widget.onToggleTheme != null)
-              IconButton(
-                tooltip: widget.isDarkMode
-                    ? 'เปลี่ยนเป็นโหมดสว่าง'
-                    : 'เปลี่ยนเป็นโหมดมืด',
-                onPressed: widget.onToggleTheme,
-                icon: Icon(
-                  widget.isDarkMode
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined,
-                ),
-              ),
+            const AppearanceButton(),
             IconButton(
               tooltip: 'ออกจากระบบ',
               onPressed: () async {
@@ -355,7 +326,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           backgroundColor: Theme.of(context)
                               .colorScheme
                               .primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: Theme.of(context)
+                              .colorScheme
+                              .onPrimary,
                           child: Text(title.characters.first.toUpperCase()),
                         ),
                         const SizedBox(width: 14),
@@ -487,21 +460,13 @@ class _HomeScreenState extends State<HomeScreen> {
               if (index == 2) {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => ChatListScreen(
-                      user: widget.user,
-                      isDarkMode: widget.isDarkMode,
-                      onToggleTheme: widget.onToggleTheme,
-                    ),
+                    builder: (_) => ChatListScreen(user: widget.user),
                   ),
                 );
               } else if (index == 3) {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => NotificationsScreen(
-                      user: widget.user,
-                      isDarkMode: widget.isDarkMode,
-                      onToggleTheme: widget.onToggleTheme,
-                    ),
+                    builder: (_) => NotificationsScreen(user: widget.user),
                   ),
                 );
               } else if (index == 1) {

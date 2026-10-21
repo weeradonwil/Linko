@@ -8,7 +8,6 @@ import '../../core/models/post.dart';
 import '../../core/services/chat_service.dart';
 import '../../core/services/follow_service.dart';
 import '../../core/services/post_service.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/widgets/post_media.dart';
 import '../admin/admin_reports_screen.dart';
 import '../chat/chat_room.dart';
@@ -157,8 +156,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showPeople(String title, bool followers) {
-    showModalBottomSheet<void>(
+  Future<void> _showPeople(String title, bool followers) async {
+    // รับ UID ที่แตะกลับจากแผงรายชื่อ ปิดแผงก่อนเปิดโปรไฟล์ด้วยบัญชีที่ล็อกอินอยู่
+    final selectedUid = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _PeopleSheet(
@@ -167,6 +167,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? _followService.watchFollowers(_profileUid)
             : _followService.watchFollowing(_profileUid),
         firestore: _firestore,
+      ),
+    );
+    if (!mounted || selectedUid == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ProfileScreen(user: widget.user, profileUid: selectedUid),
       ),
     );
   }
@@ -285,8 +292,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               avatarPath: data['avatarPath'] as String?,
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: AppTheme.primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: colors.primary,
+                              foregroundColor: colors.onPrimary,
                               minimumSize: const Size.fromHeight(52),
                             ),
                             icon: const Icon(Icons.edit_outlined),
@@ -300,9 +307,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(
                             Icons.lock_outline_rounded,
-                            color: isPrivate
-                                ? AppTheme.primary
-                                : colors.outline,
+                            color: isPrivate ? colors.primary : colors.outline,
                           ),
                           title: const Text('บัญชีส่วนตัว'),
                           subtitle: Text(
@@ -313,19 +318,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           trailing: Switch.adaptive(
                             value: isPrivate,
                             onChanged: _privacyBusy ? null : _togglePrivacy,
-                            thumbColor: WidgetStateProperty.resolveWith<Color?>(
-                              (states) => states.contains(WidgetState.selected)
-                                  ? AppTheme.primary
-                                  : Colors.white,
-                            ),
-                            trackColor: WidgetStateProperty.resolveWith<Color?>(
-                              (states) => states.contains(WidgetState.selected)
-                                  ? AppTheme.primary.withValues(alpha: .32)
-                                  : colors.outlineVariant,
-                            ),
-                            trackOutlineColor: WidgetStateProperty.all(
-                              Colors.transparent,
-                            ),
+                            // ให้ Material เลือกคู่สี thumb/track ตามธีม รวมสถานะปิดใช้งาน
                           ),
                         ),
                         if (isPrivate)
@@ -568,6 +561,7 @@ class _PeopleCount extends StatelessWidget {
       );
 }
 
+/// ใช้ร่วมกันทั้งผู้ติดตาม/กำลังติดตาม ส่ง UID ของแถวที่แตะกลับไปเปิดโปรไฟล์
 class _PeopleSheet extends StatelessWidget {
   const _PeopleSheet({
     required this.title,
@@ -592,6 +586,9 @@ class _PeopleSheet extends StatelessWidget {
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: stream,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('โหลดรายชื่อไม่สำเร็จ'));
+                }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -613,13 +610,18 @@ class _PeopleSheet extends StatelessWidget {
                         final person =
                             personSnapshot.data?.data() ??
                             const <String, dynamic>{};
-                        final name =
-                            person['displayName'] as String? ?? 'สมาชิก';
+                        final displayName =
+                            (person['displayName'] as String?)?.trim() ?? '';
+                        final name = displayName.isEmpty
+                            ? 'สมาชิก'
+                            : displayName;
                         return ListTile(
                           leading: CircleAvatar(
                             child: Text(name.characters.first.toUpperCase()),
                           ),
                           title: Text(name),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => Navigator.of(context).pop(uid),
                         );
                       },
                     );

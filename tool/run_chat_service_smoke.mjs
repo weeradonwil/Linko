@@ -1,10 +1,12 @@
-// Own Flutter server and headless Chrome; all chat data stays in local emulators.
+// เปิด Flutter test entry point และ Chrome แบบ headless เพื่อทดสอบ ChatService ตัวจริง
+// เก็บผล JSON/log ใน build/chat_diagnostics และปิดเฉพาะ process ที่สคริปต์นี้สร้าง
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+// ให้เริ่มผ่าน emulators:exec ของ demo-linko เพื่อรับรองว่าชี้ Auth/Firestore ไปเครื่องนี้
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-linko');
 assert.match(process.env.FIRESTORE_EMULATOR_HOST ?? '', /^(127\.0\.0\.1|localhost):8080$/);
 assert.match(process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '', /^(127\.0\.0\.1|localhost):9099$/);
@@ -19,6 +21,7 @@ let ws;
 let nextId = 0;
 const pending = new Map();
 
+// รอ server/ผลทดสอบพร้อมภายในเวลาที่กำหนด โดยตรวจสถานะซ้ำแทนการเดาเวลาเปิดโปรแกรม
 async function waitFor(action, timeoutMs) {
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
@@ -29,6 +32,7 @@ async function waitFor(action, timeoutMs) {
   throw new Error('Timed out waiting for the Flutter/Chrome test process. See chat_service_browser.log.');
 }
 
+// จับคู่คำสั่ง Chrome DevTools กับผลตอบกลับด้วย ID และยกเลิกการรอเมื่อหมดเวลา
 function command(method, params = {}) {
   const id = ++nextId;
   return new Promise((resolve, reject) => {
@@ -39,6 +43,7 @@ function command(method, params = {}) {
 }
 
 try {
+  // ใช้ web-server แบบ release เพื่อให้ Chrome โหลด main.dart.js ได้โดยไม่ใช้ debug extension
   const flutterArgs = [
     'run', '--release', '--no-pub', '-d', 'web-server', '--target=tool/chat_service_smoke.dart',
     '--web-hostname=127.0.0.1', '--web-port=18090',
@@ -53,6 +58,7 @@ try {
     return response.ok && !response.headers.get('content-type')?.includes('text/html');
   }, 180000);
   console.log('Flutter service-check page ready; starting isolated headless Chrome.');
+  // ใช้โปรไฟล์ชั่วคราวแยก เพื่อไม่ใช้เซสชันหรือการตั้งค่าของ Chrome ที่ผู้ใช้เปิดอยู่
   chrome = spawn(process.env.CHROME_EXECUTABLE, [
     '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
     '--remote-debugging-port=18091', '--user-data-dir=' + profile, 'http://127.0.0.1:18090/',
@@ -76,6 +82,7 @@ try {
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   await command('Runtime.enable');
   await command('Log.enable');
+  // อ่านค่าที่หน้า Flutter ส่งออกหลังจบทุกกรณี แล้วให้ process ล้มเหลวหากมีกรณีใดไม่ผ่าน
   const results = await waitFor(async () => {
     const response = await command('Runtime.evaluate', {
       expression: 'globalThis.linkoChatTestResults ?? null', returnByValue: true,
@@ -90,6 +97,7 @@ try {
   console.error(error.message);
   process.exitCode = 1;
 } finally {
+  // ขอปิดตามปกติก่อน; หากยังค้างให้หยุดเฉพาะ process tree ที่สคริปต์นี้เป็นผู้เปิด
   if (ws?.readyState === WebSocket.OPEN) {
     await command('Browser.close').catch(() => {});
     ws.close();

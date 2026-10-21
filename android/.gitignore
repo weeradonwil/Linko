@@ -1,5 +1,7 @@
 gradle-wrapper.jar
 /.gradle
+# แคชที่ Kotlin/Gradle สร้างระหว่าง build ไม่ใช่ซอร์สของแอป
+/.kotlin/
 /captures/
 /gradlew
 /gradlew.bat

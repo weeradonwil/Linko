@@ -1,7 +1,8 @@
+// จัดการ Like/Dislike ของโพสต์ในกลุ่ม โดยเก็บหนึ่งรายการต่อสมาชิกต่อโพสต์
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// Stores one Like or Dislike per member on each group post.
+/// อ่านและเปลี่ยนปฏิกิริยาใน groups/{groupId}/posts/{postId}/reactions/{uid}
 class GroupReactionService {
   GroupReactionService({FirebaseAuth? auth, FirebaseFirestore? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -22,11 +23,13 @@ class GroupReactionService {
       .doc(postId)
       .collection('reactions');
 
+  /// ฟังรายการล่าสุดให้หน้าจอคำนวณจำนวนและแสดงปฏิกิริยาของผู้ใช้
   Stream<QuerySnapshot<Map<String, dynamic>>> watchReactions(
     String groupId,
     String postId,
   ) => _reactions(groupId, postId).snapshots();
 
+  /// กดแบบเดิมเพื่อลบ หรือกดอีกแบบเพื่อแทนค่า โดยใช้ UID เป็น ID ป้องกันรายการซ้ำ
   Future<void> toggleReaction({
     required String groupId,
     required String postId,

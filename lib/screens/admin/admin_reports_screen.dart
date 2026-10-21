@@ -1,3 +1,4 @@
+// หน้าผู้ดูแลสำหรับตรวจรายงานโพสต์ ปิดรายงาน หรือนำโพสต์ที่ละเมิดออก
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -5,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/report_service.dart';
 
-/// Lets an account with the Firebase admin claim review and close post reports.
+/// เปิดคิวรายงานให้บัญชีที่มี Firebase custom claim admin=true
 class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({required this.user, super.key});
 
@@ -26,6 +27,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     _hasAdminClaim = _readAdminClaim();
   }
 
+  // รีเฟรช token เพื่ออ่านสิทธิ์ล่าสุด; Firestore Rules ยังเป็นผู้บังคับสิทธิ์การอ่าน/เขียนจริง
   Future<bool> _readAdminClaim() async {
     final token = await widget.user.getIdTokenResult(true);
     return token.claims?['admin'] == true;
@@ -42,6 +44,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     }
   }
 
+  // ขอคำยืนยันก่อนลบ และปิดรายงานเป็น removed หลังลบโพสต์สำเร็จเท่านั้น
   Future<void> _removePost(String reportId, String postId) async {
     final confirmed = await showDialog<bool>(
       context: context,

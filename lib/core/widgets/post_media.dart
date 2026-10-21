@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../theme/app_theme.dart';
+
 /// แสดงไฟล์ของโพสต์โดยอ่านผ่าน Storage SDK แทน download URL
 /// ทุกการอ่านจึงถูกตรวจด้วย Firebase Storage Rules รวมถึงไฟล์ของโพสต์ส่วนตัว
 class PostMedia extends StatelessWidget {
@@ -370,8 +372,11 @@ class _FullScreenVideoState extends State<_FullScreenVideo> {
               child: VideoProgressIndicator(
                 controller,
                 allowScrubbing: true,
-                colors: const VideoProgressColors(
-                  playedColor: Color(0xFFFF4D6D),
+                // แถบเวลาตามสีที่เลือก; สีขาวโปร่งแสงยังใช้กับพื้นวิดีโอสีดำ
+                colors: VideoProgressColors(
+                  playedColor: AppTheme.mediaProgressColor(
+                    Theme.of(context).colorScheme,
+                  ),
                   bufferedColor: Colors.white54,
                   backgroundColor: Colors.white24,
                 ),

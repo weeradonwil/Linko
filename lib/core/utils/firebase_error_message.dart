@@ -8,11 +8,13 @@ String firebaseErrorMessage(Object? error, {required String action}) {
     switch (error.code) {
       case 'permission-denied':
       case 'unauthorized':
+        // Firestore และ Storage ใช้รหัสสิทธิ์ต่างกัน; รหัสนี้ยังบอกไม่ได้ว่า deploy ขาด
         return '$actionไม่สำเร็จ: ไม่มีสิทธิ์เข้าถึงข้อมูลนี้';
       case 'failed-precondition':
         return '$actionไม่สำเร็จ: เงื่อนไข Firestore ยังไม่พร้อม (ตรวจสอบ index ที่ต้องใช้)';
       case 'unavailable':
       case 'retry-limit-exceeded':
+        // รวมกรณี Storage ลองเชื่อมต่อซ้ำจนครบกำหนดไว้ในกลุ่มปัญหาเครือข่าย
         return '$actionไม่สำเร็จ: เชื่อมต่อ Firebase ไม่ได้ กรุณาตรวจอินเทอร์เน็ต';
       case 'unauthenticated':
         return '$actionไม่สำเร็จ: กรุณาเข้าสู่ระบบใหม่';

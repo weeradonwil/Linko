@@ -18,15 +18,8 @@ import '../profile/profile.dart';
 import '../groups/groups_screen.dart';
 
 class SearchExploreScreen extends StatefulWidget {
-  const SearchExploreScreen({
-    super.key,
-    required this.user,
-    this.isDarkMode = false,
-    this.onToggleTheme,
-  });
+  const SearchExploreScreen({super.key, required this.user});
   final User user;
-  final bool isDarkMode;
-  final VoidCallback? onToggleTheme;
   @override
   State<SearchExploreScreen> createState() => _SearchExploreScreenState();
 }
@@ -148,21 +141,13 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     } else if (i == 2) {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ChatListScreen(
-            user: widget.user,
-            isDarkMode: widget.isDarkMode,
-            onToggleTheme: widget.onToggleTheme,
-          ),
+          builder: (_) => ChatListScreen(user: widget.user),
         ),
       );
     } else if (i == 3) {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => NotificationsScreen(
-            user: widget.user,
-            isDarkMode: widget.isDarkMode,
-            onToggleTheme: widget.onToggleTheme,
-          ),
+          builder: (_) => NotificationsScreen(user: widget.user),
         ),
       );
     } else if (i == 1) {
@@ -220,15 +205,9 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           onSearch: () => FocusScope.of(context).requestFocus(_searchFocus),
           onNotifications: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => NotificationsScreen(
-                user: widget.user,
-                isDarkMode: widget.isDarkMode,
-                onToggleTheme: widget.onToggleTheme,
-              ),
+              builder: (_) => NotificationsScreen(user: widget.user),
             ),
           ),
-          isDarkMode: widget.isDarkMode,
-          onToggleTheme: widget.onToggleTheme,
           onSignOut: () => AuthService().signOut(),
         ),
         body: Column(

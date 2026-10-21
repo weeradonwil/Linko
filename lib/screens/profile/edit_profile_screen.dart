@@ -7,8 +7,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../core/theme/app_theme.dart';
-
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({
     super.key,
@@ -247,17 +245,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           FilledButton.icon(
             onPressed: _saving ? null : _saveProfile,
             style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
+              backgroundColor: colors.primary,
+              foregroundColor: colors.onPrimary,
               minimumSize: const Size.fromHeight(52),
             ),
             icon: _saving
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white,
+                      color: colors.onPrimary,
                     ),
                   )
                 : const Icon(Icons.save_outlined),

@@ -1,4 +1,4 @@
-// Exercises group access and join workflows against the local Firebase emulators.
+// ทดสอบ Rules ของกลุ่มกับ Firebase Emulator: เข้าร่วม ขออนุมัติ และสิทธิ์อ่านกลุ่มส่วนตัว
 // Start with: firebase --config firebase.emulator.test.json emulators:exec --only auth,firestore,storage --project demo-linko "node tool/group_rules_emulator_test.mjs"
 
 const projectId = process.env.GCLOUD_PROJECT ?? 'demo-linko';
@@ -11,6 +11,7 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+// สร้างบัญชี Emulator พร้อม ID token เพื่อทดสอบสิทธิ์เจ้าของ สมาชิก และผู้ที่ยังไม่เข้ากลุ่ม
 async function createUser() {
   const response = await fetch(
     `${authBase}/accounts:signUp?key=emulator-api-key`,
@@ -25,6 +26,7 @@ async function createUser() {
   return { uid: body.localId, token: body.idToken };
 }
 
+// เก็บทั้ง HTTP status และ response body เพื่อแยกกรณีที่ต้องอนุญาตออกจากกรณีที่ต้องปฏิเสธ
 async function firestoreRequest(path, { token, method = 'GET', body } = {}) {
   const response = await fetch(`${firestoreBase}${path}`, {
     method,

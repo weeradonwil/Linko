@@ -10,6 +10,7 @@ import '../models/chat_models.dart';
 
 /// รวมการอ่าน/เขียนห้องแชท ข้อความ และไฟล์แนบของผู้ใช้ที่ล็อกอิน
 class ChatService {
+  /// รับ Firebase instance แยกได้ เพื่อทดสอบหลายบัญชีกับ Emulator โดยใช้ service ตัวจริง
   ChatService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
@@ -78,6 +79,7 @@ class ChatService {
     final ref = _conversations.doc(id);
     await _firestore.runTransaction((tx) async {
       if ((await tx.get(ref)).exists) {
+        // เปิดห้องเดิมด้วย false ซ้ำได้; Rules ต้องไม่บังคับว่า hiddenFor ต้องเปลี่ยนค่า
         tx.update(ref, {
           FieldPath(['hiddenFor', uid]): false,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -146,7 +148,7 @@ class ChatService {
       try {
         await _deleteMedia(message.mediaPath!);
       } catch (_) {
-        // A cleanup issue must not undo the successful message cancellation.
+        // ยกเลิกข้อความสำเร็จแล้ว แม้ลบไฟล์แนบไม่สำเร็จก็ไม่ย้อนผลการยกเลิก
       }
     }
   }
@@ -161,7 +163,7 @@ class ChatService {
     });
   }
 
-  /// บันทึกข้อความ อัปเดตตัวอย่างห้อง และสร้างแจ้งเตือนใน batch เดียว
+  /// บันทึกข้อความ ตัวอย่างห้อง และตัวนับยังไม่อ่านใน batch เดียว
   /// หาก batch ล้มเหลว จะลบไฟล์ที่อัปโหลดค้างไว้เพื่อลดไฟล์กำพร้า
   Future<void> sendMessage({
     required String conversationId,
@@ -198,7 +200,8 @@ class ChatService {
       if (path != null) 'mediaPath': path,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    // Chat activity is surfaced by the conversation unread count, not the social notification feed.
+    // แสดงกิจกรรมแชทผ่าน unread ของห้อง ไม่สร้างรายการ social notification
+    // คนเดิมส่งต่อหรือส่งข้อความซ้ำได้; Rules ตรวจค่าจริง ไม่บังคับให้ทุก field ต่างจากเดิม
     batch.update(ref, {
       'lastMessageText': preview,
       'lastMessageType': type,
@@ -257,6 +260,7 @@ class ChatService {
     return (path: path, type: type);
   }
 
+  /// ลบไฟล์แนบที่ไม่ใช้งานแล้ว; ถ้าไฟล์ถูกลบไปก่อนถือว่างานสำเร็จ
   Future<void> _deleteMedia(String path) async {
     try {
       await _storage.ref(path).delete();
@@ -266,6 +270,7 @@ class ChatService {
   }
 }
 
+/// ข้อผิดพลาดตามเงื่อนไขของแชทที่เตรียมข้อความสำหรับแสดงให้ผู้ใช้แล้ว
 class ChatServiceException implements Exception {
   const ChatServiceException(this.message);
   final String message;

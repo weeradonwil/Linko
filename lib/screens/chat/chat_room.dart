@@ -56,6 +56,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
+  /// ตรวจ ID ข้อความขาเข้าล่าสุด เพื่อลดการเขียนสถานะอ่านซ้ำจาก snapshot เดิม
   void _markNewIncomingMessagesRead(List<ChatMessage> messages) {
     ChatMessage? latestIncoming;
     for (final message in messages.reversed) {
@@ -78,6 +79,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
+  /// อัปเดตสถานะอ่านเบื้องหลัง; หากล้มเหลวให้เก็บ log โดยไม่รบกวนการพิมพ์
   Future<void> _markRead() async {
     try {
       await _service.markRead(widget.conversationId);
@@ -91,6 +93,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
+  /// รวมการจัดการ error: เก็บรหัสจริงใน debug และแสดงข้อความตามสาเหตุเมื่อจำเป็น
+  /// notify=false ใช้กับงานเบื้องหลังและ stream ที่มีข้อความผิดพลาดแสดงในหน้าจออยู่แล้ว
   void _handleChatError(
     Object error,
     StackTrace stackTrace, {
@@ -98,7 +102,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     bool notify = true,
   }) {
     if (kDebugMode) {
-      // Log the real code without message content, account IDs or media paths.
+      // บันทึกเฉพาะ plugin/code และ stack โดยไม่ใส่เนื้อหาแชท UID หรือ path ไฟล์
       final code = error is FirebaseException
           ? '${error.plugin}/${error.code}'
           : error.runtimeType.toString();
@@ -403,6 +407,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 }
 
+/// แสดงข้อความ/สื่อ เวลา และสถานะยกเลิก; กดค้างยกเลิกได้เฉพาะข้อความของตนเอง
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     super.key,
@@ -473,7 +478,7 @@ class _MessageBubble extends StatelessWidget {
                               'ยกเลิกข้อความนี้',
                               style: TextStyle(
                                 color: isMine
-                                    ? Colors.white70
+                                    ? colors.onPrimary
                                     : colors.onSurfaceVariant,
                                 fontStyle: FontStyle.italic,
                               ),
@@ -503,7 +508,7 @@ class _MessageBubble extends StatelessWidget {
                                     message.text,
                                     style: TextStyle(
                                       color: isMine
-                                          ? Colors.white
+                                          ? colors.onPrimary
                                           : colors.onSurface,
                                       fontSize: 16,
                                     ),

@@ -1,4 +1,5 @@
-// Flutter browser entry point for real ChatService checks against emulators only.
+// จุดเริ่ม Flutter สำหรับทดสอบ ChatService ตัวจริงบนเบราว์เซอร์กับ Emulator ในเครื่อง
+// แยกจาก lib/main.dart และใช้ demo-linko เท่านั้น; ไม่อัปโหลดไฟล์แนบจริง
 import 'dart:js_interop';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:social_app/core/models/chat_models.dart';
 import 'package:social_app/core/services/chat_service.dart';
 
+// ส่งผลกลับให้ run_chat_service_smoke.mjs อ่านผ่าน Chrome DevTools
 @JS('globalThis.linkoChatTestResults')
 external set _browserResults(JSAny? value);
 
@@ -20,6 +22,7 @@ const _options = FirebaseOptions(
   storageBucket: 'demo-linko.appspot.com',
 );
 
+/// รวม Firebase instance ของบัญชีหนึ่ง เพื่อทดสอบผู้ส่งและผู้รับในเบราว์เซอร์เดียวกัน
 class _Account {
   _Account(this.app, this.auth, this.db, this.service);
   final FirebaseApp app;
@@ -35,6 +38,7 @@ void _check(bool condition, String message) {
   }
 }
 
+/// ยืนยันว่า Rules ปฏิเสธด้วย permission-denied จริง ไม่ใช่ผ่านเพราะ error ชนิดอื่น
 Future<void> _permissionDenied(Future<dynamic> operation) async {
   try {
     await operation;
@@ -54,6 +58,7 @@ Future<void> main() async {
   late _Account bob;
   late String room;
 
+  // สร้าง Firebase app แยกต่อบัญชี ปิด cache และชี้ SDK ทุกตัวไป Emulator ก่อนใช้งาน
   Future<_Account> createAccount(String name) async {
     _check(_options.projectId == 'demo-linko', 'Emulator project is required');
     final app = await Firebase.initializeApp(
@@ -80,6 +85,7 @@ Future<void> main() async {
     return account;
   }
 
+  // รอฝั่งผู้รับเห็นข้อความครบและมีเวลาจาก server เพื่อไม่ใช้เพียงผลเขียนใน cache ผู้ส่ง
   Future<List<ChatMessage>> received(int count) => bob.service
       .watchMessages(room)
       .firstWhere(
@@ -96,6 +102,7 @@ Future<void> main() async {
               .get(const GetOptions(source: Source.server)))
           .data()!;
 
+  // แต่ละกรณีเรียก public API ของ ChatService รวม flow ที่ทำให้ Rules เดิมล้มเหลว
   final scenarios = <String, Future<void> Function()>{
     'consecutive and identical text received by peer': () async {
       for (final text in ['First', 'Second', 'Second']) {
@@ -260,6 +267,7 @@ Future<void> main() async {
     },
   };
 
+  // แยกบัญชี/ห้องใหม่ทุกกรณี และปิด instance หลังจบเพื่อไม่ให้สถานะข้ามกรณีทดสอบ
   for (final entry in scenarios.entries) {
     final result = <String, Object?>{'name': entry.key, 'passed': false};
     try {

@@ -1,4 +1,5 @@
-// Run only against local emulators; this script refuses production projects/hosts.
+// ทดสอบ Firestore Rules ของแชทผ่าน REST: ส่งต่อ/ส่งซ้ำ อ่าน เปิดห้อง และยกเลิกข้อความ
+// รับเฉพาะ demo project และ Emulator ในเครื่อง ไม่ส่งข้อมูลไป Firebase จริง
 // firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_emulator_test.mjs --diagnose"
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -7,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 const projectId = process.env.GCLOUD_PROJECT ?? 'demo-linko';
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
+// ตรวจปลายทางก่อนสร้างบัญชีหรือเขียนข้อมูลใด ๆ
 assert(projectId.startsWith('demo-'), 'A demo- project is required.');
 for (const host of [firestoreHost, authHost]) {
   assert(/^(127\.0\.0\.1|localhost):\d+$/.test(host), 'Only loopback emulators are allowed.');
@@ -14,6 +16,7 @@ for (const host of [firestoreHost, authHost]) {
 const root = `projects/${projectId}/databases/(default)/documents`;
 const base = `http://${firestoreHost}/v1/${root}`;
 const diagnostic = process.argv.includes('--diagnose');
+// ตัวช่วยเข้ารหัสค่าและ serverTimestamp ให้ตรงรูปแบบ Firestore REST API
 const s = (value) => ({ stringValue: value });
 const n = (value) => ({ integerValue: String(value) });
 const b = (value) => ({ booleanValue: value });
@@ -44,6 +47,7 @@ function ok(result, context) {
   assert.equal(result.status, 200, `${context}: ${JSON.stringify(result.data)}`);
 }
 
+// สร้างบัญชี Emulator พร้อม ID token เพื่อทดสอบผ่าน Rules ในสิทธิ์ของแต่ละคน
 async function user() {
   const response = await request(`http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=emulator-only`, {
     method: 'POST', body: { returnSecureToken: true },
@@ -52,6 +56,7 @@ async function user() {
   return { uid: response.data.localId, token: response.data.idToken };
 }
 
+// เปลี่ยน Rules เฉพาะ Emulator เพื่อเทียบรุ่นก่อนแก้กับไฟล์ปัจจุบัน
 async function loadRules(content) {
   const result = await request(`http://${firestoreHost}/emulator/v1/projects/${projectId}:securityRules`, {
     method: 'PUT', token: 'owner', body: { rules: { files: [{ name: 'firestore.rules', content }] } },
@@ -85,6 +90,7 @@ function conversationFields({ previousType, previousSender = alice, previousText
   return fields;
 }
 
+// เตรียมสถานะห้องด้วย owner token เฉพาะข้อมูลตั้งต้น; คำสั่งที่ทดสอบใช้ token สมาชิก
 async function fixture(options = {}) {
   const id = `chat_diagnostic_${++sequence}`;
   const writes = [{ update: { name: `${root}/conversations/${id}`, fields: conversationFields(options) } }];
@@ -99,7 +105,8 @@ async function fixture(options = {}) {
   return id;
 }
 
-// Same fields/transforms as ChatService.sendMessage (no Storage or real network).
+// จำลอง field/transform ของ ChatService.sendMessage รวมข้อมูลปลอมสำหรับทดสอบการปฏิเสธ
+// กรณีสื่อทดสอบเฉพาะ metadata ของข้อความ ไม่ได้อัปโหลด/ดาวน์โหลดไฟล์จริง
 function sendWrites(id, sender = alice, { text = 'New message', type = 'text', spoofSender, increment = 1,
   changePeerRead = false, changeParticipants = false, omitMessage = false } = {}) {
   const peer = sender.uid === alice.uid ? bob : alice;
@@ -134,6 +141,7 @@ function sendWrites(id, sender = alice, { text = 'New message', type = 'text', s
 }
 
 const reports = [];
+// ตรวจทั้งรายการที่ควรผ่านและควรถูกปฏิเสธ พร้อมยืนยันว่า batch ไม่บันทึกค้างบางส่วน
 async function suite(label, rules, oldClient = false) {
   legacy = oldClient;
   await loadRules(rules);
@@ -151,7 +159,7 @@ async function suite(label, rules, oldClient = false) {
     await check(name, async () => {
       const result = await commit(sender.token, writes);
       const savedMessage = await read('owner', `conversations/${id}/messages/${messageId}`);
-      // A denied batch must not leave an orphan message behind.
+      // เมื่อ Rules ปฏิเสธ batch ต้องไม่เหลือข้อความที่หลุดบันทึกไว้เพียงอย่างเดียว
       assert.equal(savedMessage.status, result.status === 200 ? 200 : 404, `${name}: batch atomicity`);
       if (result.status === 200) {
         const room = await read('owner', `conversations/${id}`);
@@ -231,6 +239,7 @@ async function suite(label, rules, oldClient = false) {
 
 const current = await readFile('firestore.rules', 'utf8');
 if (diagnostic) {
+  // ใช้ Rules และรูปแบบข้อมูลของ client ตาม commit นั้น เพื่อเทียบสาเหตุได้ตรงรุ่น
   const brokenRules = execFileSync('git', ['show', '7f50d79:firestore.rules'], { encoding: 'utf8' });
   await suite('regression in commit 7f50d79', brokenRules);
   const oldRules = execFileSync('git', ['show', '778fe86:firestore.rules'], { encoding: 'utf8' });
@@ -239,7 +248,7 @@ if (diagnostic) {
 await suite('current working tree', current);
 await mkdir('build/chat_diagnostics', { recursive: true });
 await writeFile('build/chat_diagnostics/results.json', JSON.stringify({ projectId, reports }, null, 2));
-// Restore emulator's original rules even in diagnostic mode.
+// เมื่อจบการเทียบรุ่น ให้ Emulator กลับมาใช้ Rules จาก working tree ปัจจุบัน
 await loadRules(current);
 const selected = reports.at(-1);
 process.exitCode = selected.results.some((r) => !r.passed) ? 1 : 0;
