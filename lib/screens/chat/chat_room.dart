@@ -2,11 +2,13 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/chat_models.dart';
 import '../../core/services/chat_service.dart';
+import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/post_media.dart';
 
 class ChatRoomScreen extends StatefulWidget {
@@ -43,7 +45,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     _messages = _service.watchMessages(widget.conversationId);
     unawaited(_markRead());
     // ทำเครื่องหมายว่าอ่านแล้วเฉพาะเมื่อมีข้อความใหม่ ไม่เขียนซ้ำทุก snapshot
-    _readSubscription = _messages.listen(_markNewIncomingMessagesRead);
+    _readSubscription = _messages.listen(
+      _markNewIncomingMessagesRead,
+      onError: (Object error, StackTrace stackTrace) => _handleChatError(
+        error,
+        stackTrace,
+        action: 'โหลดข้อความ',
+        notify: false,
+      ),
+    );
   }
 
   void _markNewIncomingMessagesRead(List<ChatMessage> messages) {
@@ -71,7 +81,41 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   Future<void> _markRead() async {
     try {
       await _service.markRead(widget.conversationId);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      _handleChatError(
+        error,
+        stackTrace,
+        action: 'อัปเดตการอ่าน',
+        notify: false,
+      );
+    }
+  }
+
+  void _handleChatError(
+    Object error,
+    StackTrace stackTrace, {
+    required String action,
+    bool notify = true,
+  }) {
+    if (kDebugMode) {
+      // Log the real code without message content, account IDs or media paths.
+      final code = error is FirebaseException
+          ? '${error.plugin}/${error.code}'
+          : error.runtimeType.toString();
+      debugPrint('Chat: $action failed [$code]');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    if (notify && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is ChatServiceException
+                ? error.message
+                : firebaseErrorMessage(error, action: action),
+          ),
+        ),
+      );
+    }
   }
 
   /// ขอให้ผู้ใช้ยืนยันก่อนแทนข้อความที่ส่งแล้วด้วยสถานะยกเลิก
@@ -99,12 +143,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         conversationId: widget.conversationId,
         message: message,
       );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ยกเลิกข้อความไม่สำเร็จ: $error')),
-        );
-      }
+    } catch (error, stackTrace) {
+      _handleChatError(error, stackTrace, action: 'ยกเลิกข้อความ');
     }
   }
 
@@ -173,17 +213,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
         );
-    } catch (error) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              error is ChatServiceException
-                  ? error.message
-                  : 'ส่งข้อความไม่สำเร็จ ตรวจการเชื่อมต่อและ Firebase Rules',
-            ),
-          ),
-        );
+    } catch (error, stackTrace) {
+      _handleChatError(error, stackTrace, action: 'ส่งข้อความ');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -237,9 +268,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               stream: _messages,
               builder: (context, snapshot) {
                 if (snapshot.hasError)
-                  return const Center(
+                  return Center(
                     child: Text(
-                      'โหลดข้อความไม่สำเร็จ กรุณาตรวจ Firestore Rules',
+                      firebaseErrorMessage(
+                        snapshot.error,
+                        action: 'โหลดข้อความ',
+                      ),
                     ),
                   );
                 if (snapshot.connectionState == ConnectionState.waiting)

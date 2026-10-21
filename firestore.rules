@@ -325,8 +325,9 @@ service cloud.firestore {
         let messageId = request.resource.data.get('lastMessageId', '');
         let safeMessageId = messageId is string && messageId.matches('[^/]+') ? messageId : '__invalid_message_id__';
         let messagePath = /databases/$(database)/documents/conversations/$(conversationId)/messages/$(safeMessageId);
+        // Repeated text, message type and sender may keep their previous values.
+        // Require a new message ID and activity state; validate preview values below.
         return changed.hasAll([
-            'lastMessageText', 'lastMessageType', 'lastMessageSenderId',
             'lastMessageAt', 'lastMessageId', 'unreadCounts', 'lastReadAt',
             'updatedAt'
           ]) &&
@@ -371,7 +372,7 @@ service cloud.firestore {
         let messageId = resource.data.get('lastMessageId', '');
         let safeMessageId = messageId is string && messageId.matches('[^/]+') ? messageId : '__invalid_message_id__';
         let messagePath = /databases/$(database)/documents/conversations/$(conversationId)/messages/$(safeMessageId);
-        return changed.hasAll(['lastMessageText', 'lastMessageType', 'updatedAt']) &&
+        return changed.hasAll(['lastMessageType', 'updatedAt']) &&
           changed.hasOnly(['lastMessageText', 'lastMessageType', 'updatedAt']) &&
           request.resource.data.lastMessageId == resource.data.lastMessageId &&
           existsAfter(messagePath) &&
@@ -385,8 +386,8 @@ service cloud.firestore {
       }
       function canUpdateOwnHiddenStateOnly() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
-        return changed.hasAny(['hiddenFor']) &&
-          changed.hasOnly(['hiddenFor', 'updatedAt']) &&
+        // Opening an already-visible room can write the same hidden state again.
+        return changed.hasOnly(['hiddenFor', 'updatedAt']) &&
           canChangeOwnHiddenState() &&
           request.resource.data.updatedAt == request.time;
       }

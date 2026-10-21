@@ -134,4 +134,25 @@
 | `flutter test` | ยังไม่มีผล: คำสั่งไม่แสดง output เกิน 90 วินาที จึงหยุดไว้; Emulator tests ข้างต้นทำงานครบ |
 | `git diff --check` | ผ่าน; ไม่พบ whitespace error |
 
-ยังไม่ได้ deploy Rules ขึ้น Firebase จริง; ต้อง deploy `firestore.rules` และ `storage.rules` ก่อนให้ผู้ใช้จริงใช้ flow คำขอส่วนตัว
+ยังไม่ได้ deploy Rules ขึ้น Firebase จริงในรอบวันที่ 20 ต.ค.; สถานะล่าสุดของ Firestore Rules อยู่ในรายการวันที่ 21 ต.ค. ด้านล่าง ส่วน Storage Rules ต้องยืนยันแยก
+
+## 2026-10-21 — แก้ regression ส่งแชทต่อเนื่องไม่ได้
+
+- พบและทำซ้ำได้ว่า `affectedKeys().hasAll(...)` ใน Rules บังคับให้ข้อความ ชนิดข้อความ และผู้ส่งล่าสุดเปลี่ยนค่าทุกครั้ง ข้อความแรกผ่าน แต่ข้อความที่สองชนิดเดิมถูกปฏิเสธ
+- เอาสาม field ที่สามารถมีค่าเดิมออกจากรายการบังคับเปลี่ยน โดยยังตรวจข้อมูลกับข้อความใน batch และสิทธิ์สมาชิกเหมือนเดิม
+- แก้เปิดห้องที่มองเห็นอยู่แล้วซ้ำ และยกเลิกข้อความที่มีเนื้อหา `ยกเลิกข้อความนี้` อยู่แล้ว
+- หน้าแชทบันทึกรหัส Firebase error จริงใน debug Console และแยกข้อความแจ้งปัญหาสิทธิ์ เครือข่าย และเซสชัน รวมการอ่าน stream โดยไม่ปล่อย error ที่ไม่ได้จัดการ
+- เพิ่ม `tool/chat_rules_emulator_test.mjs`, `tool/chat_service_smoke.dart` และ `tool/run_chat_service_smoke.mjs`
+
+| รายการ | ผล |
+|---|---|
+| Rules หลังแก้ใน Auth/Firestore Emulator | ผ่าน 25/25 |
+| `ChatService` จริงบน Chrome กับ Emulator | ผ่าน 6/6 |
+| `flutter test --no-pub --reporter expanded` | ผ่าน 7/7 |
+| Analyzer ไฟล์ที่แก้และหน้า browser ทดสอบ | 0 errors, 0 warnings; 7 info lints เดิม |
+| Firebase จริงสองบัญชีชั่วคราว | ผ่าน 10/10 ขั้นตอน; ส่งต่อ/ส่งซ้ำ/ตอบกลับ/อ่าน/เปิดห้องซ้ำ/ยกเลิก/ส่งใหม่ |
+| Cleanup ทดสอบจริง | ลบข้อมูล 9 เอกสารและบัญชี 2 บัญชีเรียบร้อย |
+| Deploy | สำเร็จ เฉพาะ `firestore:rules` ไป `social-network-app-c22eb` |
+| ตรวจ Rules หลัง deploy | เนื้อหาตรงกับไฟล์ที่ทดสอบทุกประการ |
+
+Rules เดิมบน Firebase ตรงกับรุ่นที่มี bug จึงไม่ใช่ปัญหา deploy ไม่สำเร็จ Rules ใหม่เผยแพร่เวลา 11:40:31 น. (Asia/Bangkok) วันที่ 21 ต.ค. 2026 รายละเอียดและ hash อยู่ใน [รายงานแชท](tool/CHAT_DIAGNOSIS.md) ยังไม่ได้ทดสอบไฟล์แนบจริงหรือเผยแพร่ Storage Rules/indexes ในงานนี้
