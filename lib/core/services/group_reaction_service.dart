@@ -10,7 +10,15 @@ class GroupReactionService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
-  static const supportedReactions = {'like', 'dislike'};
+  static const supportedReactions = {
+    'like',
+    'love',
+    'haha',
+    'wow',
+    'sad',
+    'angry',
+    'dislike',
+  };
 
   CollectionReference<Map<String, dynamic>> _reactions(
     String groupId,

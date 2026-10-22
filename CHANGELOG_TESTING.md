@@ -135,3 +135,121 @@
 | `git diff --check` | ผ่าน; ไม่พบ whitespace error |
 
 ยังไม่ได้ deploy Rules ขึ้น Firebase จริง; ต้อง deploy `firestore.rules` และ `storage.rules` ก่อนให้ผู้ใช้จริงใช้ flow คำขอส่วนตัว
+
+## 2026-10-20 — Chat send permission diagnosis
+
+- Updated the chat send error to show the Firebase plugin and error code.
+- Added `tool/chat_rules_emulator_test.mjs` to reproduce the app's atomic message and conversation-summary write.
+- Firestore/Auth Emulator: the current local rules allowed the chat send batch.
+- The phone still reports `cloud_firestore/permission-denied`; verify that these exact rules are active in project `social-network-app-c22eb`, then inspect legacy conversation data if the deployed rules are confirmed.
+
+## 2026-10-21 — Long-press emoji reactions
+
+### Changes
+
+- Added a shared reaction palette to Like buttons in the main feed and group posts; holding the button opens 👍, ❤️, 😂, 😮, 😢, and 😡 choices, while Dislike remains a separate action.
+- Persisted each selected reaction as its own Firestore value and display counts and the current user's selected emoji.
+- Updated Firestore Rules to allow the six Like-family reactions and Dislike for regular and group posts.
+- Added tests for the supported reaction IDs and picker selection.
+
+### Checks
+
+| Check | Result |
+|---|---|
+| `git diff --check` | Passed |
+| `dart format` | Could not confirm; Dart produced no output and was stopped after waiting. |
+| `flutter test test/social_features_test.dart test/social_reaction_picker_test.dart` | Could not confirm; Flutter produced no output and was stopped after waiting. |
+
+## 2026-10-22 — แก้ผลตรวจระบบตามลำดับ
+
+วางแผนก่อนแก้ใน `AUDIT_FIX_PLAN.md` แล้วทำขั้น 1–5 จาก working tree ปัจจุบัน เก็บงาน emoji และงานแชทเดิมไว้ การทดสอบ Firebase ใช้เฉพาะ Auth/Firestore/Storage Emulator โปรเจกต์ `demo-linko` บน loopback
+
+### 1. แชทและ Rules
+
+- เปลี่ยนการตรวจ diff ให้ยอมรับ field ที่เขียนค่าเดิมได้: ข้อความซ้ำ ชนิดเดิม การตอบกลับ เปิดห้องซ้ำ และยกเลิกข้อความที่มี preview เดิม
+- บังคับ approved follow ตอนสร้าง DM ใหม่ และบังคับข้อความกับ room summary เขียนพร้อมกัน
+- ตรวจ schema ห้องใหม่; อ่าน legacy maps/counters อย่างปลอดภัย และรองรับ increment ค่าที่ไม่ใช่ตัวเลขกลับเป็น 1
+- ข้อความใหม่เปิดห้องที่ทั้งสองฝ่ายซ่อนไว้ โดยห้ามแก้ hidden state ของอีกฝ่ายลอย ๆ
+- ยกเลิกข้อความใช้ transaction เพื่อไม่เขียน preview ทับข้อความใหม่ที่ส่งพร้อมกัน
+
+### 2. ความถูกต้องของข้อมูล สิทธิ์กลุ่ม และแจ้งเตือน
+
+- Rules ตรวจชนิด profile/tags/content และ 7 reaction IDs; model ไม่ปล่อยข้อมูลผิดชนิดทำลายรายการทั้งหมด
+- ผู้ดูแลที่ไม่ใช่สมาชิกอ่าน membership ที่ต้องใช้อนุมัติกลุ่มส่วนตัวได้
+- เจ้าของกลุ่มลบ Storage media ของสมาชิกได้; ทดสอบ outsider แล้วถูกปฏิเสธ
+- เพิ่ม `isDeleting` ปิดการเข้าร่วม/เพิ่มเนื้อหา/อัปโหลดใหม่ระหว่าง cleanup; UI แสดงสถานะและให้เจ้าของลองลบต่อ
+- Comment Notification เปลี่ยนจาก batch ใหญ่เป็นคำขอแยก ขนานสูงสุด 8 งาน พร้อมจำนวนส่งสำเร็จตามจริง
+
+### 3. โพสต์ โปรไฟล์ และงานหลายหน้า
+
+- แก้โพสต์ที่มีเฉพาะสื่อได้โดยนับสื่อเดิม; ปฏิเสธการลบสื่อสุดท้ายจนโพสต์ว่าง
+- การแก้สื่อและลบโพสต์อ่านสถานะใน transaction ป้องกันแข่งกับการแก้/ลบจากอีกอุปกรณ์
+- ลบ comments/reactions เป็นหน้า ๆ ก่อนลบโพสต์แม่; การลบหยุดกลางทางสามารถลองต่อได้
+- AuthGate เตรียม/ซ่อม profile ก่อนเปิด Home พร้อม loading/error/retry; profile repair ใช้ transaction และไม่ reset privacy เดิม
+- Privacy ใช้ `privacyTarget` เก็บงานค้าง อ่าน ID เป็นหน้า 200 และทำ transaction ต่อโพสต์ ขนานสูงสุด 8 งาน ไม่มีเพดาน 499 โพสต์ และไม่เขียนทับ tags จาก snapshot เก่า
+- การเปลี่ยน audience ไม่ใช่ atomic ทั้งบัญชี: โพสต์เดิมทยอยเปลี่ยนจนจบ; โพสต์ใหม่และ follow ใช้ target ขณะทำงาน ส่วนสวิตช์มีสถานะงานค้าง/ดำเนินการต่อ
+
+### 4. Lifecycle การค้นหา และข้อมูลเก่า
+
+- กล่องกลุ่มและรายงานโพสต์เป็น StatefulWidget ที่ดูแล controller เองจน route ถูก dispose
+- Reaction palette ใช้ route: เลือกอารมณ์, Back และแตะนอกกล่องปิดได้; ปรับขนาดรองรับจอ 240/390 px
+- Auth session เปลี่ยนแล้วปิดหน้าที่ push ค้างและล้าง media cache; ผลโหลดภาพเก่าไม่กลับมาเติม cache บัญชีใหม่
+- Search จับ query/filter ก่อน await และใช้ generation ปฏิเสธผลเก่า รวมช่วง debounce
+- Explore เปิดโปรไฟล์เพื่อติดตามก่อนเริ่ม DM; backend ยังตรวจ follow ซ้ำ
+- Feed เรียง own posts ใหม่ไปเก่า ลด follow listeners ด้วยกลุ่มละ 5 UID ยกเลิก listener เก่าอย่างมี generation guard และเพิ่มปุ่มโหลดก่อนหน้า
+- Profile/Groups/Chat/Comments ขยาย real-time query ตามปุ่มโหลดเพิ่ม; Search ใช้ cursor เข้าถึงโพสต์เก่า แม้หน้าปัจจุบันไม่พบคำค้น
+- ตรวจ mounted หลังเลือก/อ่านไฟล์และหลังส่งความคิดเห็น พร้อม error/size checks ก่อนสร้าง preview
+
+### 5. Platform และการตรวจรวม
+
+- เพิ่ม iOS photo-library usage description และ macOS network client/file selection entitlements
+- ปิด FileInputStream ของ local Android thumbnail plugin และปรับ channel tests ให้ตรงกับ implementation
+- คง public enum API ของ plugin และใช้ named library ที่รองรับ Dart language version ของแพ็กเกจเดิม
+- Windows แสดงข้อความวิดีโอยังไม่รองรับ แทนเรียก plugin ซ้ำจน error
+- Android release ใช้ `key.properties` และ guard; เอาการเซ็นด้วย debug key ออกจาก release และเพิ่มตัวอย่าง/ignore secrets
+- เก็บ analyzer lints ด้วย mechanical fixes โดยไม่อัปเกรด dependencies
+
+### กลุ่มไฟล์ที่เปลี่ยน
+
+| ส่วน | ไฟล์ |
+|---|---|
+| สิทธิ์ข้อมูลและสื่อ | `firestore.rules`, `storage.rules` |
+| Model/Policy | `post.dart`, `post_comment.dart`, `social_group.dart`, `chat_models.dart`, `social_reaction.dart`, `post_policy.dart` |
+| Service | `auth_service.dart`, `chat_service.dart`, `comment_service.dart`, `follow_service.dart`, `group_service.dart`, `post_service.dart`, `search_service.dart`, `reaction_service.dart`, `group_reaction_service.dart` |
+| Utilities | `document_values.dart`, `latest_request.dart` |
+| Shared widgets | `auth_session_boundary.dart`, `group_editor_dialog.dart`, `post_report_dialog.dart`, `social_reaction_picker.dart`, `post_media.dart`, `social_navigation.dart` |
+| Screens | AuthGate, Home, Groups, ChatRoom, ChatList, Comments, CreatePost, Profile, EditProfile, SearchExplore, Notifications และ `main.dart` |
+| Native/config | Android Gradle/key example, `.gitignore`, iOS plist, macOS entitlements, local `packages/video_thumbnail` Java/Dart/tests |
+| Tests | `test/auth_session_boundary_test.dart`, `dialog_lifecycle_test.dart`, `document_policy_test.dart`, `latest_request_test.dart`, `platform_media_test.dart`, `social_features_test.dart`, `social_reaction_picker_test.dart`; auth form tests เดิมยังผ่าน |
+| Emulator tools | `emulator_test_support.mjs`, `run_emulator_tests.mjs`, `chat_rules_emulator_test.mjs`, `group_rules_emulator_test.mjs`, `audit_rules_emulator_test.mjs`, `privacy_rules_emulator_test.mjs`, `feed_query_emulator_test.mjs` |
+| เอกสาร | `AUDIT_FIX_PLAN.md`, `README.md`, `SCHEMA.md`, `CHANGELOG_TESTING.md` |
+
+### ผลทดสอบจริง
+
+| การตรวจ | ผล |
+|---|---|
+| `dart analyze` ทั้งโปรเจกต์ | ✅ `No issues found!` exit 0 รวม local package |
+| `flutter test --no-pub test packages/video_thumbnail/test/video_thumbnail_test.dart` | ✅ 25/25: app 23 และ thumbnail native-channel contract 2 |
+| `node tool/run_emulator_tests.mjs` | ✅ 5 suites; หยุดทันทีเมื่อ suite ใดล้มเหลว และรันซ้ำบน emulator เดิมได้ |
+| Chat Rules | ✅ follow gate, malformed create, ส่งซ้ำ/ตอบกลับ/เปิดห้องซ้ำ, hidden room กลับมา, unsend, atomic summary, outsider denial, legacy string counter |
+| Group Rules | ✅ public join/leave/duplicate, private request/cancel/approve/reject, ก่อนอนุมัติอ่านโพสต์ไม่ได้, non-owner อนุมัติไม่ได้, non-member admin อนุมัติได้ |
+| Post/Storage/Notification | ✅ tags ผิดชนิดและโพสต์ว่างถูกปฏิเสธ, 7 reactions, แจ้งผู้ติดตาม 25 คนครบ/ไม่แจ้ง outsider, media-only edit, owner ลบ child และสื่อสมาชิกได้, deletion barrier |
+| Privacy protocol | ✅ 501 โพสต์ ข้ามหน้า cursor, marker คงอยู่เมื่อหยุดกลางทาง, ปิด new-public-write/follow ระหว่าง pending private, เปิด/ปิด private และคง explicit private |
+| Feed query/cursor | ✅ รวม 5 followed authors ใน query เดียว, outsider ถูกปฏิเสธ, cursor 61 โพสต์ที่ timestamp เท่ากันครบและไม่ซ้ำ |
+| Android `:app:assembleDebug --offline --console=plain` | ✅ Debug build ผ่าน รวม Java thumbnail plugin |
+| Android `:app:validateReleaseKey --offline` เมื่อไม่มี keystore | ✅ guard ปฏิเสธตามที่ออกแบบ พร้อมบอกวิธีตั้งค่า; **ไม่ใช่ผล release build ผ่าน** |
+| Index JSON / Apple plist 3 ไฟล์ | ✅ parse ผ่าน |
+| `git diff --check` | ✅ ไม่พบ whitespace error |
+
+ระหว่างทดสอบพบและแก้เพิ่มเติม: picker root Positioned ผิด ancestor, outside tap ไม่ปิด palette, การ reset ตัวแปร platform ของ test, unnamed library ไม่รองรับใน plugin ภาษาเก่า และ test กลุ่มใช้ ID ตายตัว ผลข้างต้นเป็นผลหลังแก้และรันซ้ำ
+
+### ข้อจำกัดของผลและงานถัดไป
+
+- Emulator scripts ตรวจ Rules/Storage และ write/query protocol ผ่าน REST; ไม่ได้รัน Firebase Flutter integration บนอุปกรณ์จริง ส่วน Flutter tests ครอบคลุม model/policy/widgets/channel contract
+- Android build เป็นผล compilation; ยังไม่ได้ติดตั้ง APK แล้วทดสอบ flow จริงในรอบนี้
+- iOS/macOS เพิ่ม config และ parse ผ่าน แต่ยังไม่ได้ build/run บน Mac; Linux ยังไม่มี Firebase options; Windows ยังไม่รองรับ video playback
+- ยังไม่มี signed release build เพราะต้องใช้ keystore ของเจ้าของแอป; ไม่มีการสร้าง key หรือบันทึกรหัสผ่านจริง
+- ยังมี Gradle warnings เรื่อง new DSL/Kotlin plugin compatibility สำหรับอนาคต ต้องตรวจ migration ก่อนอัปเกรด major
+- งาน fan-out notification และ cleanup ยังพึ่ง client ที่เปิดอยู่ ขั้นถัดไปควรเป็น backend queue/retry; real-time windows โตตามการโหลด และ text search ยังไม่มี search index
+- App Check, Push และ Pages ยังไม่ได้พัฒนาในรอบนี้
+- **ยังไม่ได้ deploy Rules, เขียนข้อมูล production หรือ push Git**; ต้อง deploy Rules ล่าสุดแล้วทดสอบ Firebase จริงอย่างน้อยสองบัญชี

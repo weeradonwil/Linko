@@ -1,16 +1,21 @@
 // รายการกลุ่มที่ค้นพบได้ พร้อมสร้างกลุ่มและเปิดหน้าสนทนาในกลุ่ม
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/services/group_reaction_service.dart';
 import '../../core/models/social_group.dart';
+import '../../core/utils/document_values.dart';
+import '../../core/models/social_reaction.dart';
 import '../../core/services/group_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/group_editor_dialog.dart';
+import '../../core/widgets/social_reaction_picker.dart';
 import '../profile/profile.dart';
 
 /// แสดงกลุ่มสาธารณะและเปิดทางสร้างกลุ่มใหม่
@@ -24,7 +29,6 @@ class GroupsScreen extends StatefulWidget {
 
 class _GroupsScreenState extends State<GroupsScreen> {
   final _service = GroupService();
-  final _imagePicker = ImagePicker();
   late Stream<List<SocialGroup>> _groupsStream;
 
   @override
@@ -55,115 +59,24 @@ class _GroupsScreenState extends State<GroupsScreen> {
   }
 
   Future<void> _createGroup() async {
-    final name = TextEditingController();
-    final description = TextEditingController();
-    XFile? avatar;
-    var visibility = 'public';
-    final create = await showDialog<bool>(
+    final draft = await showDialog<GroupDraft>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('สร้างกลุ่ม'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FutureBuilder(
-                  future: avatar?.readAsBytes(),
-                  builder: (context, image) => CircleAvatar(
-                    radius: 38,
-                    backgroundImage: image.data == null
-                        ? null
-                        : MemoryImage(image.data!),
-                    child: image.data == null
-                        ? const Icon(Icons.groups_2_outlined, size: 28)
-                        : null,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final picked = await _imagePicker.pickImage(
-                      source: ImageSource.gallery,
-                      imageQuality: 82,
-                      maxWidth: 900,
-                      maxHeight: 900,
-                    );
-                    if (picked != null) setDialogState(() => avatar = picked);
-                  },
-                  icon: const Icon(Icons.photo_outlined, size: 18),
-                  label: Text(
-                    avatar == null ? 'เลือกรูปประจำกลุ่ม' : 'เปลี่ยนรูป',
-                  ),
-                ),
-                TextField(
-                  controller: name,
-                  maxLength: 60,
-                  decoration: const InputDecoration(labelText: 'ชื่อกลุ่ม'),
-                ),
-                TextField(
-                  controller: description,
-                  maxLength: 300,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'คำอธิบาย'),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: visibility,
-                  decoration: const InputDecoration(labelText: 'ประเภทกลุ่ม'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'public',
-                      child: Text('สาธารณะ · เข้าร่วมได้ทันที'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'private',
-                      child: Text('ส่วนตัว · รอเจ้าของอนุมัติ'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => visibility = value);
-                  },
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  visibility == 'public'
-                      ? 'กลุ่มสาธารณะค้นหาและเข้าร่วมได้ทันที'
-                      : 'กลุ่มส่วนตัวส่งคำขอเข้าร่วม และดูเนื้อหาได้หลังอนุมัติ',
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('ยกเลิก'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('สร้าง'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const GroupEditorDialog(),
     );
-    if (create == true) {
-      try {
-        await _service.createGroup(
-          name: name.text,
-          description: description.text,
-          visibility: visibility,
-          avatar: avatar,
-        );
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$error')));
-        }
+    if (draft == null || !mounted) return;
+    try {
+      await _service.createGroup(
+        name: draft.name,
+        description: draft.description,
+        visibility: draft.visibility,
+        avatar: draft.avatar,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
       }
     }
-    name.dispose();
-    description.dispose();
   }
 
   void _openGroup(SocialGroup group) {
@@ -234,20 +147,41 @@ class GroupDetailScreen extends StatefulWidget {
 class _GroupDetailScreenState extends State<GroupDetailScreen> {
   final _service = GroupService();
   final _picker = ImagePicker();
-  final _imagePicker = ImagePicker();
   final _postController = TextEditingController();
   final _postFocusNode = FocusNode();
   late SocialGroup _group;
   XFile? _attachment;
   bool _sending = false;
+  int _postsLimit = 30;
   bool _membershipBusy = false;
   bool _legacyCountSyncStarted = false;
   bool _isAdmin = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _groupSubscription;
+  bool _groupRemoved = false;
+  bool _groupLoadFailed = false;
 
   @override
   void initState() {
     super.initState();
     _group = widget.group;
+    _groupSubscription = FirebaseFirestore.instance
+        .collection('groups')
+        .doc(_group.id)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+            setState(() {
+              _groupLoadFailed = false;
+              _groupRemoved = !snapshot.exists;
+              if (snapshot.exists) _group = SocialGroup.fromSnapshot(snapshot);
+            });
+          },
+          onError: (Object error) {
+            if (mounted) setState(() => _groupLoadFailed = true);
+          },
+        );
     _loadAdminClaim();
   }
 
@@ -264,6 +198,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   @override
   void dispose() {
+    _groupSubscription?.cancel();
     _postController.dispose();
     _postFocusNode.dispose();
     super.dispose();
@@ -292,124 +227,73 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
-    // Close the keyboard before opening the gallery; reset focus after it
-    // returns so the composer can open the keyboard again on the next tap.
-    _postFocusNode.unfocus();
-    final file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-      maxWidth: 1600,
-    );
-    if (!mounted) return;
-    if (file != null) setState(() => _attachment = file);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _postFocusNode.requestFocus();
-    });
-  }
+  Future<void> _pickImage() => _pickGroupMedia(image: true);
+  Future<void> _pickVideo() => _pickGroupMedia(image: false);
 
-  Future<void> _pickVideo() async {
+  Future<void> _pickGroupMedia({required bool image}) async {
     _postFocusNode.unfocus();
-    final file = await _picker.pickVideo(source: ImageSource.gallery);
-    if (!mounted) return;
-    if (file != null) setState(() => _attachment = file);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _postFocusNode.requestFocus();
-    });
+    try {
+      final file = image
+          ? await _picker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 85,
+              maxWidth: 1600,
+              maxHeight: 1600,
+            )
+          : await _picker.pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+      final maximum = (image ? 10 : 50) * 1024 * 1024;
+      if (await file.length() > maximum) {
+        throw FormatException(
+          image ? 'รูปต้องไม่เกิน 10 MB' : 'วิดีโอต้องไม่เกิน 50 MB',
+        );
+      }
+      if (mounted) setState(() => _attachment = file);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เลือกไฟล์ไม่สำเร็จ: $error')));
+      }
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _postFocusNode.requestFocus();
+      });
+    }
   }
 
   Future<void> _editGroup() async {
-    final name = TextEditingController(text: _group.name);
-    final description = TextEditingController(text: _group.description);
-    XFile? avatar;
-    final save = await showDialog<bool>(
+    final draft = await showDialog<GroupDraft>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('แก้ไขกลุ่ม'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FutureBuilder(
-                  future: avatar?.readAsBytes(),
-                  builder: (context, image) {
-                    if (image.data != null) {
-                      return CircleAvatar(
-                        radius: 38,
-                        backgroundImage: MemoryImage(image.data!),
-                      );
-                    }
-                    return _GroupAvatar(group: _group, radius: 38);
-                  },
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final picked = await _imagePicker.pickImage(
-                      source: ImageSource.gallery,
-                      imageQuality: 82,
-                      maxWidth: 900,
-                      maxHeight: 900,
-                    );
-                    if (picked != null) setDialogState(() => avatar = picked);
-                  },
-                  icon: const Icon(Icons.photo_outlined, size: 18),
-                  label: Text(
-                    avatar == null ? 'เลือกรูปประจำกลุ่ม' : 'เปลี่ยนรูป',
-                  ),
-                ),
-                TextField(
-                  controller: name,
-                  maxLength: 60,
-                  decoration: const InputDecoration(labelText: 'ชื่อกลุ่ม'),
-                ),
-                TextField(
-                  controller: description,
-                  maxLength: 300,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'คำอธิบาย'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('ยกเลิก'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('บันทึก'),
-            ),
-          ],
-        ),
+      builder: (_) => GroupEditorDialog(
+        editing: true,
+        initialName: _group.name,
+        initialDescription: _group.description,
+        initialVisibility: _group.visibility,
+        existingAvatar: _GroupAvatar(group: _group, radius: 38),
       ),
     );
-    if (save == true) {
-      try {
-        await _service.updateGroup(
-          groupId: _group.id,
-          name: name.text,
-          description: description.text,
-          avatar: avatar,
-        );
-        final updated = await FirebaseFirestore.instance
-            .collection('groups')
-            .doc(_group.id)
-            .get();
-        if (mounted && updated.exists) {
-          setState(() => _group = SocialGroup.fromSnapshot(updated));
-        }
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$error')));
-        }
+    if (draft == null || !mounted) return;
+    try {
+      await _service.updateGroup(
+        groupId: _group.id,
+        name: draft.name,
+        description: draft.description,
+        avatar: draft.avatar,
+      );
+      final updated = await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(_group.id)
+          .get();
+      if (mounted && updated.exists) {
+        setState(() => _group = SocialGroup.fromSnapshot(updated));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
       }
     }
-    name.dispose();
-    description.dispose();
   }
 
   Future<void> _membershipAction({
@@ -562,78 +446,89 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             ),
         ],
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: _service.watchMembership(group.id),
-        builder: (context, membershipSnapshot) {
-          if (membershipSnapshot.hasError) {
-            return const _GroupLoadState(
-              message: 'ตรวจสอบสถานะสมาชิกไม่สำเร็จ',
-              isError: true,
-            );
-          }
-          if (!membershipSnapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final isMember = isOwner || membershipSnapshot.data?.exists == true;
-          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _service.watchJoinRequest(group.id),
-            builder: (context, requestSnapshot) {
-              if (requestSnapshot.hasError) {
-                return const _GroupLoadState(
-                  message: 'โหลดสถานะคำขอเข้าร่วมไม่สำเร็จ',
-                  isError: true,
-                );
-              }
-              if (!requestSnapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final hasRequest = requestSnapshot.data?.exists == true;
-              final canReadMembers =
-                  group.visibility == 'public' || isMember || isOwner;
-              if (!canReadMembers) {
-                return _buildGroupContent(
-                  isOwner: isOwner,
-                  isMember: isMember,
-                  hasRequest: hasRequest,
-                  memberCount: group.memberCount,
-                );
-              }
-              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _service.watchMembers(group.id),
-                builder: (context, memberSnapshot) {
-                  if (memberSnapshot.hasError) {
-                    return const _GroupLoadState(
-                      message: 'โหลดข้อมูลสมาชิกไม่สำเร็จ',
-                      isError: true,
-                    );
-                  }
-                  if (!memberSnapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final members = memberSnapshot.data?.docs;
-                  if (isOwner &&
-                      group.memberCount == null &&
-                      members != null &&
-                      !_legacyCountSyncStarted) {
-                    _legacyCountSyncStarted = true;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _service.ensureMemberCount(group.id).catchError((_) {
-                        _legacyCountSyncStarted = false;
-                      });
-                    });
-                  }
-                  return _buildGroupContent(
-                    isOwner: isOwner,
-                    isMember: isMember,
-                    hasRequest: hasRequest,
-                    memberCount: members?.length ?? group.memberCount,
+      body: _groupRemoved
+          ? const Center(child: Text('กลุ่มนี้ถูกลบแล้ว'))
+          : _groupLoadFailed
+          ? const Center(
+              child: Text('โหลดข้อมูลกลุ่มไม่สำเร็จ กรุณาเปิดกลุ่มอีกครั้ง'),
+            )
+          : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _service.watchMembership(group.id),
+              builder: (context, membershipSnapshot) {
+                if (membershipSnapshot.hasError) {
+                  return const _GroupLoadState(
+                    message: 'ตรวจสอบสถานะสมาชิกไม่สำเร็จ',
+                    isError: true,
                   );
-                },
-              );
-            },
-          );
-        },
-      ),
+                }
+                if (!membershipSnapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final isMember =
+                    isOwner || membershipSnapshot.data?.exists == true;
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _service.watchJoinRequest(group.id),
+                  builder: (context, requestSnapshot) {
+                    if (requestSnapshot.hasError) {
+                      return const _GroupLoadState(
+                        message: 'โหลดสถานะคำขอเข้าร่วมไม่สำเร็จ',
+                        isError: true,
+                      );
+                    }
+                    if (!requestSnapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final hasRequest = requestSnapshot.data?.exists == true;
+                    final canReadMembers =
+                        group.visibility == 'public' || isMember || isOwner;
+                    if (!canReadMembers) {
+                      return _buildGroupContent(
+                        isOwner: isOwner,
+                        isMember: isMember,
+                        hasRequest: hasRequest,
+                        memberCount: group.memberCount,
+                      );
+                    }
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _service.watchMembers(group.id),
+                      builder: (context, memberSnapshot) {
+                        if (memberSnapshot.hasError) {
+                          return const _GroupLoadState(
+                            message: 'โหลดข้อมูลสมาชิกไม่สำเร็จ',
+                            isError: true,
+                          );
+                        }
+                        if (!memberSnapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final members = memberSnapshot.data?.docs;
+                        if (isOwner &&
+                            group.memberCount == null &&
+                            members != null &&
+                            !_legacyCountSyncStarted) {
+                          _legacyCountSyncStarted = true;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _service.ensureMemberCount(group.id).catchError((
+                              _,
+                            ) {
+                              _legacyCountSyncStarted = false;
+                            });
+                          });
+                        }
+                        return _buildGroupContent(
+                          isOwner: isOwner,
+                          isMember: isMember,
+                          hasRequest: hasRequest,
+                          memberCount: members?.length ?? group.memberCount,
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 
@@ -654,7 +549,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             isOwner: isOwner,
             isMember: isMember,
             hasRequest: hasRequest,
-            busy: _membershipBusy,
+            busy: _membershipBusy || _group.isDeleting,
             onOwnerTap: _openOwnerProfile,
             onMembersTap: canReadMembers ? _showGroupMembers : null,
             onManageTap: _showManageGroupOptions,
@@ -678,7 +573,22 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ),
             ),
           ),
-        if (isMember)
+        if (_group.isDeleting)
+          SliverToBoxAdapter(
+            child: ListTile(
+              title: const Text('กำลังลบกลุ่ม'),
+              subtitle: const Text(
+                'ไม่สามารถเพิ่มเนื้อหาหรือเข้าร่วมระหว่างลบได้',
+              ),
+              trailing: isOwner
+                  ? TextButton(
+                      onPressed: _deleteGroup,
+                      child: const Text('ลบต่อ'),
+                    )
+                  : null,
+            ),
+          ),
+        if (isMember && !_group.isDeleting)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -695,7 +605,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           )
         else
           StreamBuilder<List<GroupPost>>(
-            stream: _service.watchPosts(_group.id),
+            stream: _service.watchPosts(_group.id, limit: _postsLimit),
             builder: (context, postSnapshot) {
               if (postSnapshot.hasError) {
                 return const SliverFillRemaining(
@@ -723,15 +633,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _GroupPostCard(
-                        groupId: _group.id,
-                        post: posts[index],
-                        user: widget.user,
-                      ),
-                    ),
-                    childCount: posts.length,
+                    (context, index) => index == posts.length
+                        ? TextButton(
+                            onPressed: () => setState(() => _postsLimit += 30),
+                            child: const Text('โหลดโพสต์เก่าเพิ่มเติม'),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _GroupPostCard(
+                              groupId: _group.id,
+                              post: posts[index],
+                              user: widget.user,
+                            ),
+                          ),
+                    childCount:
+                        posts.length + (posts.length >= _postsLimit ? 1 : 0),
                   ),
                 ),
               );
@@ -1173,7 +1089,7 @@ class _GroupMembersSheet extends StatelessWidget {
                   itemCount: members.length,
                   itemBuilder: (context, index) {
                     final data = members[index].data();
-                    final name = data['displayName'] as String? ?? 'สมาชิก';
+                    final name = readName(data['displayName']);
                     return ListTile(
                       leading: CircleAvatar(
                         child: Text(name.characters.first.toUpperCase()),
@@ -1479,7 +1395,12 @@ class _GroupCardState extends State<_GroupCard> {
                   ),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: _busy
+                    child: widget.group.isDeleting
+                        ? TextButton(
+                            onPressed: widget.onTap,
+                            child: const Text('กำลังลบกลุ่ม'),
+                          )
+                        : _busy
                         ? const Padding(
                             padding: EdgeInsets.all(10),
                             child: SizedBox.square(
@@ -1538,7 +1459,8 @@ class _GroupOwnerName extends StatelessWidget {
             ),
           );
         }
-        final name = (snapshot.data?.data()?['displayName'] as String?)?.trim();
+        final name = readOptionalString(snapshot.data?.data()?['displayName'])
+            ?.trim();
         return Text(
           '$prefix ${name == null || name.isEmpty ? 'ไม่ทราบชื่อ' : name}',
           maxLines: 1,
@@ -1729,31 +1651,80 @@ class _GroupPostCard extends StatelessWidget {
                   .toList();
               final mine = myReactions.isEmpty
                   ? null
-                  : myReactions.first.data()['reaction'];
-              final likes = reactions
-                  .where((reaction) => reaction.data()['reaction'] == 'like')
-                  .length;
-              final dislikes = reactions
-                  .where((reaction) => reaction.data()['reaction'] == 'dislike')
-                  .length;
-              return Row(
+                  : readOptionalString(myReactions.first.data()['reaction']);
+              final counts = <String, int>{
+                for (final reaction in SocialReaction.options) reaction.id: 0,
+              };
+              for (final reaction in reactions) {
+                final id = readOptionalString(reaction.data()['reaction']);
+                if (id != null && counts.containsKey(id)) {
+                  counts.update(id, (total) => total + 1);
+                }
+              }
+              final selected = SocialReaction.byId(mine);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => _toggleReaction(context, 'like'),
-                    icon: Icon(
-                      mine == 'like' ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  if (counts.values.any((total) => total > 0))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Wrap(
+                        spacing: 8,
+                        children: counts.entries
+                            .where((entry) => entry.value > 0)
+                            .map(
+                              (entry) => Text(
+                                '${SocialReaction.byId(entry.key)?.emoji} ${entry.value}',
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
                     ),
-                    label: Text('Like $likes'),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => _toggleReaction(context, 'dislike'),
-                    icon: Icon(
-                      mine == 'dislike'
-                          ? Icons.thumb_down
-                          : Icons.thumb_down_outlined,
-                    ),
-                    label: Text('Dislike $dislikes'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Builder(
+                          builder: (buttonContext) => TextButton.icon(
+                            onPressed: () => _toggleReaction(context, 'like'),
+                            onLongPress: () async {
+                              final reaction = await SocialReactionPicker.show(
+                                buttonContext,
+                              );
+                              if (reaction != null && context.mounted) {
+                                await _toggleReaction(context, reaction);
+                              }
+                            },
+                            icon: selected != null && selected.id != 'dislike'
+                                ? Text(
+                                    selected.emoji,
+                                    style: const TextStyle(fontSize: 18),
+                                  )
+                                : Icon(
+                                    mine == 'like'
+                                        ? Icons.thumb_up
+                                        : Icons.thumb_up_outlined,
+                                  ),
+                            label: Text(
+                              selected != null && selected.id != 'dislike'
+                                  ? selected.label
+                                  : 'Like',
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () => _toggleReaction(context, 'dislike'),
+                          icon: Icon(
+                            mine == 'dislike'
+                                ? Icons.thumb_down
+                                : Icons.thumb_down_outlined,
+                          ),
+                          label: const Text('Dislike'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               );

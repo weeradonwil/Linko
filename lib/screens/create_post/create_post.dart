@@ -57,28 +57,45 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickImage() async {
-    final file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _attachment = file;
-      _attachmentPreview = bytes;
-      _removeExistingMedia = false;
-    });
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 2000,
+        maxHeight: 2000,
+      );
+      if (file == null) return;
+      if (await file.length() > 10 * 1024 * 1024) {
+        throw const FormatException('กรุณาเลือกรูปขนาดไม่เกิน 10 MB');
+      }
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _attachment = file;
+        _attachmentPreview = bytes;
+        _removeExistingMedia = false;
+      });
+    } catch (error) {
+      _showError('เลือกรูปไม่สำเร็จ: $error');
+    }
   }
 
   Future<void> _pickVideo() async {
-    final file = await _picker.pickVideo(source: ImageSource.gallery);
-    if (file == null || !mounted) return;
-    setState(() {
-      _attachment = file;
-      _attachmentPreview = null;
-      _removeExistingMedia = false;
-    });
+    try {
+      final file = await _picker.pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+      if (await file.length() > 50 * 1024 * 1024) {
+        throw const FormatException('กรุณาเลือกวิดีโอขนาดไม่เกิน 50 MB');
+      }
+      if (!mounted) return;
+      setState(() {
+        _attachment = file;
+        _attachmentPreview = null;
+        _removeExistingMedia = false;
+      });
+    } catch (error) {
+      _showError('เลือกวิดีโอไม่สำเร็จ: $error');
+    }
   }
 
   Future<void> _savePost() async {

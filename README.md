@@ -3,6 +3,7 @@
 > Flutter / Dart / Firebase Authentication / Cloud Firestore / Firebase Storage
 >
 > ประวัติการเปลี่ยนแปลงและผลตรวจอยู่ใน [CHANGELOG_TESTING.md](CHANGELOG_TESTING.md) และโครงสร้างข้อมูลอยู่ใน [SCHEMA.md](SCHEMA.md)
+> แผนแก้ผลตรวจระบบและขอบเขตการทดสอบรอบ 22 ตุลาคม 2026 อยู่ใน [AUDIT_FIX_PLAN.md](AUDIT_FIX_PLAN.md)
 
 ## สถานะงาน
 
@@ -11,10 +12,10 @@
 | สมัครสมาชิก / Login / Logout | ✅ มีโค้ด | ใช้ Firebase Authentication; ควรทดสอบกับบัญชีจริง |
 | รีเซ็ตรหัสผ่าน | ✅ มีโค้ด | ส่งอีเมลผ่าน Firebase Auth; ยังต้องยืนยันการรับอีเมลจริง |
 | โพสต์และ Feed | ✅ มีโค้ด | รองรับข้อความ รูป วิดีโอ แท็ก แก้ไข และลบ |
-| Like / Dislike / Comment | ✅ มีโค้ด | Like แจ้งเจ้าของโพสต์; Comment แจ้งผู้ติดตามเจ้าของโพสต์ |
+| Like / Emoji / Dislike / Comment | ✅ มีโค้ดและ regression tests | กดค้าง Like เลือก 6 อารมณ์; Dislike แยกปุ่ม; Comment แจ้งผู้ติดตามเจ้าของโพสต์ |
 | Chat 1:1 | ✅ มีโค้ด | ข้อความ/สื่อ, ซ่อนห้องเฉพาะบัญชี, ยกเลิกข้อความ และตัวนับยังไม่อ่าน |
 | Profile / Follow | ✅ มีโค้ด | รูปโปรไฟล์, Bio, ติดตาม/เลิกติดตาม, บัญชีส่วนตัว และเปิดแชทได้เมื่อติดตามแล้ว |
-| Groups | ✅ มีโค้ด | รูปประจำกลุ่มและโพสต์ข้อความ/รูป/วิดีโอ พร้อม Like/Dislike |
+| Groups | ✅ มีโค้ดและ Rules tests | กลุ่มสาธารณะ/ส่วนตัว คำขอเข้าร่วม รูปกลุ่ม โพสต์สื่อ และ Like/Emoji/Dislike |
 | Report / Admin moderation | ✅ มีโค้ด | ผู้ดูแลจัดการรายงานได้เมื่อบัญชีมี Firebase custom claim `admin: true` |
 | Pages | ❌ ยังไม่มี | ยังไม่ได้พัฒนา |
 | Pain Point จากผู้ใช้จริง | ❌ ยังไม่มีหลักฐานในโปรเจกต์ | ต้องเก็บโจทย์/หลักฐานและเชื่อมกับฟีเจอร์ |
@@ -26,7 +27,7 @@
 
 ## งานที่ยังต้องทำ
 
-1. **Deploy กฎและ index รุ่นปัจจุบัน** — มีการแก้ `firestore.rules`, `storage.rules` และ `firestore.indexes.json` ในรอบนี้ กฎ/ดัชนีที่เคย deploy ก่อนหน้านี้จึงไม่ครอบคลุมการแก้ล่าสุด
+1. **Deploy Rules รุ่นปัจจุบันและตรวจ indexes** — รอบนี้แก้ `firestore.rules` และ `storage.rules`; query ใช้ indexes ที่มีใน `firestore.indexes.json` อยู่แล้ว ต้องตรวจว่าโปรเจกต์จริงมีดัชนีตรงกัน
 2. **ทดสอบกับ Firebase จริงสองบัญชี** — ตรวจ private profile/follow request, การอ่านโพสต์และสื่อ, Comment Notification, Chat, กลุ่ม และสิทธิ์ผู้ดูแล
 3. **ตั้งค่า admin claim** ให้บัญชีผู้ดูแลก่อนทดสอบหน้าจัดการรายงาน
 4. **ทดสอบบนโทรศัพท์จริง** รวมการรับอีเมลรีเซ็ตรหัสผ่าน อัปโหลดสื่อ และ UX/การเข้าถึง
@@ -37,9 +38,28 @@
 
 ## ผลตรวจในเครื่องล่าสุด
 
-- `dart analyze lib test`: 0 errors, 0 warnings; พบ info-level lints 51 รายการ
-- `dart format`: ผ่านสำหรับไฟล์ Dart ที่แก้ในรอบนี้
-- Firestore และ Storage Emulator: เริ่มทำงานและโหลด Rules ได้สำเร็จ
-- `flutter test` รอบนี้ยังรันไม่ได้ เพราะ Flutter SDK ต้องเขียน `bin/cache/lockfile` ในตำแหน่งนอก workspace ที่ไม่มีสิทธิ์เข้าถึง
-- `firestore.indexes.json`: รูปแบบ JSON ถูกต้อง
-- ยังไม่มีผลทดสอบ integration กับ Firebase จริงหรือ flow หลายบัญชี; Rules ใน Emulator ยังต้อง deploy ก่อนใช้งาน Firebase จริง ดูรายละเอียดใน [CHANGELOG_TESTING.md](CHANGELOG_TESTING.md)
+ผลรอบ **2026-10-22**:
+
+- Flutter tests: ผ่าน **25/25** รวม app tests 23 รายการและ thumbnail plugin 2 รายการ
+- `dart analyze`: **No issues found** ทั้งโปรเจกต์ รวม local package
+- Firebase Auth/Firestore/Storage Emulator: ผ่าน **5 suites** ใช้เฉพาะ `demo-linko` บนเครื่อง
+- ครอบคลุมส่งแชทซ้ำ/ตอบกลับ/ยกเลิก, follow gate, กลุ่มส่วนตัวและ admin, ลบสื่อสมาชิก, แจ้งผู้ติดตาม 25 คน, privacy 501 โพสต์ และ cursor 61 โพสต์
+- Android Debug: `:app:assembleDebug --offline` ผ่าน
+- JSON indexes และ Apple plist/entitlements: parse ผ่าน; ผล analyzer และคำสั่งทั้งหมดอยู่ใน [CHANGELOG_TESTING.md](CHANGELOG_TESTING.md)
+- ยังต้องทดสอบ Firebase จริงสองบัญชี โทรศัพท์จริง และ iOS/macOS บน Mac; ผล Emulator และ build ไม่แทนผลทดสอบเหล่านี้
+
+### รันทดสอบซ้ำ
+
+```powershell
+flutter test --no-pub test packages/video_thumbnail/test/video_thumbnail_test.dart
+dart analyze
+firebase --config firebase.emulator.test.json emulators:exec --only "auth,firestore,storage" --project demo-linko "node tool/run_emulator_tests.mjs"
+```
+
+เมื่อพร้อมนำ Rules ไปใช้จริง ให้ deploy จากโฟลเดอร์นี้แล้วทดสอบหลายบัญชี:
+
+```powershell
+firebase deploy --only "firestore:rules,firestore:indexes,storage" --project social-network-app-c22eb
+```
+
+Android release ต้องใช้ keystore ของเจ้าของแอปและ `android/key.properties` ตาม [แผนและข้อจำกัด](AUDIT_FIX_PLAN.md); ระบบจะปฏิเสธ release ที่ยังไม่ได้ตั้งค่าลายเซ็น

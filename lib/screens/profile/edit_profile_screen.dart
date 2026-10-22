@@ -62,15 +62,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _chooseAvatar() async {
-    final file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 82,
-      maxWidth: 900,
-      maxHeight: 900,
-    );
-    if (file == null || !mounted) return;
     try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 82,
+        maxWidth: 900,
+        maxHeight: 900,
+      );
+      if (file == null || !mounted) return;
+      if (await file.length() > 5 * 1024 * 1024) {
+        throw const FormatException('รูปโปรไฟล์ต้องมีขนาดไม่เกิน 5 MB');
+      }
       final bytes = await file.readAsBytes();
+      if (!mounted) return;
       if (bytes.length > 5 * 1024 * 1024) {
         throw const FormatException('รูปโปรไฟล์ต้องมีขนาดไม่เกิน 5 MB');
       }

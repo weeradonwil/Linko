@@ -1,6 +1,8 @@
 // โมเดลกลุ่มและโพสต์ในกลุ่ม แปลงข้อมูล Firestore เป็นข้อมูลแสดงผล
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/document_values.dart';
+
 /// ข้อมูลกลุ่มที่แสดงในรายการกลุ่มและหน้ารายละเอียด
 class SocialGroup {
   const SocialGroup({
@@ -12,6 +14,7 @@ class SocialGroup {
     required this.createdAt,
     this.avatarPath,
     this.memberCount,
+    this.isDeleting = false,
   });
 
   final String id;
@@ -22,6 +25,7 @@ class SocialGroup {
   final DateTime? createdAt;
   final String? avatarPath;
   final int? memberCount;
+  final bool isDeleting;
 
   factory SocialGroup.fromSnapshot(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -30,13 +34,16 @@ class SocialGroup {
     final timestamp = data['createdAt'];
     return SocialGroup(
       id: snapshot.id,
-      name: data['name'] as String? ?? 'กลุ่มไม่มีชื่อ',
-      description: data['description'] as String? ?? '',
-      ownerId: data['ownerId'] as String? ?? '',
-      visibility: data['visibility'] as String? ?? 'public',
+      name: readName(data['name'], 'กลุ่มไม่มีชื่อ'),
+      description: readString(data['description']),
+      ownerId: readString(data['ownerId']),
+      visibility: readString(data['visibility'], 'public'),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
-      avatarPath: data['avatarPath'] as String?,
-      memberCount: data['memberCount'] as int?,
+      avatarPath: readOptionalString(data['avatarPath']),
+      memberCount: data['memberCount'] == null
+          ? null
+          : readCount(data['memberCount']),
+      isDeleting: data['isDeleting'] == true,
     );
   }
 }
@@ -59,8 +66,8 @@ class GroupJoinRequest {
     final data = snapshot.data();
     final timestamp = data['createdAt'];
     return GroupJoinRequest(
-      uid: data['uid'] as String? ?? snapshot.id,
-      displayName: data['displayName'] as String? ?? 'สมาชิก',
+      uid: readString(data['uid'], snapshot.id),
+      displayName: readName(data['displayName']),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
     );
   }
@@ -95,13 +102,13 @@ class GroupPost {
     final timestamp = data['createdAt'];
     return GroupPost(
       id: snapshot.id,
-      authorId: data['authorId'] as String? ?? '',
-      authorName: data['authorName'] as String? ?? 'สมาชิก',
-      content: data['content'] as String? ?? '',
+      authorId: readString(data['authorId']),
+      authorName: readName(data['authorName']),
+      content: readString(data['content']),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
-      mediaPath: data['mediaPath'] as String?,
-      mediaType: data['mediaType'] as String? ?? 'none',
-      thumbnailPath: data['thumbnailPath'] as String?,
+      mediaPath: readOptionalString(data['mediaPath']),
+      mediaType: readString(data['mediaType'], 'none'),
+      thumbnailPath: readOptionalString(data['thumbnailPath']),
     );
   }
 }

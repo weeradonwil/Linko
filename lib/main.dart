@@ -63,8 +63,13 @@ class _SocialAppState extends State<SocialApp> {
     }
   }
 
-  /// สลับไปอีกโหมดหนึ่งและบันทึกค่า; [isCurrentlyDark] มาจาก Theme ที่แสดงอยู่
-  Future<void> _toggleTheme(bool isCurrentlyDark) async {
+  /// สลับไปอีกโหมดหนึ่งและบันทึกค่า โดยอ่านโหมดปัจจุบันทุกครั้งที่กด
+  Future<void> _toggleTheme() async {
+    final isCurrentlyDark =
+        _themeMode == ThemeMode.dark ||
+        (_themeMode == ThemeMode.system &&
+            WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+                Brightness.dark);
     final newMode = isCurrentlyDark ? ThemeMode.light : ThemeMode.dark;
     final savedValue = newMode == ThemeMode.dark ? 'dark' : 'light';
 

@@ -2,6 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../utils/document_values.dart';
+
 /// รวมการเรียก Firebase Authentication และการสร้างเอกสารสมาชิกใน Firestore
 /// ไว้ที่เดียว เพื่อไม่ให้หน้าจอต้องจัดการรายละเอียดของ Firebase เอง
 class AuthService {
@@ -37,21 +39,7 @@ class AuthService {
     await user.updateDisplayName(cleanName);
 
     try {
-      // Schema ของ users/{uid}:
-      // - uid ใช้ระบุบัญชีและตรวจสิทธิ์ใน Firestore Rules
-      // - displayName เป็นชื่อที่แสดงในแอป ไม่ใช่อีเมลสำหรับล็อกอิน
-      // - isPrivate เก็บค่าการมองเห็นโปรไฟล์
-      await _firestore.collection('users').doc(user.uid).set({
-        'uid': user.uid,
-        'displayName': cleanName,
-        'displayNameLower': cleanName.toLowerCase(),
-        'bio': '',
-        'isPrivate': false,
-        //คือเวลาที่สร้างโพสต์ ใช้เรียงฟีดและแสดงวัน/เวลา
-        'createdAt': FieldValue.serverTimestamp(),
-        //คือเวลาแก้ไขโพสต์ล่าสุด ตอนสร้างจะตั้งค่าไว้พร้อมกัน แต่เมื่อแก้โพสต์จะเปลี่ยนเฉพาะ updatedAt
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await ensureProfile(user, displayName: cleanName);
     } on FirebaseException {
       // บัญชี Auth ถูกสร้างก่อนแล้ว แต่การเขียน Firestore อาจถูกปฏิเสธ เช่น Rules
       // ไม่อนุญาตให้ uid ปัจจุบันสร้าง users/{uid}; แยกข้อความนี้จาก Auth error
@@ -64,10 +52,54 @@ class AuthService {
 
   /// เข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ Firebase Authentication ตรวจสอบให้
   Future<void> signIn({required String email, required String password}) async {
-    await _auth.signInWithEmailAndPassword(
+    final credential = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
     );
+    if (credential.user != null) await ensureProfile(credential.user!);
+  }
+
+  /// Repairs missing/legacy profiles transactionally. It is safe for AuthGate
+  /// and registration to call this concurrently without resetting privacy.
+  Future<void> ensureProfile(User user, {String? displayName}) async {
+    final reference = _firestore.collection('users').doc(user.uid);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final data = snapshot.data() ?? const <String, dynamic>{};
+      final storedName = readString(data['displayName']).trim();
+      final candidate =
+          displayName ??
+          (storedName.isNotEmpty ? storedName : user.displayName ?? 'สมาชิก');
+      final name = boundedString(
+        candidate.trim().isEmpty ? 'สมาชิก' : candidate.trim(),
+        60,
+      );
+      final desired = <String, dynamic>{
+        'uid': user.uid,
+        'displayName': name,
+        'displayNameLower': boundedString(name.toLowerCase(), 60),
+        'bio': boundedString(readString(data['bio']), 160),
+        'isPrivate': data['isPrivate'] == true,
+        if (data['createdAt'] is! Timestamp)
+          'createdAt': FieldValue.serverTimestamp(),
+      };
+      final updates = <String, dynamic>{
+        for (final entry in desired.entries)
+          if (data[entry.key] != entry.value) entry.key: entry.value,
+      };
+      if (data.containsKey('avatarPath') &&
+          (data['avatarPath'] is! String ||
+              !RegExp('^profile_images/${RegExp.escape(user.uid)}/[^/]+\$')
+                  .hasMatch(data['avatarPath'] as String))) {
+        updates['avatarPath'] = FieldValue.delete();
+      }
+      if (data.containsKey('privacyTarget') && data['privacyTarget'] is! bool) {
+        updates['privacyTarget'] = FieldValue.delete();
+      }
+      if (updates.isEmpty) return;
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+      transaction.set(reference, updates, SetOptions(merge: true));
+    });
   }
 
   /// ขอให้ Firebase Auth ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลที่ระบุ

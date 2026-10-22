@@ -22,6 +22,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   final _service = CommentService();
   final _textController = TextEditingController();
   bool _sending = false;
+  int _limit = 50;
 
   @override
   void dispose() {
@@ -37,6 +38,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
         post: widget.post,
         content: _textController.text,
       );
+      if (!mounted) return;
       _textController.clear();
       if (!result.notificationsComplete && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,7 +100,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
           _PostPreview(post: widget.post),
           Expanded(
             child: StreamBuilder<List<PostComment>>(
-              stream: _service.watchComments(widget.post.id),
+              stream: _service.watchComments(widget.post.id, limit: _limit),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -128,10 +130,18 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  itemCount: comments.length,
+                  itemCount:
+                      comments.length + (comments.length >= _limit ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) {
-                    final comment = comments[index];
+                    if (comments.length >= _limit && index == 0) {
+                      return TextButton(
+                        onPressed: () => setState(() => _limit += 50),
+                        child: const Text('โหลดความคิดเห็นก่อนหน้า'),
+                      );
+                    }
+                    final comment =
+                        comments[index - (comments.length >= _limit ? 1 : 0)];
                     return _CommentTile(
                       comment: comment,
                       canDelete: comment.authorId == widget.user.uid,

@@ -26,10 +26,14 @@ class CommentService {
       _firestore.collection('posts').doc(postId).collection('comments');
 
   /// ฟังความคิดเห็นแบบ real-time และเรียงจากเก่าไปใหม่เพื่อแสดงเป็นบทสนทนา
-  Stream<List<PostComment>> watchComments(String postId) => _comments(postId)
-      .orderBy('createdAt')
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(PostComment.fromSnapshot).toList());
+  Stream<List<PostComment>> watchComments(String postId, {int limit = 50}) =>
+      _comments(postId)
+          .orderBy('createdAt')
+          .limitToLast(limit)
+          .snapshots()
+          .map(
+            (snapshot) => snapshot.docs.map(PostComment.fromSnapshot).toList(),
+          );
 
   /// โหลดโพสต์ที่เกี่ยวข้องเมื่อผู้ใช้เปิดการแจ้งเตือนความคิดเห็น
   Future<Post?> getPost(String postId) async {
@@ -94,40 +98,38 @@ class CommentService {
     var notifiedFollowers = 0;
     final notifications = _firestore.collection('notifications');
 
-    // Firestore จำกัด 500 writes ต่อ batch; ส่งแจ้งเตือนเป็นชุดละ 450 รายการ
-    for (var offset = 0; offset < recipients.length; offset += 450) {
-      final batch = _firestore.batch();
-      final end = (offset + 450).clamp(0, recipients.length);
-      for (final follower in recipients.sublist(offset, end)) {
-        final notification = notifications.doc(
-          'comment_${comment.id}_${follower.id}',
-        );
-        batch.set(notification, {
-          'recipientId': follower.id,
-          'actorId': user.uid,
-          'actorName': authorName,
-          'type': 'comment',
-          'body': text,
-          'postId': post.id,
-          'commentId': comment.id,
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-      try {
-        await batch.commit();
-        notifiedFollowers += end - offset;
-      } catch (_) {
-        // Comment ถูกบันทึกแล้ว; แจ้งผลการเตือนแยกเพื่อไม่ให้ผู้ใช้ส่งซ้ำ
-        return CommentDeliveryResult(
-          notificationsComplete: false,
-          eligibleFollowers: recipients.length,
-          notifiedFollowers: notifiedFollowers,
-        );
-      }
+    // Each write has its own Rules access-call budget. Bound parallel requests
+    // instead of putting many distinct follower checks into one atomic batch.
+    const concurrency = 8;
+    for (var offset = 0; offset < recipients.length; offset += concurrency) {
+      final end = (offset + concurrency).clamp(0, recipients.length);
+      final deliveries = await Future.wait(
+        recipients.sublist(offset, end).map((follower) async {
+          final notification = notifications.doc(
+            'comment_${comment.id}_${follower.id}',
+          );
+          try {
+            await notification.set({
+              'recipientId': follower.id,
+              'actorId': user.uid,
+              'actorName': authorName,
+              'type': 'comment',
+              'body': text,
+              'postId': post.id,
+              'commentId': comment.id,
+              'isRead': false,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }),
+      );
+      notifiedFollowers += deliveries.where((delivered) => delivered).length;
     }
     return CommentDeliveryResult(
-      notificationsComplete: true,
+      notificationsComplete: notifiedFollowers == recipients.length,
       eligibleFollowers: recipients.length,
       notifiedFollowers: notifiedFollowers,
     );

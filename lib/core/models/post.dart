@@ -1,6 +1,8 @@
 // โมเดลโพสต์เก็บข้อมูลที่ใช้ในฟีดและแปลงชนิดข้อมูลจาก Firestore
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/document_values.dart';
+
 /// ตัวแทนข้อมูลโพสต์หนึ่งรายการในฟีด พร้อมแปลงข้อมูล Firestore เป็นชนิด Dart
 class Post {
   const Post({
@@ -15,6 +17,7 @@ class Post {
     this.mediaType = 'none',
     this.thumbnailPath,
     this.editedAt,
+    this.isDeleting = false,
   });
 
   /// ID ของ document ใน posts; ใช้ระบุรายการเวลาแก้ไขหรือลบ
@@ -34,6 +37,7 @@ class Post {
 
   /// Latest edit time; null means this post has not been edited.
   final DateTime? editedAt;
+  final bool isDeleting;
 
   /// คำค้นของโพสต์ ใช้แสดงเป็นป้ายกำกับและต่อยอดทำหน้าค้นหาตามแท็ก
   final List<String> tags;
@@ -53,25 +57,36 @@ class Post {
   /// อ่าน document แล้วสร้าง Post; ใช้เวลาปัจจุบันชั่วคราวหาก serverTimestamp
   /// ยังไม่ได้รับค่ากลับมาในระหว่างบันทึกแบบออฟไลน์
   factory Post.fromSnapshot(DocumentSnapshot<Map<String, dynamic>> snapshot) {
-    final data = snapshot.data() ?? const <String, dynamic>{};
-    final timestamp = data['createdAt'] as Timestamp?;
-    final storedAuthorName = data['authorName'] as String?;
+    return Post.fromData(snapshot.id, snapshot.data() ?? const {});
+  }
+
+  factory Post.fromData(String id, Map<String, dynamic> data) {
+    final storedAuthorName = readString(data['authorName']).trim();
+    final path = readOptionalString(data['mediaPath']);
+    final storedType = readString(data['mediaType']);
+    final mediaType = const {'none', 'image', 'video'}.contains(storedType)
+        ? storedType
+        : path == null
+        ? 'none'
+        : RegExp(r'\.(mp4|mov|m4v|webm)$', caseSensitive: false).hasMatch(path)
+        ? 'video'
+        : 'image';
 
     return Post(
-      id: snapshot.id,
-      userId: data['userId'] as String? ?? '',
-      authorName: (storedAuthorName == null || storedAuthorName.trim().isEmpty)
-          ? 'สมาชิก'
-          : storedAuthorName.trim(),
-      content: data['content'] as String? ?? '',
-      createdAt: timestamp?.toDate() ?? DateTime.now(),
-      editedAt: (data['editedAt'] as Timestamp?)?.toDate(),
-      tags: List<String>.from(data['tags'] as List? ?? const []),
+      id: id,
+      userId: readString(data['userId']),
+      authorName: storedAuthorName.isEmpty ? 'สมาชิก' : storedAuthorName,
+      content: readString(data['content']),
+      createdAt:
+          readDate(data['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      editedAt: readDate(data['editedAt']),
+      isDeleting: data['isDeleting'] == true,
+      tags: readStrings(data['tags']),
       // โพสต์รุ่นก่อนที่ยังไม่มี visibility ให้คงพฤติกรรมเดิมคือเป็นสาธารณะ
-      visibility: data['visibility'] as String? ?? 'public',
-      mediaPath: data['mediaPath'] as String?,
-      mediaType: data['mediaType'] as String? ?? 'none',
-      thumbnailPath: data['thumbnailPath'] as String?,
+      visibility: readString(data['visibility'], 'public'),
+      mediaPath: path,
+      mediaType: mediaType,
+      thumbnailPath: readOptionalString(data['thumbnailPath']),
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/social_group.dart';
+import '../utils/document_values.dart';
 
 /// คุยกับ Firestore สำหรับกลุ่มและสมาชิก โดย Rules ตรวจสิทธิ์ทุกการเขียน
 class GroupService {
@@ -44,13 +45,16 @@ class GroupService {
       });
 
   /// ฟังโพสต์ในกลุ่มจากเก่าไปใหม่ตามลำดับเวลา
-  Stream<List<GroupPost>> watchPosts(String groupId) => _groups
-      .doc(groupId)
-      .collection('posts')
-      .orderBy('createdAt', descending: true)
-      .limit(100)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(GroupPost.fromSnapshot).toList());
+  Stream<List<GroupPost>> watchPosts(String groupId, {int limit = 30}) =>
+      _groups
+          .doc(groupId)
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map(
+            (snapshot) => snapshot.docs.map(GroupPost.fromSnapshot).toList(),
+          );
 
   /// ฟังสถานะสมาชิกและจำนวนสมาชิกแบบสด
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMembers(String groupId) =>
@@ -174,7 +178,11 @@ class GroupService {
       );
     }
     final group = _groups.doc(groupId);
-    final oldAvatarPath = (await group.get()).data()?['avatarPath'] as String?;
+    final before = await group.get();
+    if (!before.exists || before.data()?['isDeleting'] == true) {
+      throw const GroupServiceException('กลุ่มนี้กำลังถูกลบ');
+    }
+    final oldAvatarPath = readOptionalString(before.data()?['avatarPath']);
     String? newAvatarPath;
     if (avatar != null) {
       newAvatarPath = await _uploadGroupAvatar(groupId, avatar);
@@ -186,7 +194,17 @@ class GroupService {
     };
     if (newAvatarPath != null) updates['avatarPath'] = newAvatarPath;
     try {
-      await group.update(updates);
+      await _firestore.runTransaction((transaction) async {
+        final current = await transaction.get(group);
+        if (!current.exists ||
+            current.data()?['isDeleting'] == true ||
+            current.data()?['updatedAt'] != before.data()?['updatedAt']) {
+          throw const GroupServiceException(
+            'ข้อมูลกลุ่มเปลี่ยนระหว่างบันทึก กรุณาเปิดกลุ่มใหม่แล้วลองอีกครั้ง',
+          );
+        }
+        transaction.update(group, updates);
+      });
     } catch (_) {
       if (newAvatarPath != null) {
         try {
@@ -211,14 +229,21 @@ class GroupService {
   /// ลบโพสต์ สมาชิก และเอกสารกลุ่มเป็นชุด เพื่อไม่ให้ข้อมูลย่อยค้างอยู่
   Future<void> deleteGroup(String groupId) async {
     final group = _groups.doc(groupId);
-    final data = await group.get();
-    if (!data.exists || data.data()?['ownerId'] != _uid) {
-      throw const GroupServiceException('ลบได้เฉพาะกลุ่มที่คุณเป็นเจ้าของ');
-    }
+    final data = await _firestore.runTransaction((transaction) async {
+      final current = await transaction.get(group);
+      if (!current.exists || current.data()?['ownerId'] != _uid) {
+        throw const GroupServiceException('ลบได้เฉพาะกลุ่มที่คุณเป็นเจ้าของ');
+      }
+      transaction.update(group, {
+        'isDeleting': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return current;
+    });
     final members = await group.collection('members').get();
     final posts = await group.collection('posts').get();
     final joinRequests = await group.collection('join_requests').get();
-    final avatarPath = data.data()?['avatarPath'] as String?;
+    final avatarPath = readOptionalString(data.data()?['avatarPath']);
     if (avatarPath != null && avatarPath.startsWith('group_images/$groupId/')) {
       await _deleteStorageFile(avatarPath);
     }
@@ -235,8 +260,8 @@ class GroupService {
     }
     // ลบโพสต์ก่อน เพราะการลบโพสต์ต้องอาศัยสถานะสมาชิกที่ยังมีอยู่
     for (final post in posts.docs) {
-      final mediaPath = post.data()['mediaPath'] as String?;
-      final thumbnailPath = post.data()['thumbnailPath'] as String?;
+      final mediaPath = readOptionalString(post.data()['mediaPath']);
+      final thumbnailPath = readOptionalString(post.data()['thumbnailPath']);
       for (final path in [mediaPath, thumbnailPath]) {
         if (path != null && path.startsWith('group_media/$groupId/')) {
           try {

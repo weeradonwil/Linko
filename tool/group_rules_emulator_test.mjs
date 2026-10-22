@@ -4,6 +4,14 @@
 const projectId = process.env.GCLOUD_PROJECT ?? 'demo-linko';
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
+if (!projectId.startsWith('demo-') || [authHost, firestoreHost].some(host => !/^(127\.0\.0\.1|localhost):\d+$/.test(host))) {
+  throw new Error('Tests require local emulators and a demo-* project.');
+}
+const runId = Date.now();
+function scopedPath(path) {
+  return path.replace(/(^|\/)groups\/(public_group|private_group|approval_guard)(?=\/|$)/g,
+    (_, prefix, id) => `${prefix}groups/${id}_${runId}`);
+}
 const authBase = `http://${authHost}/identitytoolkit.googleapis.com/v1`;
 const firestoreBase = `http://${firestoreHost}/v1/projects/${projectId}/databases/(default)/documents`;
 
@@ -26,7 +34,7 @@ async function createUser() {
 }
 
 async function firestoreRequest(path, { token, method = 'GET', body } = {}) {
-  const response = await fetch(`${firestoreBase}${path}`, {
+  const response = await fetch(`${firestoreBase}${scopedPath(path)}`, {
     method,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -45,7 +53,7 @@ async function firestoreRequest(path, { token, method = 'GET', body } = {}) {
 }
 
 function documentName(path) {
-  return `projects/${projectId}/databases/(default)/documents/${path}`;
+  return `projects/${projectId}/databases/(default)/documents/${scopedPath(path)}`;
 }
 
 function stringValue(value) {

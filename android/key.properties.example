@@ -1,0 +1,6 @@
+# Copy to key.properties and use your own release keystore. Never commit secrets.
+# storeFile is relative to android/, or an absolute path using forward slashes.
+storeFile=../upload-keystore.jks
+storePassword=REPLACE_WITH_YOUR_PASSWORD
+keyAlias=upload
+keyPassword=REPLACE_WITH_YOUR_PASSWORD

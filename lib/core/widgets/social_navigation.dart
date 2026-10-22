@@ -26,6 +26,7 @@ class LinkoAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AppBar(
       titleSpacing: 20,
       title: RichText(
@@ -59,10 +60,10 @@ class LinkoAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
         if (onToggleTheme != null)
           IconButton(
-            tooltip: isDarkMode ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด',
+            tooltip: isDark ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด',
             onPressed: onToggleTheme,
             icon: Icon(
-              isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
             ),
           ),
         if (onSignOut != null)

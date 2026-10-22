@@ -2,17 +2,16 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/post.dart';
 import '../../core/services/auth_service.dart';
-import '../../core/services/chat_service.dart';
-import '../../core/utils/firebase_error_message.dart';
+import '../../core/utils/latest_request.dart';
 import '../../core/services/search_service.dart';
 import '../../core/widgets/post_media.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../chat/chat_list.dart';
-import '../chat/chat_room.dart';
 import '../notifications/notifications_screen.dart';
 import '../profile/profile.dart';
 import '../groups/groups_screen.dart';
@@ -37,6 +36,10 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   final _service = SearchService();
   final _searchFocus = FocusNode();
   Timer? _debounce;
+  final _requests = LatestRequest();
+  DocumentSnapshot<Map<String, dynamic>>? _postCursor;
+  bool _hasMorePosts = false;
+  bool _loadingMore = false;
   int _filter = 0;
   bool _loading = false;
   String? _error;
@@ -53,6 +56,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _requests.next();
     _controller.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -60,73 +64,120 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
 
   // โหลดผู้ใช้ โพสต์ และแท็กพร้อมกันสำหรับหน้า Explore เริ่มต้น
   Future<void> _loadExplore() async {
-    setState(() => _loading = true);
+    final request = _requests.next();
+    setState(() {
+      _loading = true;
+      _loadingMore = false;
+    });
     try {
-      final r = await Future.wait([
+      final results = await Future.wait([
         _service.recentUsers(),
-        _service.recentPosts(limit: 30),
+        _service.searchPostPage('', pageSize: 30),
         _service.popularTags(),
       ]);
-      if (!mounted) return;
+      if (!mounted || !_requests.accepts(request)) return;
+      final page = results[1] as PostSearchPage;
       setState(() {
-        _users = r[0] as List<Map<String, dynamic>>;
-        _posts = r[1] as List<Post>;
-        _tags = r[2] as List<({String tag, int count})>;
+        _users = results[0] as List<Map<String, dynamic>>;
+        _posts = page.posts;
+        _postCursor = page.cursor;
+        _hasMorePosts = page.hasMore;
+        _tags = results[2] as List<({String tag, int count})>;
         _error = null;
         _loading = false;
       });
     } catch (_) {
-      if (mounted)
-        setState(() {
-          _error =
-              'โหลดข้อมูลสำรวจไม่สำเร็จ ตรวจการเชื่อมต่อและ Firestore Rules';
-          _loading = false;
-        });
+      _searchFailed(request, 'โหลดข้อมูลสำรวจไม่สำเร็จ กรุณาลองอีกครั้ง');
     }
   }
 
-  // หน่วงการค้นหา 350 ms เพื่อลด query ระหว่างผู้ใช้กำลังพิมพ์
   void _queueSearch() {
     _debounce?.cancel();
+    _requests.next();
+    setState(() {
+      _loading = true;
+      _loadingMore = false;
+    });
     _debounce = Timer(const Duration(milliseconds: 350), _runSearch);
   }
 
-  // เรียกเฉพาะ service ที่ตรงกับตัวกรอง แล้วนำผลมาแสดงในหน้าเดียวกัน
   Future<void> _runSearch() async {
-    final q = _controller.text.trim();
-    if (q.isEmpty) {
+    _debounce?.cancel();
+    final query = _controller.text.trim();
+    final filter = _filter;
+    if (query.isEmpty) {
       await _loadExplore();
       return;
     }
-    setState(() => _loading = true);
+    final request = _requests.next();
+    setState(() {
+      _loading = true;
+      _loadingMore = false;
+    });
     try {
       final jobs = <Future<dynamic>>[];
-      if (_filter == 0 || _filter == 1) jobs.add(_service.searchUsers(q));
-      if (_filter == 0 || _filter == 2 || _filter == 3)
-        jobs.add(_service.searchPosts(q));
+      if (filter == 0 || filter == 1) jobs.add(_service.searchUsers(query));
+      if (filter != 1) jobs.add(_service.searchPostPage(query));
       final values = await Future.wait(jobs);
+      if (!mounted || !_requests.accepts(request)) return;
       var i = 0;
-      final users = (_filter == 0 || _filter == 1)
+      final users = filter == 0 || filter == 1
           ? values[i++] as List<Map<String, dynamic>>
           : <Map<String, dynamic>>[];
-      final posts = (_filter == 0 || _filter == 2 || _filter == 3)
-          ? values[i] as List<Post>
-          : <Post>[];
-      if (mounted)
-        setState(() {
-          _users = users;
-          _posts = posts;
-          _error = null;
-          _loading = false;
-        });
+      final page = filter != 1 ? values[i] as PostSearchPage : null;
+      setState(() {
+        _users = users;
+        _posts = page?.posts ?? [];
+        _postCursor = page?.cursor;
+        _hasMorePosts = page?.hasMore ?? false;
+        _error = null;
+        _loading = false;
+      });
     } catch (_) {
-      if (mounted)
-        setState(() {
-          _error = 'ค้นหาไม่สำเร็จ ตรวจ Firestore Rules และข้อมูลผู้ใช้';
-          _loading = false;
-        });
+      _searchFailed(request, 'ค้นหาไม่สำเร็จ กรุณาลองอีกครั้ง');
     }
   }
+
+  void _searchFailed(int request, String message) {
+    if (!mounted || !_requests.accepts(request)) return;
+    setState(() {
+      _error = message;
+      _loading = false;
+      _loadingMore = false;
+    });
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_loading || _loadingMore || !_hasMorePosts) return;
+    final request = _requests.version;
+    final query = _controller.text.trim();
+    setState(() => _loadingMore = true);
+    try {
+      final page = await _service.searchPostPage(query, cursor: _postCursor);
+      if (!mounted || !_requests.accepts(request)) return;
+      setState(() {
+        _posts = {
+          for (final post in [..._posts, ...page.posts]) post.id: post,
+        }.values.toList();
+        _postCursor = page.cursor;
+        _hasMorePosts = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || !_requests.accepts(request)) return;
+      setState(() => _loadingMore = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('โหลดโพสต์เพิ่มไม่สำเร็จ ลองอีกครั้งได้')),
+      );
+    }
+  }
+
+  Widget _loadMoreButton() => !_hasMorePosts || _filter == 1
+      ? const SizedBox.shrink()
+      : TextButton(
+          onPressed: _loadingMore ? null : _loadMorePosts,
+          child: Text(_loadingMore ? 'กำลังโหลด' : 'ค้นต่อในโพสต์เก่า'),
+        );
 
   void _selectFilter(int index) {
     setState(() => _filter = index);
@@ -134,7 +185,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   }
 
   void _setTag(String tag) {
-    _controller.text = '#' + tag;
+    _controller.text = '#$tag';
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
@@ -180,34 +231,15 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     }
   }
 
-  // เริ่มหรือเปิดห้องสนทนากับสมาชิกที่เลือกจากผลการค้นหา
-  Future<void> _startChat(Map<String, dynamic> person) async {
-    final peerId = person['uid'] as String? ?? '';
-    final name = person['displayName'] as String? ?? 'สมาชิก';
-    try {
-      final id = await ChatService().openConversation(
-        peerId: peerId,
-        peerName: name,
-      );
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ChatRoomScreen(
-            user: widget.user,
-            conversationId: id,
-            peerId: peerId,
-            peerName: name,
-          ),
+  void _openPerson(Map<String, dynamic> person) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileScreen(
+          user: widget.user,
+          profileUid: person['uid'] as String,
         ),
-      );
-    } catch (error) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(firebaseErrorMessage(error, action: 'เริ่มแชท')),
-          ),
-        );
-    }
+      ),
+    );
   }
 
   @override
@@ -333,11 +365,11 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '#' + t.tag,
+                        '#${t.tag}',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        t.count.toString() + ' โพสต์',
+                        '${t.count} โพสต์',
                         style: Theme.of(context).textTheme.labelSmall,
                       ),
                     ],
@@ -367,6 +399,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           const _Hint(text: 'ยังไม่มีโพสต์สาธารณะให้สำรวจ')
         else
           ..._posts.map((p) => _postCard(context, p)),
+        _loadMoreButton(),
       ],
     );
   }
@@ -388,11 +421,14 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           ),
           ..._posts.map((p) => _postCard(context, p)),
         ],
+        _loadMoreButton(),
         if (_users.isEmpty && _posts.isEmpty)
           _Empty(
             icon: Icons.search_off_rounded,
             title: 'ไม่พบผลการค้นหา',
-            detail: 'ลองค้นหาด้วยคำหรือแท็กอื่น',
+            detail: _hasMorePosts
+                ? 'ยังมีโพสต์เก่าให้ค้นต่อ กดปุ่มด้านบน'
+                : 'ลองค้นหาด้วยคำหรือแท็กอื่น',
           ),
       ],
     );
@@ -445,9 +481,12 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                 width: double.infinity,
                 height: 32,
                 child: FilledButton(
-                  onPressed: () => _startChat(person),
+                  onPressed: () => _openPerson(person),
                   style: FilledButton.styleFrom(padding: EdgeInsets.zero),
-                  child: const Text('ข้อความ', style: TextStyle(fontSize: 12)),
+                  child: const Text(
+                    'ดูโปรไฟล์',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
               ),
             ],
@@ -474,9 +513,9 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           person['isPrivate'] == true ? 'โปรไฟล์ส่วนตัว' : 'สมาชิก Linko',
         ),
         trailing: IconButton(
-          tooltip: 'ส่งข้อความ',
-          onPressed: () => _startChat(person),
-          icon: const Icon(Icons.chat_bubble_outline_rounded),
+          tooltip: 'ดูโปรไฟล์และติดตาม',
+          onPressed: () => _openPerson(person),
+          icon: const Icon(Icons.person_outline_rounded),
         ),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -518,7 +557,10 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                       radius: 17,
                       backgroundColor: c.primary.withValues(alpha: .16),
                       child: Text(
-                        post.authorName.characters.first.toUpperCase(),
+                        (post.authorName.isEmpty
+                                ? '?'
+                                : post.authorName.characters.first)
+                            .toUpperCase(),
                         style: TextStyle(color: c.primary),
                       ),
                     ),
@@ -558,7 +600,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                       children: post.tags
                           .map(
                             (t) => ActionChip(
-                              label: Text('#' + t),
+                              label: Text('#$t'),
                               onPressed: () => _setTag(t),
                             ),
                           )
@@ -573,8 +615,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     );
   }
 
-  String _date(DateTime d) =>
-      d.day.toString() + '/' + d.month.toString() + '/' + d.year.toString();
+  String _date(DateTime d) => '${d.day}/${d.month}/${d.year}';
 }
 
 class _Empty extends StatelessWidget {

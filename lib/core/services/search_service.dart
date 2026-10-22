@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/post.dart';
+import '../utils/document_values.dart';
 
 /// ค้นหาจากข้อมูล Firestore ที่มีอยู่ โดยไม่สร้างดัชนีค้นหาแยก
 class SearchService {
@@ -21,7 +22,7 @@ class SearchService {
         .get();
     return s.docs
         .where((d) => d.id != uid)
-        .map((d) => {'uid': d.id, ...d.data()})
+        .map((d) => _person(d.id, d.data()))
         .toList();
   }
 
@@ -41,9 +42,11 @@ class SearchService {
           .limit(30)
           .get();
       for (final d in s.docs) {
-        if (d.id != uid) results[d.id] = {'uid': d.id, ...d.data()};
+        if (d.id != uid) results[d.id] = _person(d.id, d.data());
       }
-    } on FirebaseException {}
+    } on FirebaseException {
+      /* Legacy profiles are searched below. */
+    }
     // Include older accounts that do not have displayNameLower yet.
     final legacy = await _firestore
         .collection('users')
@@ -51,9 +54,10 @@ class SearchService {
         .limit(150)
         .get();
     for (final d in legacy.docs) {
-      final name = (d.data()['displayName'] as String? ?? '').toLowerCase();
-      if (d.id != uid && name.contains(q))
-        results[d.id] = {'uid': d.id, ...d.data()};
+      final name = readString(d.data()['displayName']).toLowerCase();
+      if (d.id != uid && name.contains(q)) {
+        results[d.id] = _person(d.id, d.data());
+      }
     }
     return results.values.take(30).toList();
   }
@@ -65,21 +69,44 @@ class SearchService {
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .get();
-    return s.docs.map(Post.fromSnapshot).toList();
+    return s.docs.map(Post.fromSnapshot).where((p) => !p.isDeleting).toList();
   }
 
-  /// กรองข้อความและแท็กจากโพสต์สาธารณะชุดล่าสุดที่โหลดมา
-  Future<List<Post>> searchPosts(String value) async {
+  /// Each request scans a bounded page. Continue with the returned cursor
+  /// even when this page contains no matching text.
+  Future<PostSearchPage> searchPostPage(
+    String value, {
+    DocumentSnapshot<Map<String, dynamic>>? cursor,
+    int pageSize = 80,
+  }) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('posts')
+        .where('visibility', isEqualTo: 'public')
+        .orderBy('createdAt', descending: true)
+        .limit(pageSize);
+    if (cursor != null) query = query.startAfterDocument(cursor);
+    final snapshot = await query.get();
     final q = value.trim().toLowerCase().replaceFirst(RegExp(r'^#'), '');
-    if (q.isEmpty) return recentPosts(limit: 30);
-    final posts = await recentPosts();
-    return posts
+    final posts = snapshot.docs
+        .map(Post.fromSnapshot)
         .where(
           (p) =>
-              p.content.toLowerCase().contains(q) ||
-              p.tags.any((t) => t.toLowerCase().contains(q)),
+              !p.isDeleting &&
+              (q.isEmpty ||
+                  p.content.toLowerCase().contains(q) ||
+                  p.tags.any((tag) => tag.toLowerCase().contains(q))),
         )
         .toList();
+    return PostSearchPage(
+      posts,
+      snapshot.docs.isEmpty ? cursor : snapshot.docs.last,
+      snapshot.docs.length == pageSize,
+    );
+  }
+
+  Map<String, dynamic> _person(String uid, Map<String, dynamic> data) {
+    final name = readString(data['displayName']).trim();
+    return {...data, 'uid': uid, 'displayName': name.isEmpty ? 'สมาชิก' : name};
   }
 
   // นับแท็กจากโพสต์สาธารณะล่าสุด แล้วคืนแท็กที่พบมากที่สุด
@@ -95,4 +122,11 @@ class SearchService {
       ..sort((a, b) => b.value.compareTo(a.value));
     return items.take(8).map((e) => (tag: e.key, count: e.value)).toList();
   }
+}
+
+class PostSearchPage {
+  const PostSearchPage(this.posts, this.cursor, this.hasMore);
+  final List<Post> posts;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hasMore;
 }

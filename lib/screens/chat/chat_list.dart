@@ -113,7 +113,7 @@ class ChatListScreen extends StatelessWidget {
               child: StreamBuilder<List<ConversationSummary>>(
                 stream: service.watchConversations(),
                 builder: (context, snapshot) {
-                  if (snapshot.hasError)
+                  if (snapshot.hasError) {
                     return _StateMessage(
                       icon: Icons.cloud_off_outlined,
                       text: firebaseErrorMessage(
@@ -131,10 +131,12 @@ class ChatListScreen extends StatelessWidget {
                         ),
                       ),
                     );
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
+                  }
                   final items = snapshot.data ?? [];
-                  if (items.isEmpty)
+                  if (items.isEmpty) {
                     return _StateMessage(
                       icon: Icons.chat_bubble_outline_rounded,
                       text: 'ยังไม่มีบทสนทนา',
@@ -142,6 +144,7 @@ class ChatListScreen extends StatelessWidget {
                       action: 'ค้นหาสมาชิก',
                       onPressed: () => _openSearch(context),
                     );
+                  }
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                     itemCount: items.length,
@@ -250,8 +253,9 @@ class ChatListScreen extends StatelessWidget {
                                       ],
                                     ),
                                   );
-                                  if (confirmed != true || !context.mounted)
+                                  if (confirmed != true || !context.mounted) {
                                     return;
+                                  }
                                   try {
                                     await ChatService().hideConversation(
                                       conversation.id,
@@ -310,11 +314,12 @@ class ChatListScreen extends StatelessWidget {
   String _time(DateTime? date) {
     if (date == null) return '';
     final now = DateTime.now();
-    if (date.year == now.year && date.month == now.month && date.day == now.day)
-      return date.hour.toString().padLeft(2, '0') +
-          ':' +
-          date.minute.toString().padLeft(2, '0');
-    return date.day.toString() + '/' + date.month.toString();
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
+      return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    }
+    return '${date.day}/${date.month}';
   }
 }
 

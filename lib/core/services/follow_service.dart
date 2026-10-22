@@ -2,6 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/post_policy.dart';
+
 /// บันทึกความสัมพันธ์ทั้งฝั่งผู้ติดตามและผู้ที่ถูกติดตามใน batch เดียว
 class FollowService {
   FollowService({FirebaseAuth? auth, FirebaseFirestore? firestore})
@@ -87,7 +89,7 @@ class FollowService {
     if (!target.exists) {
       throw const FollowServiceException('Follow action failed.');
     }
-    if (target.data()?['isPrivate'] == true) {
+    if (PostPolicy.profileIsPrivate(target.data() ?? const {})) {
       await requestFollow(targetUid);
       return;
     }
@@ -131,7 +133,7 @@ class FollowService {
       throw const FollowServiceException('Follow action failed.');
     }
     final target = await _firestore.collection('users').doc(targetUid).get();
-    if (target.data()?['isPrivate'] != true) {
+    if (!PostPolicy.profileIsPrivate(target.data() ?? const {})) {
       await follow(targetUid);
       return;
     }

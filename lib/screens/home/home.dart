@@ -6,11 +6,14 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../core/models/post.dart';
+import '../../core/utils/document_values.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/reaction_service.dart';
 import '../../core/models/social_reaction.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/post_report_dialog.dart';
+import '../../core/widgets/social_reaction_picker.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../create_post/create_post.dart';
 import '../chat/chat_list.dart';
@@ -49,9 +52,25 @@ class _HomeScreenState extends State<HomeScreen> {
   final _feedScrollController = ScrollController();
   final _reactionService = ReactionService();
   int _feedGeneration = 0;
+  int _feedLimit = 30;
+  late Stream<List<Post>> _feed;
+
+  @override
+  void initState() {
+    super.initState();
+    _feed = PostService().watchFeed(limit: _feedLimit);
+  }
+
+  void _loadOlder() => setState(() {
+    _feedLimit += 30;
+    _feed = PostService().watchFeed(limit: _feedLimit);
+  });
 
   void _restartFeed() {
-    setState(() => _feedGeneration++);
+    setState(() {
+      _feedGeneration++;
+      _feed = PostService().watchFeed(limit: _feedLimit);
+    });
     if (_feedScrollController.hasClients) {
       _feedScrollController.jumpTo(0);
     }
@@ -128,71 +147,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// เปิดแบบฟอร์มรายงาน ให้ผู้ใช้เลือกเหตุผลและส่งรายงานไปเก็บใน Firestore
   Future<void> _reportPost(BuildContext context, Post post) async {
-    const reasons = [
-      'สแปม',
-      'คุกคามหรือกลั่นแกล้ง',
-      'เนื้อหารุนแรง',
-      'เนื้อหาทางเพศ',
-      'ข้อมูลเท็จ',
-      'อื่น ๆ',
-    ];
-    var reason = reasons.first;
-    final detailsController = TextEditingController();
-    final shouldSubmit = await showDialog<bool>(
+    final draft = await showDialog<PostReportDraft>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('รายงานโพสต์'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: reason,
-                decoration: const InputDecoration(labelText: 'เหตุผล'),
-                items: reasons
-                    .map(
-                      (item) =>
-                          DropdownMenuItem(value: item, child: Text(item)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => reason = value);
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: detailsController,
-                maxLength: 300,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'รายละเอียดเพิ่มเติม (ไม่บังคับ)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('ยกเลิก'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('ส่งรายงาน'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const PostReportDialog(),
     );
-    final reportDetails = detailsController.text;
-    detailsController.dispose();
-    if (shouldSubmit != true || !context.mounted) return;
+    if (draft == null || !context.mounted) return;
 
     try {
       await PostService().reportPost(
         post: post,
-        reason: reason,
-        details: reportDetails,
+        reason: draft.reason,
+        details: draft.details,
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -402,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: StreamBuilder<List<Post>>(
                 // snapshots ใน PostService ส่งรายการใหม่ทุกครั้งที่ Firestore เปลี่ยน
                 key: ValueKey(_feedGeneration),
-                stream: postService.watchFeed(),
+                stream: _feed,
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     // สถานะผิดพลาด เช่น อ่าน posts ไม่ได้ตาม Rules
@@ -433,10 +398,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ListView.separated(
                     controller: _feedScrollController,
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
-                    itemCount: posts.length,
+                    itemCount:
+                        posts.length + (posts.length >= _feedLimit ? 1 : 0),
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
+                      if (index == posts.length) {
+                        return TextButton(
+                          onPressed: _loadOlder,
+                          child: const Text('โหลดโพสต์เก่าเพิ่มเติม'),
+                        );
+                      }
                       final post = posts[index];
+                      if (post.isDeleting) {
+                        return Card(
+                          child: ListTile(
+                            title: const Text('กำลังลบโพสต์'),
+                            subtitle: const Text(
+                              'หากการลบหยุดลง สามารถลองลบต่อได้',
+                            ),
+                            trailing: TextButton(
+                              onPressed: () => _deletePost(context, post),
+                              child: const Text('ลบต่อ'),
+                            ),
+                          ),
+                        );
+                      }
                       // ใช้ UID เทียบเจ้าของ; ซ่อนเมนูแก้ไข/ลบสำหรับโพสต์คนอื่น
                       final isOwner = post.userId == widget.user.uid;
 
@@ -757,14 +743,19 @@ class _PostCard extends StatelessWidget {
               builder: (context, snapshot) {
                 final docs = snapshot.data?.docs ?? const [];
                 final ownReaction = docs.where((doc) => doc.id == currentUid);
-                final selected = ownReaction.isEmpty
+                final selectedReaction = ownReaction.isEmpty
                     ? null
                     : SocialReaction.byId(
-                        ownReaction.first.data()['reaction'] as String?,
-                      )?.id;
-                final counts = <String, int>{'like': 0, 'dislike': 0};
+                        readOptionalString(
+                          ownReaction.first.data()['reaction'],
+                        ),
+                      );
+                final selected = selectedReaction?.id;
+                final counts = <String, int>{
+                  for (final reaction in SocialReaction.options) reaction.id: 0,
+                };
                 for (final doc in docs) {
-                  final value = doc.data()['reaction'] as String?;
+                  final value = readOptionalString(doc.data()['reaction']);
                   final normalized = SocialReaction.byId(value)?.id;
                   if (normalized != null && counts.containsKey(normalized)) {
                     counts.update(
@@ -802,11 +793,26 @@ class _PostCard extends StatelessWidget {
                             icon: selected == 'like'
                                 ? Icons.thumb_up_alt
                                 : Icons.thumb_up_alt_outlined,
-                            label: 'ถูกใจ',
-                            color: selected == 'like'
+                            emoji:
+                                selectedReaction == null ||
+                                    selected == 'dislike'
+                                ? null
+                                : selectedReaction.emoji,
+                            label:
+                                selectedReaction == null ||
+                                    selected == 'dislike'
+                                ? 'ถูกใจ'
+                                : selectedReaction.label,
+                            color: selected != null && selected != 'dislike'
                                 ? theme.colorScheme.primary
                                 : null,
                             onPressed: () => onReaction('like'),
+                            onLongPress: (buttonContext) async {
+                              final reaction = await SocialReactionPicker.show(
+                                buttonContext,
+                              );
+                              if (reaction != null) onReaction(reaction);
+                            },
                           ),
                         ),
                         Expanded(
@@ -857,35 +863,47 @@ class _PostAction extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.color,
+    this.emoji,
+    this.onLongPress,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
   final Color? color;
+  final String? emoji;
+  final ValueChanged<BuildContext>? onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? Theme.of(context).colorScheme.onSurface,
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 10),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label == 'แสดงความคิดเห็น' ? 'ความคิดเห็น' : label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+    return Builder(
+      builder: (buttonContext) => TextButton(
+        onPressed: onPressed,
+        onLongPress: onLongPress == null
+            ? null
+            : () => onLongPress!(buttonContext),
+        style: TextButton.styleFrom(
+          foregroundColor: color ?? Theme.of(context).colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 10),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (emoji == null)
+              Icon(icon, size: 20)
+            else
+              Text(emoji!, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label == 'แสดงความคิดเห็น' ? 'ความคิดเห็น' : label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -45,13 +45,18 @@ service firebase.storage {
       function isGroupMember() {
         return firestore.exists(/databases/(default)/documents/groups/$(groupId)/members/$(request.auth.uid));
       }
-      allow read: if request.auth != null && isGroupMember() &&
+      function isGroupManager() {
+        return request.auth.token.get('admin', false) == true ||
+          (firestore.exists(groupPath()) && firestore.get(groupPath()).data.ownerId == request.auth.uid);
+      }
+      allow read: if request.auth != null && (isGroupMember() || isGroupManager()) &&
         firestore.exists(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)) &&
         firestore.get(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)).data.authorId == ownerUid;
-      allow write: if request.auth != null && request.auth.uid == ownerUid &&
-        isGroupMember() &&
-        firestore.exists(groupPath()) &&
-        (request.resource == null || isValidMediaUpload());
+      allow write: if request.auth != null &&
+        ((request.resource == null && (request.auth.uid == ownerUid || isGroupManager())) ||
+         (request.resource != null && request.auth.uid == ownerUid && isGroupMember() &&
+          firestore.exists(groupPath()) &&
+          firestore.get(groupPath()).data.get('isDeleting', false) != true && isValidMediaUpload()));
     }
 
     // Group avatars are editable by the owner and readable by signed-in members.
@@ -66,7 +71,8 @@ service firebase.storage {
         firestore.exists(groupDocument()) &&
         firestore.get(groupDocument()).data.ownerId == request.auth.uid &&
         (request.resource == null ||
-         (request.resource.size <= 5 * 1024 * 1024 &&
+         (firestore.get(groupDocument()).data.get('isDeleting', false) != true &&
+          request.resource.size <= 5 * 1024 * 1024 &&
           request.resource.contentType.matches('image/.*')));
     }
 

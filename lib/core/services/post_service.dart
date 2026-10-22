@@ -9,6 +9,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/post.dart';
+import '../models/post_policy.dart';
+import '../utils/document_values.dart';
 
 /// จัดการสร้าง อ่าน แก้ไข และลบโพสต์
 /// หน้าจอเรียก service นี้แทนการติดต่อ Firebase โดยตรง
@@ -42,151 +44,167 @@ class PostService {
 
   /// อ่านโพสต์สาธารณะพร้อมโพสต์ส่วนตัวของผู้ใช้ปัจจุบัน เรียงใหม่ไปเก่า
   /// Filter.or ทำให้เงื่อนไขที่ส่งไป Firestore ตรงกับสิทธิ์ใน Rules
-  Stream<List<Post>> watchFeed() {
+  Stream<List<Post>> watchFeed({int limit = 30}) {
     final userId = _currentUser.uid;
-    final controller = StreamController<List<Post>>();
-    final sourcePosts = <String, Map<String, Post>>{};
-    final subscriptions = <StreamSubscription<dynamic>>[];
-    final followedSubscriptions = <StreamSubscription<dynamic>>[];
+    late final StreamController<List<Post>> controller;
+    final sources = <String, Map<String, Post>>{};
+    final fixed = <StreamSubscription<dynamic>>[];
+    final followed = <StreamSubscription<dynamic>>[];
+    var cancelled = false;
+    var generation = 0;
 
-    void emitPosts() {
+    void emit() {
+      if (cancelled) return;
       final merged = <String, Post>{};
-      for (final source in sourcePosts.values) {
+      for (final source in sources.values) {
         merged.addAll(source);
       }
-      final result = merged.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (result.length > 100) result.removeRange(100, result.length);
-      if (!controller.isClosed) controller.add(result);
+      final posts =
+          merged.values
+              .where((p) => !p.isDeleting || p.userId == userId)
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      controller.add(posts.take(limit).toList());
     }
 
-    void reportFeedError(String sourceId, Object error, StackTrace stackTrace) {
-      debugPrint('Feed query [$sourceId] failed: $error');
-      if (!controller.isClosed) {
-        controller.addError(FeedQueryException(sourceId, error), stackTrace);
-      }
-    }
-
-    void attach(String sourceId, Query<Map<String, dynamic>> query) {
-      subscriptions.add(
-        query.snapshots().listen(
-          (snapshot) {
-            sourcePosts[sourceId] = {
-              for (final doc in snapshot.docs) doc.id: Post.fromSnapshot(doc),
-            };
-            emitPosts();
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            reportFeedError(sourceId, error, stackTrace);
-          },
-        ),
-      );
-    }
-
-    attach(
-      'public',
-      _posts
-          .where('visibility', isEqualTo: 'public')
-          .orderBy('createdAt', descending: true)
-          .limit(50),
+    StreamSubscription<dynamic> attach(
+      String key,
+      Query<Map<String, dynamic>> query, {
+      int? version,
+    }) => query.snapshots().listen(
+      (snapshot) {
+        if (cancelled || (version != null && version != generation)) return;
+        sources[key] = {
+          for (final doc in snapshot.docs) doc.id: Post.fromSnapshot(doc),
+        };
+        emit();
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!cancelled && (version == null || version == generation)) {
+          controller.addError(FeedQueryException(key, error), stack);
+        }
+      },
     );
-    attach('own', _posts.where('userId', isEqualTo: userId).limit(50));
-
-    subscriptions.add(
-      _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('following')
-          .snapshots()
-          .listen(
-            (following) async {
-              await Future.wait(
-                followedSubscriptions.map(
-                  (subscription) => subscription.cancel(),
-                ),
-              );
-              followedSubscriptions.clear();
-              sourcePosts.removeWhere((key, _) => key.startsWith('follow:'));
-              for (final followed in following.docs) {
-                final sourceId = 'follow:${followed.id}';
-                final subscription = _posts
-                    .where('userId', isEqualTo: followed.id)
-                    .where('visibility', isEqualTo: 'followers')
-                    .orderBy('createdAt', descending: true)
-                    .limit(30)
-                    .snapshots()
-                    .listen(
-                      (snapshot) {
-                        sourcePosts[sourceId] = {
-                          for (final doc in snapshot.docs)
-                            doc.id: Post.fromSnapshot(doc),
-                        };
-                        emitPosts();
-                      },
-                      onError: (Object error, StackTrace stackTrace) {
-                        reportFeedError(sourceId, error, stackTrace);
-                      },
-                    );
-                followedSubscriptions.add(subscription);
-              }
-              emitPosts();
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              reportFeedError('following-list', error, stackTrace);
-            },
+    controller = StreamController<List<Post>>(
+      onListen: () {
+        fixed.add(
+          attach(
+            'public',
+            _posts
+                .where('visibility', isEqualTo: 'public')
+                .orderBy('createdAt', descending: true)
+                .limit(limit),
           ),
+        );
+        fixed.add(
+          attach(
+            'own',
+            _posts
+                .where('userId', isEqualTo: userId)
+                .orderBy('createdAt', descending: true)
+                .limit(limit),
+          ),
+        );
+        fixed.add(
+          _firestore
+              .collection('users')
+              .doc(userId)
+              .collection('following')
+              .snapshots()
+              .listen(
+                (snapshot) async {
+                  final version = ++generation;
+                  final previous = List<StreamSubscription<dynamic>>.of(
+                    followed,
+                  );
+                  followed.clear();
+                  await Future.wait(previous.map((s) => s.cancel()));
+                  if (cancelled || version != generation) return;
+                  sources.removeWhere((key, _) => key.startsWith('follow:'));
+                  // Five authors per query keeps Rules document lookups below the
+                  // single-query limit, and reduces the number of live listeners.
+                  final ids = snapshot.docs.map((d) => d.id).toList();
+                  for (var i = 0; i < ids.length; i += 5) {
+                    final batch = ids.skip(i).take(5).toList();
+                    followed.add(
+                      attach(
+                        'follow:$i',
+                        _posts
+                            .where('userId', whereIn: batch)
+                            .where('visibility', isEqualTo: 'followers')
+                            .orderBy('createdAt', descending: true)
+                            .limit(limit),
+                        version: version,
+                      ),
+                    );
+                  }
+                  emit();
+                },
+                onError: (Object error, StackTrace stack) {
+                  if (!cancelled) {
+                    controller.addError(
+                      FeedQueryException('following-list', error),
+                      stack,
+                    );
+                  }
+                },
+              ),
+        );
+      },
+      onCancel: () async {
+        cancelled = true;
+        generation++;
+        await Future.wait([...fixed, ...followed].map((s) => s.cancel()));
+      },
     );
-
-    controller.onCancel = () async {
-      await Future.wait([
-        ...subscriptions.map((subscription) => subscription.cancel()),
-        ...followedSubscriptions.map((subscription) => subscription.cancel()),
-      ]);
-    };
     return controller.stream;
   }
 
-  /// Updates account privacy and affected post audiences in one atomic batch.
+  /// A pending target makes new writes use the new audience. For a private
+  /// transition the visible profile flag changes only after every page is done.
+  /// Interrupted jobs retain their target and can be resumed after login.
   Future<void> updateProfilePrivacy(bool isPrivate) async {
     final userId = _currentUser.uid;
     final userRef = _firestore.collection('users').doc(userId);
-    final userSnapshot = await userRef.get();
-    final wasPrivate = userSnapshot.data()?['isPrivate'] == true;
-    if (wasPrivate == isPrivate) return;
-
-    final snapshot = await _posts.where('userId', isEqualTo: userId).get();
-    final affected = snapshot.docs.where((post) {
-      final data = post.data();
-      final visibility = data['visibility'] as String? ?? 'public';
-      final targetVisibility = isPrivate && visibility == 'public'
-          ? 'followers'
-          : !isPrivate && visibility == 'followers'
-          ? 'public'
-          : visibility;
-      return targetVisibility != visibility ||
-          data['authorIsPrivate'] != isPrivate ||
-          !data.containsKey('visibility');
-    }).toList();
-    if (affected.length > 499) {
-      throw const PostServiceException(
-        'Too many posts to change profile privacy in one atomic update.',
-      );
-    }
-
-    final batch = _firestore.batch();
-    for (final post in affected) {
-      batch.update(post.reference, {
-        'visibility':
-            isPrivate && (post.data()['visibility'] ?? 'public') == 'public'
-            ? 'followers'
-            : !isPrivate && post.data()['visibility'] == 'followers'
-            ? 'public'
-            : post.data()['visibility'] ?? (isPrivate ? 'followers' : 'public'),
-        'authorIsPrivate': isPrivate,
+    final needed = await _firestore.runTransaction((transaction) async {
+      final profile =
+          (await transaction.get(userRef)).data() ?? const <String, dynamic>{};
+      final pending = profile['privacyTarget'];
+      if (pending is bool && pending != isPrivate) {
+        throw const PostServiceException(
+          'กรุณาดำเนินการเปลี่ยนความเป็นส่วนตัวที่ค้างอยู่ให้เสร็จก่อน',
+        );
+      }
+      if (pending is! bool && (profile['isPrivate'] == true) == isPrivate) {
+        return false;
+      }
+      if (pending is! bool) {
+        transaction.update(userRef, {
+          'privacyTarget': isPrivate,
+          // Broaden the profile before broadening posts, never the reverse.
+          if (!isPrivate) 'isPrivate': false,
+        });
+      }
+      return true;
+    });
+    if (!needed) return;
+    await _migratePostAudiences(userId, isPrivate);
+    await _firestore.runTransaction((transaction) async {
+      final data = (await transaction.get(userRef)).data();
+      // Another device may already have completed the same resumable job.
+      if (data?['privacyTarget'] == null && data?['isPrivate'] == isPrivate) {
+        return;
+      }
+      if (data?['privacyTarget'] != isPrivate) {
+        throw const PostServiceException(
+          'สถานะความเป็นส่วนตัวเปลี่ยนระหว่างดำเนินการ กรุณาลองอีกครั้ง',
+        );
+      }
+      transaction.update(userRef, {
+        'isPrivate': isPrivate,
+        'privacyTarget': FieldValue.delete(),
       });
-    }
-    batch.update(userRef, {'isPrivate': isPrivate});
-    await batch.commit();
+    });
   }
 
   /// เพิ่มฟิลด์ใหม่ให้โพสต์เก่าของเจ้าของ โดยคงโพสต์เดิมไว้เป็นสาธารณะเหมือนเดิม
@@ -194,35 +212,74 @@ class PostService {
   Future<void> normalizeOwnedPosts() async {
     final userId = _currentUser.uid;
     final userSnapshot = await _firestore.collection('users').doc(userId).get();
-    final isPrivateProfile = userSnapshot.data()?['isPrivate'] == true;
-    final snapshot = await _posts.where('userId', isEqualTo: userId).get();
-    final postsNeedingUpdate = snapshot.docs.where(
-      (document) =>
-          !document.data().containsKey('visibility') ||
-          !document.data().containsKey('tags') ||
-          !document.data().containsKey('mediaType') ||
-          document.data()['authorIsPrivate'] != isPrivateProfile ||
-          (isPrivateProfile && document.data()['visibility'] == 'public'),
-    );
+    final pending = userSnapshot.data()?['privacyTarget'];
+    if (pending is bool) {
+      await updateProfilePrivacy(pending);
+    } else {
+      await _migratePostAudiences(
+        userId,
+        userSnapshot.data()?['isPrivate'] == true,
+      );
+    }
+  }
 
-    // Firestore จำกัดจำนวนการเขียนต่อ batch; แบ่งชุดละ 400 รายการ
-    final documents = postsNeedingUpdate.toList();
-    for (var start = 0; start < documents.length; start += 400) {
-      final batch = _firestore.batch();
-      final end = (start + 400).clamp(0, documents.length);
-      for (final document in documents.sublist(start, end)) {
-        final data = document.data();
-        batch.update(document.reference, {
-          if (!data.containsKey('visibility') ||
-              (isPrivateProfile && data['visibility'] == 'public'))
-            'visibility': isPrivateProfile ? 'followers' : 'public',
-          'authorIsPrivate': isPrivateProfile,
-          if (!data.containsKey('tags')) 'tags': <String>[],
-          if (!data.containsKey('mediaType')) 'mediaType': 'none',
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+  Future<void> _migratePostAudiences(String userId, bool isPrivate) async {
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      Query<Map<String, dynamic>> query = _posts
+          .where('userId', isEqualTo: userId)
+          .orderBy(FieldPath.documentId)
+          .limit(200);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final page = await query.get();
+      if (page.docs.isEmpty) return;
+      // Re-read each document in a transaction so migration cannot replace
+      // tags or audiences edited by another device after the query returned.
+      for (var offset = 0; offset < page.docs.length; offset += 8) {
+        await Future.wait(
+          page.docs
+              .skip(offset)
+              .take(8)
+              .map(
+                (document) => _firestore.runTransaction((transaction) async {
+                  final current = await transaction.get(document.reference);
+                  if (!current.exists ||
+                      current.data()?['isDeleting'] == true) {
+                    return;
+                  }
+                  final data = current.data()!;
+                  final post = Post.fromSnapshot(current);
+                  final visibility = PostPolicy.audience(
+                    isPrivate,
+                    data['visibility'],
+                  );
+                  final tags = _cleanTags(post.tags);
+                  final updates = <String, dynamic>{
+                    if (data['visibility'] != visibility)
+                      'visibility': visibility,
+                    if (data['authorIsPrivate'] != isPrivate)
+                      'authorIsPrivate': isPrivate,
+                    if (!listEquals(
+                          data['tags'] is List
+                              ? data['tags'] as List
+                              : const [],
+                          tags,
+                        ) ||
+                        data['tags'] is! List)
+                      'tags': tags,
+                    if (data['mediaType'] != post.mediaType)
+                      'mediaType': post.mediaType,
+                  };
+                  if (updates.isNotEmpty) {
+                    updates['updatedAt'] = FieldValue.serverTimestamp();
+                    transaction.update(document.reference, updates);
+                  }
+                }),
+              ),
+        );
       }
-      await batch.commit();
+      cursor = page.docs.last;
+      if (page.docs.length < 200) return;
     }
   }
 
@@ -238,11 +295,16 @@ class PostService {
         .collection('users')
         .doc(user.uid)
         .get();
-    final isPrivateProfile = ownerProfile.data()?['isPrivate'] == true;
+    final isPrivateProfile = PostPolicy.profileIsPrivate(
+      ownerProfile.data() ?? const {},
+    );
     final effectiveVisibility = isPrivateProfile && visibility == 'public'
         ? 'followers'
         : _cleanVisibility(visibility);
     final cleanContent = content.trim();
+    if (cleanContent.length > 1000) {
+      throw const PostServiceException('โพสต์ต้องไม่เกิน 1,000 ตัวอักษร');
+    }
     if (cleanContent.isEmpty && attachment == null) {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
     }
@@ -295,12 +357,34 @@ class PostService {
         .collection('users')
         .doc(ownerUid)
         .get();
-    final isPrivateProfile = ownerProfile.data()?['isPrivate'] == true;
+    final isPrivateProfile = PostPolicy.profileIsPrivate(
+      ownerProfile.data() ?? const {},
+    );
     final effectiveVisibility = isPrivateProfile && visibility == 'public'
         ? 'followers'
         : _cleanVisibility(visibility);
     final cleanContent = content.trim();
-    if (cleanContent.isEmpty && newAttachment == null && !removeMedia) {
+    if (cleanContent.length > 1000 || (removeMedia && newAttachment != null)) {
+      throw const PostServiceException('กรุณาตรวจความยาวข้อความและไฟล์แนบ');
+    }
+    final existing = await _posts.doc(postId).get();
+    if (!existing.exists || existing.data()?['userId'] != ownerUid) {
+      throw const PostServiceException('แก้ไขได้เฉพาะโพสต์ของคุณ');
+    }
+    if (existing.data()?['isDeleting'] == true) {
+      throw const PostServiceException(
+        'โพสต์นี้กำลังถูกลบ กรุณาดำเนินการลบให้เสร็จ',
+      );
+    }
+    final hasMedia =
+        newAttachment != null ||
+        (!removeMedia &&
+            readOptionalString(existing.data()?['mediaPath']) != null);
+    final previousMediaPath = readOptionalString(existing.data()?['mediaPath']);
+    final previousThumbnailPath = readOptionalString(
+      existing.data()?['thumbnailPath'],
+    );
+    if (!PostPolicy.hasContent(cleanContent, hasMedia: hasMedia)) {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
     }
 
@@ -309,27 +393,39 @@ class PostService {
         : await _uploadAttachment(postId, newAttachment);
 
     try {
-      await _posts.doc(postId).update({
-        'content': cleanContent,
-        'tags': _cleanTags(tags),
-        'visibility': effectiveVisibility,
-        'authorIsPrivate': isPrivateProfile,
-        'updatedAt': FieldValue.serverTimestamp(),
-        // Keep an explicit marker so old updatedAt migration values do not look edited.
-        'editedAt': FieldValue.serverTimestamp(),
-        if (newMedia != null) ...{
-          'mediaPath': newMedia.path,
-          'mediaType': newMedia.type,
-          if (newMedia.thumbnailPath != null)
-            'thumbnailPath': newMedia.thumbnailPath
-          else
+      await _firestore.runTransaction((transaction) async {
+        final current = await transaction.get(existing.reference);
+        if (!current.exists ||
+            current.data()?['isDeleting'] == true ||
+            current.data()?['updatedAt'] != existing.data()?['updatedAt'] ||
+            current.data()?['mediaPath'] != previousMediaPath ||
+            current.data()?['thumbnailPath'] != previousThumbnailPath) {
+          throw const PostServiceException(
+            'โพสต์ถูกเปลี่ยนแปลงระหว่างบันทึก กรุณาเปิดโพสต์ใหม่แล้วลองอีกครั้ง',
+          );
+        }
+        transaction.update(existing.reference, {
+          'content': cleanContent,
+          'tags': _cleanTags(tags),
+          'visibility': effectiveVisibility,
+          'authorIsPrivate': isPrivateProfile,
+          'updatedAt': FieldValue.serverTimestamp(),
+          // Keep an explicit marker so old updatedAt migration values do not look edited.
+          'editedAt': FieldValue.serverTimestamp(),
+          if (newMedia != null) ...{
+            'mediaPath': newMedia.path,
+            'mediaType': newMedia.type,
+            if (newMedia.thumbnailPath != null)
+              'thumbnailPath': newMedia.thumbnailPath
+            else
+              'thumbnailPath': FieldValue.delete(),
+          },
+          if (removeMedia) ...{
+            'mediaPath': FieldValue.delete(),
+            'mediaType': 'none',
             'thumbnailPath': FieldValue.delete(),
-        },
-        if (removeMedia) ...{
-          'mediaPath': FieldValue.delete(),
-          'mediaType': 'none',
-          'thumbnailPath': FieldValue.delete(),
-        },
+          },
+        });
       });
     } catch (_) {
       if (newMedia != null) {
@@ -343,13 +439,13 @@ class PostService {
 
     // ลบสื่อเก่าหลัง Firestore เปลี่ยนไปใช้ไฟล์ใหม่เรียบร้อยแล้ว
     if (newMedia != null || removeMedia) {
-      if (oldMediaPath != null &&
-          _belongsToPost(oldMediaPath, ownerUid, postId)) {
-        await _deleteStorageFile(oldMediaPath);
+      if (previousMediaPath != null &&
+          _belongsToPost(previousMediaPath, ownerUid, postId)) {
+        await _deleteStorageFile(previousMediaPath);
       }
-      if (oldThumbnailPath != null &&
-          _belongsToPost(oldThumbnailPath, ownerUid, postId)) {
-        await _deleteStorageFile(oldThumbnailPath);
+      if (previousThumbnailPath != null &&
+          _belongsToPost(previousThumbnailPath, ownerUid, postId)) {
+        await _deleteStorageFile(previousThumbnailPath);
       }
     }
   }
@@ -360,16 +456,48 @@ class PostService {
     if (post.userId != user.uid) {
       throw const PostServiceException('ลบได้เฉพาะโพสต์ของบัญชีที่เข้าสู่ระบบ');
     }
-    final mediaPath = post.mediaPath;
+    final reference = _posts.doc(post.id);
+    final data = await _beginPostDeletion(reference);
+    if (data == null) return;
+    final mediaPath = readOptionalString(data['mediaPath']);
     if (mediaPath != null && _belongsToPost(mediaPath, user.uid, post.id)) {
       await _deleteStorageFile(mediaPath);
     }
-    final thumbnailPath = post.thumbnailPath;
+    final thumbnailPath = readOptionalString(data['thumbnailPath']);
     if (thumbnailPath != null &&
         _belongsToPost(thumbnailPath, user.uid, post.id)) {
       await _deleteStorageFile(thumbnailPath);
     }
-    await _posts.doc(post.id).delete();
+    await _deletePostChildren(reference);
+    await reference.delete();
+  }
+
+  Future<Map<String, dynamic>?> _beginPostDeletion(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) => _firestore.runTransaction((transaction) async {
+    final snapshot = await transaction.get(reference);
+    if (!snapshot.exists) return null;
+    transaction.update(reference, {
+      'isDeleting': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return snapshot.data();
+  });
+
+  Future<void> _deletePostChildren(
+    DocumentReference<Map<String, dynamic>> post,
+  ) async {
+    for (final name in ['comments', 'reactions']) {
+      while (true) {
+        final page = await post.collection(name).limit(200).get();
+        if (page.docs.isEmpty) break;
+        final batch = _firestore.batch();
+        for (final document in page.docs) {
+          batch.delete(document.reference);
+        }
+        await batch.commit();
+      }
+    }
   }
 
   /// บันทึกรายงานหนึ่งรายการต่อผู้ใช้ต่อโพสต์ ป้องกันการส่งซ้ำโดยไม่ตั้งใจ
@@ -400,12 +528,11 @@ class PostService {
     }
 
     final postReference = _posts.doc(postId);
-    final snapshot = await postReference.get();
-    if (!snapshot.exists) return;
-    final data = snapshot.data()!;
+    final data = await _beginPostDeletion(postReference);
+    if (data == null) return;
     for (final path in [
-      data['mediaPath'] as String?,
-      data['thumbnailPath'] as String?,
+      readOptionalString(data['mediaPath']),
+      readOptionalString(data['thumbnailPath']),
     ]) {
       if (path != null &&
           path.startsWith('post_media/${data['userId']}/$postId/')) {
@@ -413,17 +540,7 @@ class PostService {
       }
     }
 
-    for (final childCollection in ['comments', 'reactions']) {
-      final children = await postReference.collection(childCollection).get();
-      for (var start = 0; start < children.docs.length; start += 450) {
-        final batch = _firestore.batch();
-        final end = (start + 450).clamp(0, children.docs.length);
-        for (final child in children.docs.sublist(start, end)) {
-          batch.delete(child.reference);
-        }
-        await batch.commit();
-      }
-    }
+    await _deletePostChildren(postReference);
     await postReference.delete();
   }
 
@@ -520,7 +637,7 @@ class PostService {
 
   List<String> _cleanTags(List<String> tags) => tags
       .map((tag) => tag.trim().replaceFirst(RegExp(r'^#'), '').toLowerCase())
-      .where((tag) => tag.isNotEmpty)
+      .where((tag) => tag.isNotEmpty && tag.length <= 150)
       .toSet()
       .take(5)
       .toList();

@@ -1,9 +1,9 @@
 // วิดเจ็ตกลางสำหรับโหลดภาพและเตรียมวิดีโอจาก Firebase Storage ในฟีดและแชท
 import 'dart:async';
 import 'dart:collection';
-import 'dart:typed_data';
 
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -11,6 +11,12 @@ import 'package:video_player/video_player.dart';
 /// แสดงไฟล์ของโพสต์โดยอ่านผ่าน Storage SDK แทน download URL
 /// ทุกการอ่านจึงถูกตรวจด้วย Firebase Storage Rules รวมถึงไฟล์ของโพสต์ส่วนตัว
 class PostMedia extends StatelessWidget {
+  static void clearCache() {
+    _StorageImageState._cacheGeneration++;
+    _StorageImageState._imageCache.clear();
+    _StorageImageState._imageLoads.clear();
+  }
+
   const PostMedia({
     required this.path,
     required this.type,
@@ -45,6 +51,7 @@ class _StorageImageState extends State<_StorageImage> {
   static final LinkedHashMap<String, Uint8List> _imageCache =
       LinkedHashMap<String, Uint8List>();
   static final Map<String, Future<Uint8List?>> _imageLoads = {};
+  static int _cacheGeneration = 0;
 
   late Future<Uint8List?> _imageBytes;
 
@@ -68,13 +75,14 @@ class _StorageImageState extends State<_StorageImage> {
     }
 
     final path = widget.path;
+    final generation = _cacheGeneration;
     final pending = _imageLoads.putIfAbsent(
       path,
       () => FirebaseStorage.instance.ref(path).getData(10 * 1024 * 1024),
     );
     try {
       final bytes = await pending;
-      if (bytes != null) {
+      if (bytes != null && generation == _cacheGeneration) {
         _imageCache[path] = bytes;
         var totalBytes = _imageCache.values.fold<int>(
           0,
@@ -199,6 +207,22 @@ class _StorageVideoState extends State<_StorageVideo> {
 
   @override
   Widget build(BuildContext context) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux)) {
+      return const SizedBox(
+        height: 120,
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'อุปกรณ์นี้ยังไม่รองรับการเล่นวิดีโอในแอป',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
     return FutureBuilder<void>(
       future: _initialization,
       builder: (context, snapshot) {
