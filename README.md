@@ -13,7 +13,7 @@
 | รีเซ็ตรหัสผ่าน | ✅ มีโค้ด | ส่งอีเมลผ่าน Firebase Auth; ยังต้องยืนยันการรับอีเมลจริง |
 | โพสต์และ Feed | ✅ มีโค้ด | รองรับข้อความ รูป วิดีโอ แท็ก แก้ไข และลบ |
 | Like / Emoji / Dislike / Comment | ✅ มีโค้ดและ regression tests | กดค้าง Like เลือก 6 อารมณ์; Dislike แยกปุ่ม; Comment แจ้งผู้ติดตามเจ้าของโพสต์ |
-| Chat 1:1 | ✅ มีโค้ด | ข้อความ/สื่อ, ซ่อนห้องเฉพาะบัญชี, ยกเลิกข้อความ และตัวนับยังไม่อ่าน |
+| Chat 1:1 | ✅ มีโค้ดและ regression tests | ข้อความ/สื่อ, ซ่อนห้องเฉพาะบัญชี, ยกเลิกข้อความ และตัวนับยังไม่อ่าน |
 | Profile / Follow | ✅ มีโค้ด | รูปโปรไฟล์, Bio, ติดตาม/เลิกติดตาม, บัญชีส่วนตัว และเปิดแชทได้เมื่อติดตามแล้ว |
 | Groups | ✅ มีโค้ดและ Rules tests | กลุ่มสาธารณะ/ส่วนตัว คำขอเข้าร่วม รูปกลุ่ม โพสต์สื่อ และ Like/Emoji/Dislike |
 | Report / Admin moderation | ✅ มีโค้ด | ผู้ดูแลจัดการรายงานได้เมื่อบัญชีมี Firebase custom claim `admin: true` |
@@ -34,7 +34,7 @@
 5. เพิ่ม Firebase App Check, Pages และหลักฐาน Pain Point หากยังอยู่ในข้อกำหนดของรายวิชา
 6. เตรียม build สำหรับส่ง, README/demo และทดสอบกรณีใช้งานให้ครบตามเกณฑ์อาจารย์
 
-> ยังไม่ได้ deploy กฎ/ดัชนีรอบล่าสุดไป Firebase production และยังไม่ได้ push การเปลี่ยนแปลงรอบนี้ขึ้น GitHub
+> ยังไม่ได้ deploy กฎ/ดัชนีหลัง audit รอบล่าสุดไป Firebase production
 
 ## ผลตรวจในเครื่องล่าสุด
 
@@ -42,7 +42,8 @@
 
 - Flutter tests: ผ่าน **25/25** รวม app tests 23 รายการและ thumbnail plugin 2 รายการ
 - `dart analyze`: **No issues found** ทั้งโปรเจกต์ รวม local package
-- Firebase Auth/Firestore/Storage Emulator: ผ่าน **5 suites** ใช้เฉพาะ `demo-linko` บนเครื่อง
+- Firebase Auth/Firestore/Storage Emulator หลัง merge: ผ่าน **6 suites** ใช้เฉพาะ `demo-linko` บนเครื่อง
+- ChatService จริงบน Chrome กับ Emulator หลัง merge: **6/6 ผ่าน** (ส่ง/ตอบกลับ/อ่าน/ซ่อนห้อง/ยกเลิก/ปฏิเสธผู้ไม่มีสิทธิ์)
 - ครอบคลุมส่งแชทซ้ำ/ตอบกลับ/ยกเลิก, follow gate, กลุ่มส่วนตัวและ admin, ลบสื่อสมาชิก, แจ้งผู้ติดตาม 25 คน, privacy 501 โพสต์ และ cursor 61 โพสต์
 - Android Debug: `:app:assembleDebug --offline` ผ่าน
 - JSON indexes และ Apple plist/entitlements: parse ผ่าน; ผล analyzer และคำสั่งทั้งหมดอยู่ใน [CHANGELOG_TESTING.md](CHANGELOG_TESTING.md)
@@ -63,3 +64,9 @@ firebase deploy --only "firestore:rules,firestore:indexes,storage" --project soc
 ```
 
 Android release ต้องใช้ keystore ของเจ้าของแอปและ `android/key.properties` ตาม [แผนและข้อจำกัด](AUDIT_FIX_PLAN.md); ระบบจะปฏิเสธ release ที่ยังไม่ได้ตั้งค่าลายเซ็น
+
+### ประวัติการตรวจแชทจาก GitHub
+
+รุ่นวันที่ 21 ต.ค. 2026 (`1c60028`) มีบันทึก Rules 25/25, ChatService/Chrome 6/6 และ Firebase จริง 10/10 ขั้นตอน พร้อม deploy เฉพาะ Firestore Rules ในวันนั้น ดู [รายงานเดิม](tool/CHAT_DIAGNOSIS.md)
+
+ผลดังกล่าวเป็นของรุ่นเดิม การแก้ audit วันที่ 22 ต.ค. มี Rules เพิ่มเติมและยังต้อง deploy/ทดสอบ production ใหม่ สคริปต์วินิจฉัยเดิมเก็บไว้ที่ `tool/chat_rules_diagnosis.mjs` แยกจาก regression suite ปัจจุบัน

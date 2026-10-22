@@ -8,7 +8,7 @@
 | 2 | Post/profile schema, สิทธิ์กลุ่ม, สื่อกลุ่ม, แจ้งเตือน comment | ข้อมูลผิดชนิดถูกปฏิเสธ; owner ลบไฟล์ของสมาชิกได้; admin อนุมัติ private group ได้; แจ้งเตือนผู้ติดตาม 25 คนสำเร็จ | ✅ |
 | 3 | โพสต์และโปรไฟล์: แก้สื่อเดิม, ลบข้อมูลย่อย, recovery, privacy หลาย batch | Rules/policy tests ผ่านสื่อเดิม/โพสต์ว่าง/ลบข้อมูลย่อย/ซ่อมโปรไฟล์; privacy protocol ครบ 501 โพสต์และทำต่อได้ | ✅ |
 | 4 | UI lifecycle, auth navigation, search race และโหลดข้อมูลเก่า | Widget tests ผ่าน Back/แตะนอก reaction/dialog/logout; unit test กันผลค้นหาเก่า; query test โหลดครบ 61 โพสต์ | ✅ |
-| 5 | Platform configuration และตรวจรวม | Tests 25 รายการและ Emulator 5 suites ผ่าน; analyzer ไม่มี findings; Android Debug ผ่าน; ข้อจำกัดบันทึกด้านล่าง | ✅ |
+| 5 | Platform configuration และตรวจรวม | Tests 25 รายการและ Emulator 6 suites ผ่านหลัง merge; ChatService/Chrome 6/6; analyzer ไม่มี findings; Android Debug ผ่าน; ข้อจำกัดบันทึกด้านล่าง | ✅ |
 
 ## แนวทางและขอบเขต
 

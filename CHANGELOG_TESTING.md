@@ -253,3 +253,51 @@
 - งาน fan-out notification และ cleanup ยังพึ่ง client ที่เปิดอยู่ ขั้นถัดไปควรเป็น backend queue/retry; real-time windows โตตามการโหลด และ text search ยังไม่มี search index
 - App Check, Push และ Pages ยังไม่ได้พัฒนาในรอบนี้
 - **ยังไม่ได้ deploy Rules, เขียนข้อมูล production หรือ push Git**; ต้อง deploy Rules ล่าสุดแล้วทดสอบ Firebase จริงอย่างน้อยสองบัญชี
+
+
+## 2026-10-21 — แก้ regression ส่งแชทต่อเนื่องไม่ได้
+
+- พบและทำซ้ำได้ว่า `affectedKeys().hasAll(...)` ใน Rules บังคับให้ข้อความ ชนิดข้อความ และผู้ส่งล่าสุดเปลี่ยนค่าทุกครั้ง ข้อความแรกผ่าน แต่ข้อความที่สองชนิดเดิมถูกปฏิเสธ
+- เอาสาม field ที่สามารถมีค่าเดิมออกจากรายการบังคับเปลี่ยน โดยยังตรวจข้อมูลกับข้อความใน batch และสิทธิ์สมาชิกเหมือนเดิม
+- แก้เปิดห้องที่มองเห็นอยู่แล้วซ้ำ และยกเลิกข้อความที่มีเนื้อหา `ยกเลิกข้อความนี้` อยู่แล้ว
+- หน้าแชทบันทึกรหัส Firebase error จริงใน debug Console และแยกข้อความแจ้งปัญหาสิทธิ์ เครือข่าย และเซสชัน รวมการอ่าน stream โดยไม่ปล่อย error ที่ไม่ได้จัดการ
+- เพิ่มชุดทดสอบแชท (ปัจจุบันเก็บเป็น `tool/chat_rules_diagnosis.mjs`), `tool/chat_service_smoke.dart` และ `tool/run_chat_service_smoke.mjs`
+
+| รายการ | ผล |
+|---|---|
+| Rules หลังแก้ใน Auth/Firestore Emulator | ผ่าน 25/25 |
+| `ChatService` จริงบน Chrome กับ Emulator | ผ่าน 6/6 |
+| `flutter test --no-pub --reporter expanded` | ผ่าน 7/7 |
+| Analyzer ไฟล์ที่แก้และหน้า browser ทดสอบ | 0 errors, 0 warnings; 7 info lints เดิม |
+| Firebase จริงสองบัญชีชั่วคราว | ผ่าน 10/10 ขั้นตอน; ส่งต่อ/ส่งซ้ำ/ตอบกลับ/อ่าน/เปิดห้องซ้ำ/ยกเลิก/ส่งใหม่ |
+| Cleanup ทดสอบจริง | ลบข้อมูล 9 เอกสารและบัญชี 2 บัญชีเรียบร้อย |
+| Deploy | สำเร็จ เฉพาะ `firestore:rules` ไป `social-network-app-c22eb` |
+| ตรวจ Rules หลัง deploy | เนื้อหาตรงกับไฟล์ที่ทดสอบทุกประการ |
+
+Rules เดิมบน Firebase ตรงกับรุ่นที่มี bug จึงไม่ใช่ปัญหา deploy ไม่สำเร็จ Rules ใหม่เผยแพร่เวลา 11:40:31 น. (Asia/Bangkok) วันที่ 21 ต.ค. 2026 รายละเอียดและ hash อยู่ใน [รายงานแชท](tool/CHAT_DIAGNOSIS.md) ยังไม่ได้ทดสอบไฟล์แนบจริงหรือเผยแพร่ Storage Rules/indexes ในงานนี้
+
+
+## 2026-10-22 — รวมงานในเครื่องกับ origin/main
+
+รวม commit `1250133` (audit fixes) กับ `1c60028` (วินิจฉัย/แก้ regression แชท) โดยเก็บประวัติและงานทั้งสองฝั่ง ไม่เลือกทับทั้งไฟล์ฝ่ายเดียว
+
+- แก้ conflict ใน `README.md`, `CHANGELOG_TESTING.md`, `firestore.rules`, `lib/screens/chat/chat_room.dart` และ `tool/chat_rules_emulator_test.mjs`
+- ใช้ Rules จาก audit ซึ่งครอบคลุมข้อความซ้ำ/เปิดห้องซ้ำ/ยกเลิก โดยเก็บ follow gate, schema, deletion barrier และ privacy jobs
+- หน้า ChatRoom เก็บ pagination และ media-picker error handling พร้อมใช้ debug error handler จาก GitHub; ข้อความสิทธิ์ไม่สรุปว่าเกิดจากยังไม่ deploy เสมอ
+- เก็บชุด regression ปัจจุบันชื่อเดิม และแยกชุดวินิจฉัยจาก GitHub เป็น `tool/chat_rules_diagnosis.mjs`; runner รวมเป็น 6 suites
+- ปรับ diagnostic fixtures และ `tool/chat_service_smoke.dart` ให้สร้าง profile ครบ schema และมี approved follow ก่อนสร้าง DM
+- ชุดวินิจฉัยรันซ้ำได้ด้วย ID แยกแต่ละรอบ และคืน Rules ปัจจุบันใน `finally` แม้เกิดข้อผิดพลาด
+- ตัวรัน ChatService รองรับ `LINKO_FLUTTER_SDK` เพื่อหลีกเลี่ยง PATH/shell ambiguity และใช้ Chrome แยกสำหรับทดสอบ
+- คงบันทึกผล production ของวันที่ 21 ต.ค. เป็นประวัติเดิม ไม่อ้างว่า Rules หลัง audit ถูก deploy แล้ว
+
+| การตรวจหลัง merge | ผล |
+|---|---|
+| `dart analyze` | No issues found |
+| Flutter tests รวม thumbnail plugin | 25/25 ผ่าน |
+| `node tool/run_emulator_tests.mjs` | 6 suites ผ่าน |
+| `node tool/chat_rules_diagnosis.mjs --diagnose` | รุ่นมี bug 16/25 (แสดง regression), รุ่นก่อน 16/16, Rules ปัจจุบัน 25/25; exit 0 และคืน Rules ปัจจุบันแล้ว |
+| ChatService จริง / Flutter release web / Chrome / Emulator | 6/6 ผ่าน หลังปรับ follow/schema fixtures |
+| Android Debug offline build | ผ่าน |
+| Conflict markers / whitespace | ผ่าน; ไม่มี marker ค้างในไฟล์ที่แก้ conflict |
+
+รอบนี้ใช้ Firebase Emulator เฉพาะ `demo-linko` บน localhost ไม่มีการ deploy Rules หรือทดสอบเขียน production เพิ่มเติม ผลการ sync Git ตรวจจาก `git status` และ remote HEAD หลัง commit/push
