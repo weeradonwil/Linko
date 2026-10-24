@@ -4,6 +4,17 @@
 
 > แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลตรวจและขอบเขตรอบล่าสุด 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md)
 
+## 2026-10-24 — ชื่อและไอคอน Linko รุ่น 1.0.1+2
+
+- เปลี่ยนชื่อที่แสดงเป็น Linko บน Android, iOS, macOS, Windows/Linux และเว็บ โดยคง Android application ID, Bundle IDs, ชื่อ Dart package และคีย์การตั้งค่าเดิม
+- ออกแบบไอคอนห่วงสีขาวคล้ายตัว L บนพื้นแดงราสป์เบอร์รีด้วย imagegen แบบ built-in; เก็บต้นฉบับและ prompt ใน `assets/branding/` พร้อมสคริปต์ส่งออกขนาดไอคอนที่มีคอมเมนต์ภาษาไทย
+- ตรวจขนาดและ PNG RGB ของ 40 รายการใน catalog; ตรวจ Windows ICO ทั้ง 7 ขนาดและถอดรหัสผ่าน System.Drawing สำเร็จ; XML/plist/scheme parse ผ่าน
+- Analyzer ผ่าน ไม่มี findings; Flutter tests ผ่าน 54/54 เคส
+- Android Debug build ผ่าน ตรวจ APK จริงแล้ว label เป็น Linko, versionName `1.0.1`, versionCode `2`, application ID และลายเซ็นตรงกับ APK ก่อนแก้; ไอคอนใน APK ทั้ง 5 density ตรงกับไฟล์ต้นทางทุกพิกเซล
+- Web release build ผ่าน; ตรวจ title/manifest, เวอร์ชัน `1.0.1+2` และไอคอนในผล build ทั้ง 5 ไฟล์ตรงกับต้นทาง
+- APK สำหรับติดตั้ง: `build/app/outputs/flutter-apk/Linko-1.0.1-debug.apk`; ผลตรวจและ build logs ใน `build/branding-2026-10-24/`
+- การติดตั้งอัปเดตบนมือถือจริงและ build บน iOS/macOS ยังต้องตรวจบนเครื่องเป้าหมาย
+
 ## 2026-10-24 — Deploy Rules/indexes หลังตรวจรับ
 
 - Push โค้ดที่ทดสอบขึ้น `main` ใน commit `9d2115b` แล้วเผยแพร่ Firestore Rules, Storage Rules และ indexes ไป `social-network-app-c22eb` สำเร็จเวลา 16:16:59 น. (Asia/Bangkok)

@@ -2,6 +2,18 @@
 
 รายงานนี้เป็นสถานะของโค้ดในเครื่องรอบปัจจุบัน ผลวันที่ 21–22 ตุลาคมในเอกสารเดิมเป็นประวัติคนละรุ่น
 
+## ชื่อและไอคอน Linko — รุ่น 1.0.1+2
+
+เปลี่ยนชื่อที่ผู้ใช้เห็นเป็น **Linko** และใช้ไอคอนห่วงสีขาวเชื่อมเป็นรูปทรงคล้ายตัว L บนพื้นสีแดงราสป์เบอร์รี เก็บต้นฉบับจากเครื่องมือ imagegen แบบ built-in, prompt และวิธีส่งออกแต่ละขนาดใน [`assets/branding/README.md`](assets/branding/README.md)
+
+Analyzer ผ่านโดยไม่มี findings, Flutter tests ผ่าน **54/54** และ Android Debug build ผ่าน ตรวจ APK ที่ build จริงแล้วยืนยันชื่อ Linko, เวอร์ชัน `1.0.1`, build number `2` รหัสแอป `com.example.social_app` และลายเซ็นตรงกับ APK ก่อนแก้ ไอคอนใน APK ทั้ง 5 density ตรงกับไฟล์ต้นทางทุกพิกเซล
+
+APK พร้อมติดตั้งอยู่ที่ `build/app/outputs/flutter-apk/Linko-1.0.1-debug.apk` (165,614,481 bytes); SHA-256: `a5056a985e46b041181c2bceb3f89ba6c423c82617b18db76f6e89c568b1d5b7` หลักฐานรอบนี้อยู่ใน `build/branding-2026-10-24/` ได้แก่ `apk-verification.json`, `analyzer-result.json`, `flutter-tests.log` และ `android-build.log`
+
+ตรวจไอคอน PNG RGB รวม 40 รายการตาม catalog และ Windows ICO 7 ขนาดผ่าน; XML/plist/scheme parse ผ่าน การตรวจนี้ยังไม่แทนการติดตั้งบนมือถือจริงหรือ build iOS/macOS บน Mac
+
+Web release build ผ่าน ตรวจผลใน `build/web` แล้วยืนยัน title/manifest เป็น Linko, เวอร์ชัน `1.0.1` build `2` และไอคอนที่บรรจุทั้ง 5 ไฟล์ตรงกับต้นทาง หลักฐานเพิ่มเติมคือ `web-build.log` และ `web-verification.json` ในโฟลเดอร์ผลตรวจรอบนี้
+
 ## ขอบเขตและเงื่อนไขที่ตกลง
 
 - เก็บงานเดิมใน working tree และรวมส่วนที่ merge ค้างโดยรักษาธีม การซ่อมโปรไฟล์ และการล้างเซสชัน

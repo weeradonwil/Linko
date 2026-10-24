@@ -54,7 +54,8 @@ class _SocialAppState extends State<SocialApp> {
       child: ListenableBuilder(
         listenable: _appearance,
         builder: (context, _) => MaterialApp(
-          title: 'Social App',
+          // ชื่อที่ระบบแสดงในรายการแอปล่าสุดและชื่อหน้าต่างของ Flutter
+          title: 'Linko',
           // ซ่อนป้าย DEBUG สีแดงที่ Flutter แสดงระหว่างพัฒนา
           debugShowCheckedModeBanner: false,
           // MaterialApp ใช้ ThemeMode ปัจจุบันเลือก lightTheme หรือ darkTheme
