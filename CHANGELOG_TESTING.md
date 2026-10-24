@@ -4,6 +4,14 @@
 
 > แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลตรวจและขอบเขตรอบล่าสุด 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md)
 
+## 2026-10-24 — Deploy Rules/indexes หลังตรวจรับ
+
+- Push โค้ดที่ทดสอบขึ้น `main` ใน commit `9d2115b` แล้วเผยแพร่ Firestore Rules, Storage Rules และ indexes ไป `social-network-app-c22eb` สำเร็จเวลา 16:16:59 น. (Asia/Bangkok)
+- สำรอง Rules และ metadata ก่อน deploy; Firebase compile Rules ทั้งสองไฟล์ผ่าน และคำสั่ง deploy จบด้วย exit code 0
+- อ่าน Rules ที่เผยแพร่กลับจาก API แล้วเทียบเนื้อหาและ SHA-256 ตรงกับโค้ดที่ทดสอบ; indexes ที่ต้องใช้ทั้ง 11 รายการเป็น `READY`
+- หลักฐานในเครื่อง: `build/deploy-2026-10-24/`; รายละเอียด Ruleset และขอบเขตอยู่ใน [รายงานตรวจรับ](DELIVERY_REPORT.md)
+- การตรวจครั้งนี้ยืนยัน deployment และความพร้อมของ indexes; ผลทดสอบผ่านแอปบน production หลายบัญชีและโทรศัพท์จริงยังต้องตรวจแยก
+
 ## 2026-10-14 — เพิ่มฟีเจอร์สังคม
 
 ### โครงสร้างที่ตรวจพบก่อนแก้

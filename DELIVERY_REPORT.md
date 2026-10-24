@@ -50,7 +50,22 @@
 
 รอบสุดท้าย CRUD โพสต์กลุ่มใช้ 61.63 วินาที และ flow สร้าง/เข้าร่วม/โพสต์/ออก/ลบทั้งกลุ่มใช้ 120.13 วินาทีรวมหลายคำสั่งต่อเนื่อง ควรวัดเวลารายการกระทำบน Firebase และอุปกรณ์จริงก่อนใช้เป็นเกณฑ์ประสิทธิภาพ
 
-Git ไม่มีไฟล์ unmerged เหลืออยู่ เก็บการเปลี่ยนแปลงเดิมไว้ และยังไม่ได้สร้าง commit หรือ deploy production
+รวม merge และ push โค้ดที่ตรวจรับขึ้น `main` แล้วใน commit `9d2115b` โดยเก็บการเปลี่ยนแปลงเดิมไว้
+
+## Deploy Firebase production — 24 ตุลาคม 2026
+
+เผยแพร่ Firestore Rules, Storage Rules และ indexes จาก commit `9d2115b` ไปยัง `social-network-app-c22eb` สำเร็จเมื่อ **16:16:59 น. (Asia/Bangkok)** ด้วย Firebase CLI ซึ่งตรวจ compile Rules ทั้งสองไฟล์ผ่านก่อนเผยแพร่
+
+อ่าน Rules ที่เผยแพร่จริงกลับจาก Firebase Rules API แล้วเทียบเนื้อหาและ SHA-256 กับไฟล์ที่ทดสอบ: ตรงกันทั้งสองไฟล์ ตรวจ Firestore Admin API แล้ว indexes ที่ต้องใช้ **11/11 รายการเป็น `READY`** ไม่มีรายการขาดหรือรอสร้าง ดัชนีทั้ง 11 รายการมีอยู่แล้วก่อน deploy
+
+| ส่วน | Ruleset ที่เผยแพร่ |
+|---|---|
+| Firestore | `projects/social-network-app-c22eb/rulesets/01ee4d59-2de5-4b65-bc10-5196a0491474` |
+| Storage | `projects/social-network-app-c22eb/rulesets/16213797-63eb-47d5-b02b-70eddc931454` |
+
+สำรอง Rules เดิมและ metadata ของ indexes ก่อน deploy ไว้ในเครื่องที่ `build/deploy-2026-10-24/before-*` ส่วนหลักฐานหลังเผยแพร่อยู่ที่ `after-metadata.json`, `after-firestore.rules`, `after-storage.rules` และ `deploy.log` ในโฟลเดอร์เดียวกัน ไฟล์สำรองไม่มี credentials และไม่ถูกนำขึ้น Git
+
+ขอบเขตรอบนี้คือ Rules/indexes ของ Firebase; การทดสอบผ่านหน้าแอปกับบัญชีจริงหลายบัญชีและอุปกรณ์จริงยังต้องทำแยกจากผลตรวจ deployment
 
 ## คำสั่งทดสอบ
 
@@ -65,7 +80,7 @@ flutter build web --release --no-pub --no-web-resources-cdn --no-wasm-dry-run
 
 ## สิ่งที่ต้องตรวจแยกจากผลในเครื่อง
 
-- สถานะการ deploy Rules/indexes และการทดสอบหลายบัญชีบน Firebase เป้าหมาย
+- การทดสอบหลายบัญชีผ่านแอปบน Firebase เป้าหมายหลัง deploy Rules/indexes
 - อุปกรณ์จริงและ iOS/macOS บน Mac; Windows ยังแสดงข้อความว่าวิดีโอไม่รองรับ และ Linux ยังไม่มี Firebase configuration
 - Signed release ต้องใช้ keystore ของเจ้าของแอป; ไม่สร้างกุญแจแทนเจ้าของ
 - วิดีโอใหม่ในแอปอ่านด้วย SDK; download URL ที่แจกไว้ก่อนหน้านี้ต้องเพิกถอน token แยกหากต้องการปิดลิงก์เดิม

@@ -64,14 +64,13 @@
 
 ## งานที่ยังต้องทำ
 
-1. **Deploy Rules รุ่นปัจจุบันและตรวจ indexes** — รอบนี้แก้ `firestore.rules` และ `storage.rules`; query ใช้ indexes ที่มีใน `firestore.indexes.json` อยู่แล้ว ต้องตรวจว่าโปรเจกต์จริงมีดัชนีตรงกัน
-2. **ทดสอบกับ Firebase จริงสองบัญชี** — ตรวจ private profile/follow request, การอ่านโพสต์และสื่อ, Comment Notification, Chat, กลุ่ม และสิทธิ์ผู้ดูแล
-3. **ตั้งค่า admin claim** ให้บัญชีผู้ดูแลก่อนทดสอบหน้าจัดการรายงาน
-4. **ทดสอบบนโทรศัพท์จริง** รวมการรับอีเมลรีเซ็ตรหัสผ่าน อัปโหลดสื่อ และ UX/การเข้าถึง
-5. เพิ่ม Firebase App Check, Pages และหลักฐาน Pain Point หากยังอยู่ในข้อกำหนดของรายวิชา
-6. เตรียม build สำหรับส่ง, README/demo และทดสอบกรณีใช้งานให้ครบตามเกณฑ์อาจารย์
+1. **ทดสอบกับ Firebase จริงสองบัญชี** — ตรวจ private profile/follow request, การอ่านโพสต์และสื่อ, Comment Notification, Chat, กลุ่ม และสิทธิ์ผู้ดูแล
+2. **ตั้งค่า admin claim** ให้บัญชีผู้ดูแลก่อนทดสอบหน้าจัดการรายงาน
+3. **ทดสอบบนโทรศัพท์จริง** รวมการรับอีเมลรีเซ็ตรหัสผ่าน อัปโหลดสื่อ และ UX/การเข้าถึง
+4. เพิ่ม Firebase App Check, Pages และหลักฐาน Pain Point หากยังอยู่ในข้อกำหนดของรายวิชา
+5. เตรียม build สำหรับส่ง, README/demo และทดสอบกรณีใช้งานให้ครบตามเกณฑ์อาจารย์
 
-> ยังไม่ได้ deploy กฎ/ดัชนีหลัง audit รอบล่าสุดไป Firebase production
+> Deploy Firestore Rules, Storage Rules และ indexes รุ่นที่ตรวจรับไป `social-network-app-c22eb` แล้วเมื่อ **24 ต.ค. 2026 เวลา 16:16:59 น. (Asia/Bangkok)** อ่านกลับแล้วยืนยันว่า Rules ตรงกับโค้ดที่ทดสอบ และ indexes ทั้ง 11 รายการเป็น `READY` ดู [หลักฐานและขอบเขต](DELIVERY_REPORT.md#deploy-firebase-production--24-ตุลาคม-2026)
 
 ## ผลตรวจในเครื่องล่าสุด
 
@@ -94,10 +93,10 @@ dart analyze
 firebase --config firebase.emulator.test.json emulators:exec --only "auth,firestore,storage" --project demo-linko "node tool/run_emulator_tests.mjs"
 ```
 
-เมื่อพร้อมนำ Rules ไปใช้จริง ให้ deploy จากโฟลเดอร์นี้แล้วทดสอบหลายบัญชี:
+คำสั่งที่ใช้ deploy Rules/indexes รอบล่าสุดจากโฟลเดอร์นี้:
 
 ```powershell
-firebase deploy --only "firestore:rules,firestore:indexes,storage" --project social-network-app-c22eb
+firebase deploy --only "firestore:rules,firestore:indexes,storage" --project social-network-app-c22eb --non-interactive
 ```
 
 Android release ต้องใช้ keystore ของเจ้าของแอปและ `android/key.properties` ตาม [แผนและข้อจำกัด](AUDIT_FIX_PLAN.md); ระบบจะปฏิเสธ release ที่ยังไม่ได้ตั้งค่าลายเซ็น
@@ -106,4 +105,4 @@ Android release ต้องใช้ keystore ของเจ้าของแ
 
 รุ่นวันที่ 21 ต.ค. 2026 (`1c60028`) มีบันทึก Rules 25/25, ChatService/Chrome 6/6 และ Firebase จริง 10/10 ขั้นตอน พร้อม deploy เฉพาะ Firestore Rules ในวันนั้น ดู [รายงานเดิม](tool/CHAT_DIAGNOSIS.md)
 
-ผลดังกล่าวเป็นของรุ่นเดิม การแก้ audit วันที่ 22 ต.ค. มี Rules เพิ่มเติมและยังต้อง deploy/ทดสอบ production ใหม่ สคริปต์วินิจฉัยเดิมเก็บไว้ที่ `tool/chat_rules_diagnosis.mjs` แยกจาก regression suite ปัจจุบัน
+ผลดังกล่าวเป็นของรุ่นเดิม Rules หลัง audit เผยแพร่ใหม่แล้ววันที่ 24 ต.ค. ตาม [รายงานปัจจุบัน](DELIVERY_REPORT.md) และยังต้องทดสอบผ่านแอปกับบัญชีจริงหลายบัญชี สคริปต์วินิจฉัยเดิมเก็บไว้ที่ `tool/chat_rules_diagnosis.mjs` แยกจาก regression suite ปัจจุบัน
