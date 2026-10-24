@@ -1,5 +1,9 @@
 # ผลตรวจปัญหาส่งแชท — 21 ตุลาคม 2026
 
+> ประวัติจาก commit `1c60028`: ตาราง/เวลา deploy ด้านล่างเป็นผลของรุ่นวันที่ 21 ต.ค. ไม่ใช่หลักฐานว่า Rules หลังรวม audit วันที่ 22 ต.ค. ถูก deploy แล้ว สคริปต์เดิมเปลี่ยนชื่อเป็น `tool/chat_rules_diagnosis.mjs` และปรับ fixtures ให้ตรง schema/follow gate ปัจจุบัน ส่วนชุด regression audit อยู่ที่ `tool/chat_rules_emulator_test.mjs`
+
+หลัง merge วันที่ 22 ต.ค. รันทดสอบใหม่แล้ว: ชุดวินิจฉัย Rules ปัจจุบัน 25/25 และ ChatService จริงกับ Chrome/Emulator 6/6 ผ่าน รายละเอียดรวมใน `CHANGELOG_TESTING.md` ไม่มีการ deploy production ในรอบ merge
+
 ## สถานะหลังแก้และเผยแพร่
 
 แก้ `firestore.rules` จริงแล้ว โดยไม่บังคับให้ข้อความ ชนิดข้อความ และผู้ส่งล่าสุดต้องเปลี่ยนค่า แต่ยังตรวจข้อความใน batch, สมาชิก, ตัวตนผู้ส่ง, timestamp และ unreadCounts เดิม รวมถึงแก้เปิดห้องที่มองเห็นอยู่แล้วซ้ำและยกเลิกข้อความที่ preview เหมือนข้อความยกเลิก
@@ -90,15 +94,15 @@ error CORS ของ Storage และ QUIC ของ Chrome ที่เคย�
 
 ## ไฟล์และการรันซ้ำ
 
-- ชุดทดสอบ: `tool/chat_rules_emulator_test.mjs`
+- ชุดทดสอบ: `tool/chat_rules_diagnosis.mjs`
 - ผล JSON รอบล่าสุด: `build/chat_diagnostics/results.json`
 - log การรัน: `build/chat_diagnostics/run.log`
-- Rules ที่ทดสอบมี Git blob hash `0fc5d8e7d0bb96d18f31eab0fe6272239eade98a` ตรงกับ HEAD
+- Rules ที่ทดสอบมี Git blob hash `0fc5d8e7d0bb96d18f31eab0fe6272239eade98a` ตรงกับรุ่นที่ตรวจวันที่ 21 ต.ค.
 
 ต้องมี Java 21 ใน PATH และ Firebase CLI จากนั้นรันจากโฟลเดอร์ Linko:
 
 ```powershell
-firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_emulator_test.mjs --diagnose"
+firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_diagnosis.mjs --diagnose"
 ```
 
 โหมด `--diagnose` ทดสอบรุ่นที่มี bug (`7f50d79`), รุ่นก่อน (`778fe86` พร้อม payload รุ่นนั้น) และไฟล์ Rules ปัจจุบันตามลำดับ โดยคืน Rules ปัจจุบันให้ Emulator เมื่อจบ Exit code อ้างอิงไฟล์ปัจจุบัน ต้องดูผลแต่ละ suite เพื่อเห็น regression ของรุ่นเก่า เมื่อไม่ใส่ `--diagnose` จะทดสอบเฉพาะ Rules ปัจจุบันและคืน exit code 1 เฉพาะเมื่อพบเคสไม่ผ่าน
@@ -106,10 +110,12 @@ firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,fir
 รันการทดสอบผ่าน `ChatService` จริง (ต้องมี Java 21, Flutter และกำหนด `CHROME_EXECUTABLE` ให้ชี้ Chrome):
 
 ```powershell
-firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_emulator_test.mjs && node tool/run_chat_service_smoke.mjs"
+firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_diagnosis.mjs && node tool/run_chat_service_smoke.mjs"
 ```
 
 ตัวรัน browser เปิดหน้า Flutter `tool/chat_service_smoke.dart` และ Chrome แยกที่พอร์ต 18090/18091 แล้วปิด process ของตัวเองเมื่อจบ ไม่ใช้ session Chrome ของผู้ใช้ ใช้หน้า Flutter release เพื่อหลีกเลี่ยงปัญหา path ของ Flutter web test runner บน Windows
+
+หาก Flutter SDK ไม่อยู่ใน PATH สามารถตั้ง `$env:LINKO_FLUTTER_SDK` เป็นโฟลเดอร์ SDK (เช่น `C:\Users\Admin\flutter`) ตัวรันจะเรียก Dart/Flutter tool จาก SDK นั้นโดยตรง ตั้ง `$env:CHROME_EXECUTABLE` เป็น path ของ Chrome ก่อนรันตามตัวอย่างด้านบน
 
 ช่วงวินิจฉัยก่อนผู้ใช้อนุมัติยังไม่ได้แก้ source หรือ deploy; หลังผู้ใช้อนุมัติจึงแก้และเผยแพร่ตามสถานะด้านบน ไฟล์ generated plugin ที่เปลี่ยนอยู่ก่อนเริ่มงานไม่ได้แก้ไข
 

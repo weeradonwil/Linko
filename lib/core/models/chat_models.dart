@@ -1,6 +1,8 @@
 // โมเดลแปลงข้อมูล conversations และ messages จาก Firestore ให้หน้าจอใช้งานได้สะดวก
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/document_values.dart';
+
 // Firestore serverTimestamp จะกลายเป็น Timestamp; รองรับ DateTime ระหว่างทดสอบด้วย
 DateTime? _dateFrom(dynamic v) => v is Timestamp
     ? v.toDate()
@@ -41,26 +43,28 @@ class ConversationSummary {
     QueryDocumentSnapshot<Map<String, dynamic>> s,
     String uid,
   ) {
-    final d = s.data();
-    final unread = Map<String, dynamic>.from(
-      d['unreadCounts'] as Map? ?? const {},
-    );
+    return ConversationSummary.fromData(s.id, s.data(), uid);
+  }
+
+  factory ConversationSummary.fromData(
+    String id,
+    Map<String, dynamic> d,
+    String uid,
+  ) {
+    final unread = readMap(d['unreadCounts']);
     return ConversationSummary(
-      id: s.id,
-      participantIds: List<String>.from(
-        d['participantIds'] as List? ?? const [],
-      ),
+      id: id,
+      participantIds: readStrings(d['participantIds']),
       participantNames: Map<String, String>.from(
-        (d['participantNames'] as Map? ?? const {}).map(
-          (k, v) => MapEntry(k.toString(), v.toString()),
-        ),
+        readMap(d['participantNames'])
+            .map((k, v) => MapEntry(k.toString(), v.toString())),
       ),
-      lastMessageText: d['lastMessageText'] as String? ?? '',
-      lastMessageType: d['lastMessageType'] as String? ?? 'text',
-      lastMessageSenderId: d['lastMessageSenderId'] as String? ?? '',
+      lastMessageText: readString(d['lastMessageText']),
+      lastMessageType: readString(d['lastMessageType'], 'text'),
+      lastMessageSenderId: readString(d['lastMessageSenderId']),
       lastMessageAt: _dateFrom(d['lastMessageAt']),
-      unreadCount: (unread[uid] as num?)?.toInt() ?? 0,
-      isHidden: (d['hiddenFor'] as Map?)?[uid] == true,
+      unreadCount: readCount(unread[uid]),
+      isHidden: readMap(d['hiddenFor'])[uid] == true,
     );
   }
 }
@@ -89,11 +93,11 @@ class ChatMessage {
     final d = s.data();
     return ChatMessage(
       id: s.id,
-      senderId: d['senderId'] as String? ?? '',
-      type: d['type'] as String? ?? 'text',
-      text: d['text'] as String? ?? '',
+      senderId: readString(d['senderId']),
+      type: readString(d['type'], 'text'),
+      text: readString(d['text']),
       createdAt: _dateFrom(d['createdAt']),
-      mediaPath: d['mediaPath'] as String?,
+      mediaPath: readOptionalString(d['mediaPath']),
       isUnsent: d['type'] == 'deleted',
     );
   }
@@ -112,6 +116,7 @@ class AppNotification {
     this.conversationId,
     this.postId,
     this.commentId,
+    this.groupId,
   });
   final String id;
   final String actorId;
@@ -123,21 +128,23 @@ class AppNotification {
   final String? conversationId;
   final String? postId;
   final String? commentId;
+  final String? groupId;
   factory AppNotification.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> s,
   ) {
     final d = s.data();
     return AppNotification(
       id: s.id,
-      actorId: d['actorId'] as String? ?? '',
-      actorName: d['actorName'] as String? ?? 'สมาชิก',
-      type: d['type'] as String? ?? 'message',
-      body: d['body'] as String? ?? '',
+      actorId: readString(d['actorId']),
+      actorName: readName(d['actorName']),
+      type: readString(d['type'], 'message'),
+      body: readString(d['body']),
       createdAt: _dateFrom(d['createdAt']),
-      isRead: d['isRead'] as bool? ?? false,
-      conversationId: d['conversationId'] as String?,
-      postId: d['postId'] as String?,
-      commentId: d['commentId'] as String?,
+      isRead: d['isRead'] == true,
+      conversationId: readOptionalString(d['conversationId']),
+      postId: readOptionalString(d['postId']),
+      commentId: readOptionalString(d['commentId']),
+      groupId: readOptionalString(d['groupId']),
     );
   }
 }

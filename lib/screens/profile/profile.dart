@@ -5,6 +5,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/post.dart';
+import '../../core/models/post_policy.dart';
+import '../../core/utils/document_values.dart';
 import '../../core/services/chat_service.dart';
 import '../../core/services/follow_service.dart';
 import '../../core/services/post_service.dart';
@@ -32,6 +34,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _followBusy = false;
   bool _openingChat = false;
   bool _privacyBusy = false;
+  int _postsLimit = 30;
   String get _profileUid => widget.profileUid ?? widget.user.uid;
   bool get _isOwnProfile => _profileUid == widget.user.uid;
 
@@ -197,12 +200,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return const Center(child: Text('ไม่พบสมาชิกนี้'));
           }
           final data = snapshot.data!.data() ?? const <String, dynamic>{};
-          final name =
-              (data['displayName'] as String?)?.trim().isNotEmpty == true
-              ? (data['displayName'] as String).trim()
-              : 'สมาชิก';
-          final bio = (data['bio'] as String? ?? '').trim();
-          final isPrivate = data['isPrivate'] == true;
+          final storedName = readString(data['displayName']).trim();
+          final name = storedName.isEmpty ? 'สมาชิก' : storedName;
+          final bio = readString(data['bio']).trim();
+          final isPrivate = PostPolicy.profileIsPrivate(data);
+          final privacyPending = data['privacyTarget'] is bool;
+          final avatarPath = readOptionalString(data['avatarPath']);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
@@ -216,10 +219,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       FutureBuilder<String>(
-                        future: (data['avatarPath'] as String?) == null
+                        future: avatarPath == null || avatarPath.isEmpty
                             ? null
                             : FirebaseStorage.instance
-                                  .ref(data['avatarPath'] as String)
+                                  .ref(avatarPath)
                                   .getDownloadURL(),
                         builder: (context, avatar) => CircleAvatar(
                           radius: 40,
@@ -229,7 +232,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : NetworkImage(avatar.data!),
                           child: avatar.data == null
                               ? Text(
-                                  name.characters.first.toUpperCase(),
+                                  (name.isEmpty ? '?' : name.characters.first)
+                                      .toUpperCase(),
                                   style: TextStyle(
                                     fontSize: 32,
                                     color: colors.onPrimaryContainer,
@@ -289,7 +293,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onPressed: () => _editProfile(
                               name: name,
                               bio: bio,
-                              avatarPath: data['avatarPath'] as String?,
+                              avatarPath: avatarPath,
                             ),
                             style: FilledButton.styleFrom(
                               backgroundColor: colors.primary,
@@ -317,10 +321,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           trailing: Switch.adaptive(
                             value: isPrivate,
-                            onChanged: _privacyBusy ? null : _togglePrivacy,
+                            onChanged: _privacyBusy || privacyPending
+                                ? null
+                                : _togglePrivacy,
                             // ให้ Material เลือกคู่สี thumb/track ตามธีม รวมสถานะปิดใช้งาน
                           ),
                         ),
+                        if (privacyPending)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'กำลังปรับความเป็นส่วนตัวของโพสต์',
+                            ),
+                            subtitle: const Text(
+                              'หากงานหยุดลง กดดำเนินการต่อได้',
+                            ),
+                            trailing: TextButton(
+                              onPressed: _privacyBusy
+                                  ? null
+                                  : () => _togglePrivacy(
+                                      data['privacyTarget'] as bool,
+                                    ),
+                              child: Text(
+                                _privacyBusy ? 'กำลังบันทึก' : 'ดำเนินการต่อ',
+                              ),
+                            ),
+                          ),
                         if (isPrivate)
                           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                             stream: _followService.watchFollowRequests(
@@ -487,10 +513,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           final posts = postsSnapshot.data!.docs
               .map(Post.fromSnapshot)
+              .where((p) => !p.isDeleting || _isOwnProfile)
               .toList();
           if (posts.isEmpty) return const _ProfileMessage('ยังไม่มีโพสต์');
           return Column(
-            children: posts.map((post) => _ProfilePost(post: post)).toList(),
+            children: [
+              for (final post in posts)
+                if (post.isDeleting)
+                  Card(
+                    child: ListTile(
+                      title: const Text('กำลังลบโพสต์'),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          try {
+                            await _postService.deletePost(post);
+                          } catch (error) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text('$error')));
+                            }
+                          }
+                        },
+                        child: const Text('ลบต่อ'),
+                      ),
+                    ),
+                  )
+                else
+                  _ProfilePost(post: post),
+              if (postsSnapshot.data!.docs.length >= _postsLimit)
+                TextButton(
+                  onPressed: () => setState(() => _postsLimit += 30),
+                  child: const Text('โหลดโพสต์เก่าเพิ่มเติม'),
+                ),
+            ],
           );
         },
       );
@@ -505,7 +561,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isEqualTo: isPrivate ? 'followers' : 'public',
       );
     }
-    return query.orderBy('createdAt', descending: true).limit(30).snapshots();
+    return query
+        .orderBy('createdAt', descending: true)
+        .limit(_postsLimit)
+        .snapshots();
   }
 }
 
@@ -600,7 +659,7 @@ class _PeopleSheet extends StatelessWidget {
                   itemCount: people.length,
                   itemBuilder: (context, index) {
                     final uid =
-                        people[index].data()['uid'] as String? ??
+                        readOptionalString(people[index].data()['uid']) ??
                         people[index].id;
                     return FutureBuilder<
                       DocumentSnapshot<Map<String, dynamic>>
@@ -610,14 +669,13 @@ class _PeopleSheet extends StatelessWidget {
                         final person =
                             personSnapshot.data?.data() ??
                             const <String, dynamic>{};
-                        final displayName =
-                            (person['displayName'] as String?)?.trim() ?? '';
-                        final name = displayName.isEmpty
-                            ? 'สมาชิก'
-                            : displayName;
+                        final name = readName(person['displayName']);
                         return ListTile(
                           leading: CircleAvatar(
-                            child: Text(name.characters.first.toUpperCase()),
+                            child: Text(
+                              (name.isEmpty ? '?' : name.characters.first)
+                                  .toUpperCase(),
+                            ),
                           ),
                           title: Text(name),
                           trailing: const Icon(Icons.chevron_right_rounded),
@@ -679,7 +737,7 @@ class _FollowRequestsSheet extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final request = requests[index];
                     final requesterUid =
-                        request.data()['uid'] as String? ?? request.id;
+                        readOptionalString(request.data()['uid']) ?? request.id;
                     return FutureBuilder<
                       DocumentSnapshot<Map<String, dynamic>>
                     >(
@@ -691,11 +749,16 @@ class _FollowRequestsSheet extends StatelessWidget {
                         final person =
                             personSnapshot.data?.data() ??
                             const <String, dynamic>{};
-                        final name =
-                            person['displayName'] as String? ?? 'สมาชิก';
+                        final name = readString(
+                          person['displayName'],
+                          'สมาชิก',
+                        );
                         return ListTile(
                           leading: CircleAvatar(
-                            child: Text(name.characters.first.toUpperCase()),
+                            child: Text(
+                              (name.isEmpty ? '?' : name.characters.first)
+                                  .toUpperCase(),
+                            ),
                           ),
                           title: Text(name),
                           trailing: Wrap(

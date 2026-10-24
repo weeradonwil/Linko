@@ -13,7 +13,11 @@ class NotificationService {
   final FirebaseFirestore _firestore;
   static const _socialTypes = ['like', 'comment', 'follow'];
   // กรองด้วย recipientId ให้ตรงกับเงื่อนไขอ่านใน Firestore Rules
-  Stream<List<AppNotification>> watchNotifications({bool unreadOnly = false}) {
+  /// ขยายช่วงรายการได้ เพื่อให้เปิดอ่านแจ้งเตือนเก่าที่ badge ยังนับอยู่ได้
+  Stream<List<AppNotification>> watchNotifications({
+    bool unreadOnly = false,
+    int limit = 100,
+  }) {
     final user = _auth.currentUser;
     if (user == null) return const Stream.empty();
     Query<Map<String, dynamic>> q = _firestore
@@ -23,7 +27,7 @@ class NotificationService {
     if (unreadOnly) q = q.where('isRead', isEqualTo: false);
     return q
         .orderBy('createdAt', descending: true)
-        .limit(100)
+        .limit(limit)
         .snapshots()
         .map(
           (snapshot) =>

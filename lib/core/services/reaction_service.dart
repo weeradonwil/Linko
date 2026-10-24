@@ -11,7 +11,15 @@ class ReactionService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
-  static const supportedReactions = {'like', 'dislike'};
+  static const supportedReactions = {
+    'like',
+    'love',
+    'haha',
+    'wow',
+    'sad',
+    'angry',
+    'dislike',
+  };
 
   String get _uid {
     final user = _auth.currentUser;

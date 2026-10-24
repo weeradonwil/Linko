@@ -1,18 +1,25 @@
 // วิดเจ็ตกลางสำหรับโหลดภาพและเตรียมวิดีโอจาก Firebase Storage ในฟีดและแชท
 import 'dart:async';
 import 'dart:collection';
-import 'dart:typed_data';
 
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../theme/app_theme.dart';
+import '../utils/authenticated_video.dart';
 
 /// แสดงไฟล์ของโพสต์โดยอ่านผ่าน Storage SDK แทน download URL
 /// ทุกการอ่านจึงถูกตรวจด้วย Firebase Storage Rules รวมถึงไฟล์ของโพสต์ส่วนตัว
 class PostMedia extends StatelessWidget {
+  static void clearCache() {
+    _StorageImageState._cacheGeneration++;
+    _StorageImageState._imageCache.clear();
+    _StorageImageState._imageLoads.clear();
+  }
+
   const PostMedia({
     required this.path,
     required this.type,
@@ -47,6 +54,7 @@ class _StorageImageState extends State<_StorageImage> {
   static final LinkedHashMap<String, Uint8List> _imageCache =
       LinkedHashMap<String, Uint8List>();
   static final Map<String, Future<Uint8List?>> _imageLoads = {};
+  static int _cacheGeneration = 0;
 
   late Future<Uint8List?> _imageBytes;
 
@@ -70,13 +78,14 @@ class _StorageImageState extends State<_StorageImage> {
     }
 
     final path = widget.path;
+    final generation = _cacheGeneration;
     final pending = _imageLoads.putIfAbsent(
       path,
       () => FirebaseStorage.instance.ref(path).getData(10 * 1024 * 1024),
     );
     try {
       final bytes = await pending;
-      if (bytes != null) {
+      if (bytes != null && generation == _cacheGeneration) {
         _imageCache[path] = bytes;
         var totalBytes = _imageCache.values.fold<int>(
           0,
@@ -103,7 +112,10 @@ class _StorageImageState extends State<_StorageImage> {
                 snapshot.data == null) {
           return _MediaMessage(
             icon: Icons.broken_image_outlined,
-            onPressed: () => setState(() => _imageBytes = _loadImage()),
+            onPressed: () => setState(() {
+              _imageBytes = _loadImage();
+              _imageBytes.ignore();
+            }),
           );
         }
         if (snapshot.connectionState != ConnectionState.done) {
@@ -136,6 +148,8 @@ class _StorageVideo extends StatefulWidget {
 
 class _StorageVideoState extends State<_StorageVideo> {
   VideoPlayerController? _controller;
+  AuthenticatedVideo? _source;
+  int _loadGeneration = 0;
   Future<void>? _initialization;
 
   @override
@@ -149,17 +163,24 @@ class _StorageVideoState extends State<_StorageVideo> {
     }
   }
 
-  /// Resolve Storage's protected object URL and prepare the first video frame.
+  /// ตรวจสิทธิ์ผ่าน SDK ทุกครั้งที่เปิดวิดีโอ และทิ้งผลโหลดของโพสต์ที่เลื่อนผ่านแล้ว
   Future<void> _prepareVideo() async {
     final path = widget.path;
-    final url = await FirebaseStorage.instance.ref(path).getDownloadURL();
-    if (!mounted || path != widget.path) return;
-
-    // Streaming displays the preview frame without downloading the entire clip first.
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    final generation = _loadGeneration;
+    final source = await loadAuthenticatedVideo(
+      FirebaseStorage.instance.ref(path),
+    );
+    if (!mounted || generation != _loadGeneration || path != widget.path) {
+      await source.dispose();
+      return;
+    }
+    _source = source;
+    final controller = source.controller;
     _controller = controller;
     await controller.initialize();
-    if (!mounted || path != widget.path) return;
+    if (!mounted || generation != _loadGeneration || path != widget.path) {
+      return;
+    }
     // Keep scrolling previews silent; sound starts when the user plays the clip.
     await controller.setVolume(0);
     controller.addListener(_refreshControls);
@@ -175,11 +196,14 @@ class _StorageVideoState extends State<_StorageVideo> {
         _disposeVideo();
         _controller = null;
       }
-      setState(() => _initialization = _prepareVideo());
+      setState(() {
+        _initialization = _prepareVideo();
+      });
     }
+    final generation = _loadGeneration;
     try {
       await _initialization;
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         await _controller?.setVolume(1);
         await _controller?.play();
       }
@@ -189,8 +213,16 @@ class _StorageVideoState extends State<_StorageVideo> {
   }
 
   void _disposeVideo() {
-    final controller = _controller;
-    if (controller != null) unawaited(controller.dispose());
+    _loadGeneration++;
+    final source = _source;
+    _source = null;
+    if (source != null) {
+      unawaited(
+        source.dispose().catchError((Object _) {
+          // การล้างไฟล์ชั่วคราวที่ระบบลบไปแล้วไม่ควรทำให้หน้าจอปิดด้วย error
+        }),
+      );
+    }
   }
 
   @override
@@ -201,6 +233,22 @@ class _StorageVideoState extends State<_StorageVideo> {
 
   @override
   Widget build(BuildContext context) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux)) {
+      return const SizedBox(
+        height: 120,
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'อุปกรณ์นี้ยังไม่รองรับการเล่นวิดีโอในแอป',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
     return FutureBuilder<void>(
       future: _initialization,
       builder: (context, snapshot) {

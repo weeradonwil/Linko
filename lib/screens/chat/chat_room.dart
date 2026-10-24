@@ -35,6 +35,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _scroll = ScrollController();
   XFile? _attachment;
   bool _sending = false;
+  int _messageLimit = 50;
   late Stream<List<ChatMessage>> _messages;
   StreamSubscription<List<ChatMessage>>? _readSubscription;
   bool _receivedInitialMessages = false;
@@ -42,8 +43,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   @override
   void initState() {
     super.initState();
-    _messages = _service.watchMessages(widget.conversationId);
+    _subscribeMessages();
     unawaited(_markRead());
+  }
+
+  void _subscribeMessages() {
+    _messages = _service.watchMessages(
+      widget.conversationId,
+      limit: _messageLimit,
+    );
     // ทำเครื่องหมายว่าอ่านแล้วเฉพาะเมื่อมีข้อความใหม่ ไม่เขียนซ้ำทุก snapshot
     _readSubscription = _messages.listen(
       _markNewIncomingMessagesRead,
@@ -56,7 +64,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  /// ตรวจ ID ข้อความขาเข้าล่าสุด เพื่อลดการเขียนสถานะอ่านซ้ำจาก snapshot เดิม
+  /// ขยายช่วงข้อความย้อนหลังและยกเลิก listener เดิมก่อนเปิดช่วงใหม่
+  Future<void> _loadOlderMessages() async {
+    await _readSubscription?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _messageLimit += 50;
+      _subscribeMessages();
+    });
+  }
+
   void _markNewIncomingMessagesRead(List<ChatMessage> messages) {
     ChatMessage? latestIncoming;
     for (final message in messages.reversed) {
@@ -183,21 +200,35 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       ),
     );
     if (image == null || !mounted) return;
-    final file = image
-        ? await _picker.pickImage(
-            source: ImageSource.gallery,
-            imageQuality: 82,
-            maxWidth: 1600,
-            maxHeight: 1600,
-          )
-        : await _picker.pickVideo(source: ImageSource.gallery);
-    if (file != null && mounted) setState(() => _attachment = file);
+    try {
+      final file = image
+          ? await _picker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 82,
+              maxWidth: 1600,
+              maxHeight: 1600,
+            )
+          : await _picker.pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+      if (await file.length() > (image ? 10 : 50) * 1024 * 1024) {
+        throw FormatException(
+          image ? 'รูปต้องไม่เกิน 10 MB' : 'วิดีโอต้องไม่เกิน 50 MB',
+        );
+      }
+      if (mounted) setState(() => _attachment = file);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('เลือกไฟล์ไม่สำเร็จ: $error')));
+      }
+    }
   }
 
-  // กันการกดส่งซ้ำระหว่างรอ Firebase และล้างข้อมูลแนบเมื่อส่งสำเร็จ
   Future<void> _send() async {
-    if (_sending || (_controller.text.trim().isEmpty && _attachment == null))
+    if (_sending || (_controller.text.trim().isEmpty && _attachment == null)) {
       return;
+    }
     final body = _controller.text;
     final file = _attachment;
     setState(() => _sending = true);
@@ -211,12 +242,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       if (!mounted) return;
       _controller.clear();
       setState(() => _attachment = null);
-      if (_scroll.hasClients)
+      if (_scroll.hasClients) {
         _scroll.animateTo(
           0,
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
         );
+      }
     } catch (error, stackTrace) {
       _handleChatError(error, stackTrace, action: 'ส่งข้อความ');
     } finally {
@@ -271,7 +303,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             child: StreamBuilder<List<ChatMessage>>(
               stream: _messages,
               builder: (context, snapshot) {
-                if (snapshot.hasError)
+                if (snapshot.hasError) {
                   return Center(
                     child: Text(
                       firebaseErrorMessage(
@@ -280,10 +312,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       ),
                     ),
                   );
-                if (snapshot.connectionState == ConnectionState.waiting)
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
                 final items = snapshot.data ?? [];
-                if (items.isEmpty)
+                if (items.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -295,25 +329,36 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'เริ่มทักทาย ' + widget.peerName,
+                          'เริ่มทักทาย ${widget.peerName}',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ],
                     ),
                   );
+                }
                 return ListView.builder(
                   controller: _scroll,
                   reverse: true,
                   padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
-                  itemCount: items.length,
+                  itemCount:
+                      items.length + (items.length >= _messageLimit ? 1 : 0),
                   itemBuilder: (context, i) {
+                    if (i == items.length) {
+                      return TextButton(
+                        onPressed: _loadOlderMessages,
+                        child: const Text('โหลดข้อความก่อนหน้า'),
+                      );
+                    }
                     final message = items[items.length - 1 - i];
                     return _MessageBubble(
                       key: ValueKey(message.id),
                       message: message,
                       isMine: message.senderId == widget.user.uid,
-                      peerInitial: widget.peerName.characters.first
-                          .toUpperCase(),
+                      peerInitial:
+                          (widget.peerName.isEmpty
+                                  ? '?'
+                                  : widget.peerName.characters.first)
+                              .toUpperCase(),
                       onUnsend: () => _unsendMessage(message),
                     );
                   },
@@ -422,9 +467,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onUnsend;
   String _time(DateTime? d) => d == null
       ? ''
-      : d.hour.toString().padLeft(2, '0') +
-            ':' +
-            d.minute.toString().padLeft(2, '0');
+      : '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;

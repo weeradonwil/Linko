@@ -24,6 +24,7 @@ class NotificationsScreen extends StatefulWidget {
 // สลับ stream ระหว่างการแจ้งเตือนทั้งหมดกับรายการที่ยังไม่ได้อ่าน
 class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _unreadOnly = false;
+  int _limit = 100;
   final _service = NotificationService();
   final _commentService = CommentService();
   void _go(int i) {
@@ -55,10 +56,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       await _service.markAllRead();
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ทำเครื่องหมายอ่านแล้วไม่สำเร็จ')),
         );
+      }
     }
   }
 
@@ -71,7 +73,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if ((item.type == 'comment' || item.type == 'like') &&
         item.postId != null) {
       try {
-        final post = await _commentService.getPost(item.postId!);
+        final post = await _commentService.getPost(
+          item.postId!,
+          groupId: item.groupId,
+        );
         if (!mounted) return;
         if (post == null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +86,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         }
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => PostCommentsScreen(user: widget.user, post: post),
+            builder: (_) => PostCommentsScreen(
+              user: widget.user,
+              post: post,
+              groupId: item.groupId,
+            ),
           ),
         );
       } catch (error) {
@@ -153,9 +162,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: StreamBuilder<List<AppNotification>>(
-                stream: _service.watchNotifications(unreadOnly: _unreadOnly),
+                stream: _service.watchNotifications(
+                  unreadOnly: _unreadOnly,
+                  limit: _limit,
+                ),
                 builder: (context, snapshot) {
-                  if (snapshot.hasError)
+                  if (snapshot.hasError) {
                     return _NoticeState(
                       icon: Icons.cloud_off_outlined,
                       title: 'โหลดการแจ้งเตือนไม่สำเร็จ',
@@ -164,10 +176,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         action: 'โหลดการแจ้งเตือน',
                       ),
                     );
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
+                  }
                   final items = snapshot.data ?? [];
-                  if (items.isEmpty)
+                  if (items.isEmpty) {
                     return _NoticeState(
                       icon: Icons.notifications_none_rounded,
                       title: _unreadOnly
@@ -176,11 +190,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       detail:
                           'การถูกใจ ความคิดเห็น และผู้ติดตามใหม่จะแสดงที่นี่',
                     );
+                  }
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                    itemCount: items.length,
+                    itemCount: items.length + (items.length >= _limit ? 1 : 0),
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
+                      if (i == items.length) {
+                        return TextButton(
+                          onPressed: () => setState(() => _limit += 100),
+                          child: const Text('โหลดการแจ้งเตือนเก่าเพิ่มเติม'),
+                        );
+                      }
                       final n = items[i];
                       return Card(
                         color: n.isRead ? null : colors.surfaceContainerLow,
@@ -276,13 +297,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (date == null) return 'เมื่อสักครู่';
     final diff = DateTime.now().difference(date);
     if (diff.inMinutes < 1) return 'เมื่อสักครู่';
-    if (diff.inMinutes < 60) return diff.inMinutes.toString() + ' นาทีที่แล้ว';
-    if (diff.inHours < 24) return diff.inHours.toString() + ' ชั่วโมงที่แล้ว';
-    return date.day.toString() +
-        '/' +
-        date.month.toString() +
-        '/' +
-        date.year.toString();
+    if (diff.inMinutes < 60) return '${diff.inMinutes} นาทีที่แล้ว';
+    if (diff.inHours < 24) return '${diff.inHours} ชั่วโมงที่แล้ว';
+    return '${date.day}/${date.month}/${date.year}';
   }
 
   String _notificationTitle(AppNotification item) => switch (item.type) {

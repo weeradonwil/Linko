@@ -9,6 +9,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/widgets.dart';
 import 'package:social_app/core/models/chat_models.dart';
 import 'package:social_app/core/services/chat_service.dart';
+import 'package:social_app/core/services/auth_service.dart';
+import 'package:social_app/core/services/follow_service.dart';
 
 // ส่งผลกลับให้ run_chat_service_smoke.mjs อ่านผ่าน Chrome DevTools
 @JS('globalThis.linkoChatTestResults')
@@ -81,7 +83,11 @@ Future<void> main() async {
     );
     accounts.add(account);
     await auth.signInAnonymously();
-    await db.collection('users').doc(account.uid).set({'displayName': name});
+    await auth.currentUser!.updateDisplayName(name);
+    await AuthService(
+      auth: auth,
+      firestore: db,
+    ).ensureProfile(auth.currentUser!, displayName: name);
     return account;
   }
 
@@ -273,6 +279,10 @@ Future<void> main() async {
     try {
       alice = await createAccount('Alice');
       bob = await createAccount('Bob');
+      await FollowService(
+        auth: alice.auth,
+        firestore: alice.db,
+      ).follow(bob.uid);
       room = await alice.service.openConversation(
         peerId: bob.uid,
         peerName: 'Bob',

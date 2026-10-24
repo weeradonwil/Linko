@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/services/post_service.dart';
 import '../../core/services/report_service.dart';
+import '../../core/services/group_service.dart';
+import '../../core/utils/document_values.dart';
 
 /// เปิดคิวรายงานให้บัญชีที่มี Firebase custom claim admin=true
 class AdminReportsScreen extends StatefulWidget {
@@ -17,9 +19,9 @@ class AdminReportsScreen extends StatefulWidget {
 }
 
 class _AdminReportsScreenState extends State<AdminReportsScreen> {
-  final _reports = ReportService();
-  final _posts = PostService();
-  late final Future<bool> _hasAdminClaim;
+  late final _reports = ReportService();
+  late final _posts = PostService();
+  late Future<bool> _hasAdminClaim;
 
   @override
   void initState() {
@@ -31,6 +33,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<bool> _readAdminClaim() async {
     final token = await widget.user.getIdTokenResult(true);
     return token.claims?['admin'] == true;
+  }
+
+  /// จับ error ระหว่างรอเฟรมใหม่ โดย FutureBuilder ยังแสดงผลล้มเหลวตามจริง
+  void _retryAdminClaim() {
+    final request = _readAdminClaim();
+    request.ignore();
+    setState(() {
+      _hasAdminClaim = request;
+    });
   }
 
   Future<void> _closeReport(String reportId, String status) async {
@@ -45,7 +56,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   // ขอคำยืนยันก่อนลบ และปิดรายงานเป็น removed หลังลบโพสต์สำเร็จเท่านั้น
-  Future<void> _removePost(String reportId, String postId) async {
+  Future<void> _removePost(
+    String reportId,
+    String postId,
+    String? groupId,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -68,7 +83,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     if (confirmed != true) return;
 
     try {
-      await _posts.removeReportedPost(postId);
+      if (groupId == null) {
+        await _posts.removeReportedPost(postId);
+      } else {
+        await GroupService().deletePost(groupId: groupId, postId: postId);
+      }
       await _reports.closeReport(reportId: reportId, status: 'removed');
     } catch (error) {
       if (!mounted) return;
@@ -83,6 +102,21 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     body: FutureBuilder<bool>(
       future: _hasAdminClaim,
       builder: (context, claim) {
+        // แสดงข้อผิดพลาดและลองใหม่ได้เมื่ออ่าน token ล้มเหลว แทนการค้างที่ตัวโหลด
+        if (claim.hasError) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('ตรวจสิทธิ์ผู้ดูแลไม่สำเร็จ กรุณาลองอีกครั้ง'),
+                TextButton(
+                  onPressed: _retryAdminClaim,
+                  child: const Text('ลองอีกครั้ง'),
+                ),
+              ],
+            ),
+          );
+        }
         if (!claim.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -114,6 +148,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     ? ''
                     : '${createdAt.toLocal()}';
                 final postId = data['postId'] as String? ?? '';
+                final groupId = readOptionalString(data['groupId']);
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -130,7 +165,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         ],
                         const SizedBox(height: 8),
                         SelectableText(
-                          'Post: $postId\n'
+                          '${groupId == null ? 'Post' : 'Group $groupId'}: $postId\n'
                           'ผู้รายงาน: ${data['reporterUid']}\n'
                           'เจ้าของ: ${data['postOwnerId']}\n'
                           '$dateLabel',
@@ -156,7 +191,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             FilledButton.tonalIcon(
                               onPressed: postId.isEmpty
                                   ? null
-                                  : () => _removePost(report.id, postId),
+                                  : () =>
+                                        _removePost(report.id, postId, groupId),
                               icon: const Icon(Icons.delete_outline),
                               label: const Text('นำโพสต์ออก'),
                             ),

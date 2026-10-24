@@ -7,12 +7,18 @@ import '../../core/models/post_comment.dart';
 import '../../core/services/comment_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 
-/// แสดงรายการความคิดเห็นของโพสต์เดียวและส่งการกระทำไปยัง CommentService
+/// แสดงความคิดเห็นของโพสต์ฟีดหลักหรือกลุ่ม โดย CommentService เลือกตำแหน่งและ Rules ที่ตรงกัน
 class PostCommentsScreen extends StatefulWidget {
-  const PostCommentsScreen({super.key, required this.user, required this.post});
+  const PostCommentsScreen({
+    super.key,
+    required this.user,
+    required this.post,
+    this.groupId,
+  });
 
   final User user;
   final Post post;
+  final String? groupId;
 
   @override
   State<PostCommentsScreen> createState() => _PostCommentsScreenState();
@@ -22,6 +28,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   final _service = CommentService();
   final _textController = TextEditingController();
   bool _sending = false;
+  int _limit = 50;
 
   @override
   void dispose() {
@@ -36,13 +43,17 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       final result = await _service.addComment(
         post: widget.post,
         content: _textController.text,
+        groupId: widget.groupId,
       );
+      if (!mounted) return;
       _textController.clear();
       if (!result.notificationsComplete && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result.eligibleFollowers == null
+              widget.groupId != null
+                  ? 'ส่งความคิดเห็นแล้ว แต่แจ้งเจ้าของโพสต์ไม่สำเร็จ'
+                  : result.eligibleFollowers == null
                   ? 'ส่งความคิดเห็นแล้ว แต่โหลดรายชื่อผู้ติดตามเพื่อแจ้งเตือนไม่สำเร็จ'
                   : 'ส่งความคิดเห็นแล้ว แต่แจ้งเตือนผู้ติดตามได้ ${result.notifiedFollowers}/${result.eligibleFollowers} คน',
             ),
@@ -72,6 +83,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       await _service.deleteComment(
         postId: widget.post.id,
         commentId: comment.id,
+        groupId: widget.groupId,
       );
     } catch (error) {
       if (mounted) {
@@ -98,7 +110,11 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
           _PostPreview(post: widget.post),
           Expanded(
             child: StreamBuilder<List<PostComment>>(
-              stream: _service.watchComments(widget.post.id),
+              stream: _service.watchComments(
+                widget.post.id,
+                limit: _limit,
+                groupId: widget.groupId,
+              ),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -128,13 +144,23 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  itemCount: comments.length,
+                  itemCount:
+                      comments.length + (comments.length >= _limit ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) {
-                    final comment = comments[index];
+                    if (comments.length >= _limit && index == 0) {
+                      return TextButton(
+                        onPressed: () => setState(() => _limit += 50),
+                        child: const Text('โหลดความคิดเห็นก่อนหน้า'),
+                      );
+                    }
+                    final comment =
+                        comments[index - (comments.length >= _limit ? 1 : 0)];
                     return _CommentTile(
                       comment: comment,
-                      canDelete: comment.authorId == widget.user.uid,
+                      canDelete:
+                          comment.authorId == widget.user.uid ||
+                          widget.post.userId == widget.user.uid,
                       onDelete: () => _delete(comment),
                     );
                   },

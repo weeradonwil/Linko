@@ -12,14 +12,15 @@ class SocialReaction {
 
   static const options = <SocialReaction>[
     SocialReaction(id: 'like', emoji: '👍', label: 'ถูกใจ'),
+    SocialReaction(id: 'love', emoji: '❤️', label: 'รักเลย'),
+    SocialReaction(id: 'haha', emoji: '😂', label: 'ฮ่าๆ'),
+    SocialReaction(id: 'wow', emoji: '😮', label: 'ว้าว'),
+    SocialReaction(id: 'sad', emoji: '😢', label: 'เศร้า'),
+    SocialReaction(id: 'angry', emoji: '😡', label: 'โกรธ'),
     SocialReaction(id: 'dislike', emoji: '👎', label: 'ไม่ถูกใจ'),
   ];
 
   static SocialReaction? byId(String? id) {
-    // Legacy emoji reactions still appear as Like until users change them.
-    if (const {'love', 'haha', 'wow', 'sad', 'angry'}.contains(id)) {
-      return options.first;
-    }
     for (final option in options) {
       if (option.id == id) return option;
     }

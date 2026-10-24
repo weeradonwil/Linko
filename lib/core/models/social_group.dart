@@ -1,6 +1,9 @@
 // โมเดลกลุ่มและโพสต์ในกลุ่ม แปลงข้อมูล Firestore เป็นข้อมูลแสดงผล
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/document_values.dart';
+import 'post.dart';
+
 /// ข้อมูลกลุ่มที่แสดงในรายการกลุ่มและหน้ารายละเอียด
 class SocialGroup {
   const SocialGroup({
@@ -12,6 +15,7 @@ class SocialGroup {
     required this.createdAt,
     this.avatarPath,
     this.memberCount,
+    this.isDeleting = false,
   });
 
   final String id;
@@ -22,6 +26,7 @@ class SocialGroup {
   final DateTime? createdAt;
   final String? avatarPath;
   final int? memberCount;
+  final bool isDeleting;
 
   factory SocialGroup.fromSnapshot(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -30,13 +35,16 @@ class SocialGroup {
     final timestamp = data['createdAt'];
     return SocialGroup(
       id: snapshot.id,
-      name: data['name'] as String? ?? 'กลุ่มไม่มีชื่อ',
-      description: data['description'] as String? ?? '',
-      ownerId: data['ownerId'] as String? ?? '',
-      visibility: data['visibility'] as String? ?? 'public',
+      name: readName(data['name'], 'กลุ่มไม่มีชื่อ'),
+      description: readString(data['description']),
+      ownerId: readString(data['ownerId']),
+      visibility: readString(data['visibility'], 'public'),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
-      avatarPath: data['avatarPath'] as String?,
-      memberCount: data['memberCount'] as int?,
+      avatarPath: readOptionalString(data['avatarPath']),
+      memberCount: data['memberCount'] == null
+          ? null
+          : readCount(data['memberCount']),
+      isDeleting: data['isDeleting'] == true,
     );
   }
 }
@@ -59,14 +67,14 @@ class GroupJoinRequest {
     final data = snapshot.data();
     final timestamp = data['createdAt'];
     return GroupJoinRequest(
-      uid: data['uid'] as String? ?? snapshot.id,
-      displayName: data['displayName'] as String? ?? 'สมาชิก',
+      uid: readString(data['uid'], snapshot.id),
+      displayName: readName(data['displayName']),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
     );
   }
 }
 
-/// โพสต์ข้อความอย่างง่ายที่อยู่ภายในกลุ่ม
+/// ข้อมูลโพสต์กลุ่มพร้อมสื่อ แท็ก สถานะแก้ไข และสถานะงานลบที่ทำต่อได้
 class GroupPost {
   const GroupPost({
     required this.id,
@@ -77,6 +85,9 @@ class GroupPost {
     this.mediaPath,
     this.mediaType = 'none',
     this.thumbnailPath,
+    this.tags = const [],
+    this.editedAt,
+    this.isDeleting = false,
   });
 
   final String id;
@@ -87,21 +98,44 @@ class GroupPost {
   final String? mediaPath;
   final String mediaType;
   final String? thumbnailPath;
+  final List<String> tags;
+  final DateTime? editedAt;
+  final bool isDeleting;
+
+  /// แปลงเป็นข้อมูลกลาง เพื่อใช้ฟอร์มแก้ไขและหน้าความคิดเห็นร่วมกับฟีดหลัก
+  Post asPost() => Post.fromData(id, {
+    'userId': authorId,
+    'authorName': authorName,
+    'content': content,
+    'tags': tags,
+    'visibility': 'public',
+    'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
+    'editedAt': editedAt == null ? null : Timestamp.fromDate(editedAt!),
+    'mediaPath': mediaPath,
+    'mediaType': mediaType,
+    'thumbnailPath': thumbnailPath,
+    'isDeleting': isDeleting,
+  });
 
   factory GroupPost.fromSnapshot(
-    QueryDocumentSnapshot<Map<String, dynamic>> snapshot,
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
   ) {
-    final data = snapshot.data();
+    final data = snapshot.data() ?? const <String, dynamic>{};
     final timestamp = data['createdAt'];
     return GroupPost(
       id: snapshot.id,
-      authorId: data['authorId'] as String? ?? '',
-      authorName: data['authorName'] as String? ?? 'สมาชิก',
-      content: data['content'] as String? ?? '',
+      authorId: readString(data['authorId']),
+      authorName: readName(data['authorName']),
+      content: readString(data['content']),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
-      mediaPath: data['mediaPath'] as String?,
-      mediaType: data['mediaType'] as String? ?? 'none',
-      thumbnailPath: data['thumbnailPath'] as String?,
+      mediaPath: readOptionalString(data['mediaPath']),
+      mediaType: readString(data['mediaType'], 'none'),
+      thumbnailPath: readOptionalString(data['thumbnailPath']),
+      tags: readStrings(data['tags']),
+      editedAt: data['editedAt'] is Timestamp
+          ? (data['editedAt'] as Timestamp).toDate()
+          : null,
+      isDeleting: data['isDeleting'] == true,
     );
   }
 }

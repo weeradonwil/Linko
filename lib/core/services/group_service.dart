@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/social_group.dart';
+import '../utils/document_values.dart';
+import '../models/post_policy.dart';
 
 /// คุยกับ Firestore สำหรับกลุ่มและสมาชิก โดย Rules ตรวจสิทธิ์ทุกการเขียน
 class GroupService {
@@ -43,14 +45,17 @@ class GroupService {
         return groups;
       });
 
-  /// ฟังโพสต์ในกลุ่มจากเก่าไปใหม่ตามลำดับเวลา
-  Stream<List<GroupPost>> watchPosts(String groupId) => _groups
-      .doc(groupId)
-      .collection('posts')
-      .orderBy('createdAt', descending: true)
-      .limit(100)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(GroupPost.fromSnapshot).toList());
+  /// ฟังโพสต์ในกลุ่มจากใหม่ไปเก่า และขยายช่วงย้อนหลังได้เมื่อผู้ใช้กดโหลดเพิ่ม
+  Stream<List<GroupPost>> watchPosts(String groupId, {int limit = 30}) =>
+      _groups
+          .doc(groupId)
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map(
+            (snapshot) => snapshot.docs.map(GroupPost.fromSnapshot).toList(),
+          );
 
   /// ฟังสถานะสมาชิกและจำนวนสมาชิกแบบสด
   Stream<QuerySnapshot<Map<String, dynamic>>> watchMembers(String groupId) =>
@@ -174,7 +179,11 @@ class GroupService {
       );
     }
     final group = _groups.doc(groupId);
-    final oldAvatarPath = (await group.get()).data()?['avatarPath'] as String?;
+    final before = await group.get();
+    if (!before.exists || before.data()?['isDeleting'] == true) {
+      throw const GroupServiceException('กลุ่มนี้กำลังถูกลบ');
+    }
+    final oldAvatarPath = readOptionalString(before.data()?['avatarPath']);
     String? newAvatarPath;
     if (avatar != null) {
       newAvatarPath = await _uploadGroupAvatar(groupId, avatar);
@@ -186,7 +195,17 @@ class GroupService {
     };
     if (newAvatarPath != null) updates['avatarPath'] = newAvatarPath;
     try {
-      await group.update(updates);
+      await _firestore.runTransaction((transaction) async {
+        final current = await transaction.get(group);
+        if (!current.exists ||
+            current.data()?['isDeleting'] == true ||
+            current.data()?['updatedAt'] != before.data()?['updatedAt']) {
+          throw const GroupServiceException(
+            'ข้อมูลกลุ่มเปลี่ยนระหว่างบันทึก กรุณาเปิดกลุ่มใหม่แล้วลองอีกครั้ง',
+          );
+        }
+        transaction.update(group, updates);
+      });
     } catch (_) {
       if (newAvatarPath != null) {
         try {
@@ -211,32 +230,31 @@ class GroupService {
   /// ลบโพสต์ สมาชิก และเอกสารกลุ่มเป็นชุด เพื่อไม่ให้ข้อมูลย่อยค้างอยู่
   Future<void> deleteGroup(String groupId) async {
     final group = _groups.doc(groupId);
-    final data = await group.get();
-    if (!data.exists || data.data()?['ownerId'] != _uid) {
-      throw const GroupServiceException('ลบได้เฉพาะกลุ่มที่คุณเป็นเจ้าของ');
-    }
+    final data = await _firestore.runTransaction((transaction) async {
+      final current = await transaction.get(group);
+      if (!current.exists || current.data()?['ownerId'] != _uid) {
+        throw const GroupServiceException('ลบได้เฉพาะกลุ่มที่คุณเป็นเจ้าของ');
+      }
+      transaction.update(group, {
+        'isDeleting': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return current;
+    });
     final members = await group.collection('members').get();
     final posts = await group.collection('posts').get();
     final joinRequests = await group.collection('join_requests').get();
-    final avatarPath = data.data()?['avatarPath'] as String?;
+    final avatarPath = readOptionalString(data.data()?['avatarPath']);
     if (avatarPath != null && avatarPath.startsWith('group_images/$groupId/')) {
       await _deleteStorageFile(avatarPath);
     }
     for (final post in posts.docs) {
-      final reactions = await post.reference.collection('reactions').get();
-      for (var start = 0; start < reactions.docs.length; start += 450) {
-        final batch = _firestore.batch();
-        final end = (start + 450).clamp(0, reactions.docs.length);
-        for (final reaction in reactions.docs.sublist(start, end)) {
-          batch.delete(reaction.reference);
-        }
-        await batch.commit();
-      }
+      await _deletePostChildren(post.reference);
     }
     // ลบโพสต์ก่อน เพราะการลบโพสต์ต้องอาศัยสถานะสมาชิกที่ยังมีอยู่
     for (final post in posts.docs) {
-      final mediaPath = post.data()['mediaPath'] as String?;
-      final thumbnailPath = post.data()['thumbnailPath'] as String?;
+      final mediaPath = readOptionalString(post.data()['mediaPath']);
+      final thumbnailPath = readOptionalString(post.data()['thumbnailPath']);
       for (final path in [mediaPath, thumbnailPath]) {
         if (path != null && path.startsWith('group_media/$groupId/')) {
           try {
@@ -454,11 +472,12 @@ class GroupService {
     });
   }
 
-  /// เพิ่มโพสต์ข้อความสั้นลงใน feed ของกลุ่ม
+  /// เพิ่มโพสต์ข้อความ แท็ก และสื่อหนึ่งไฟล์ในกลุ่ม โดยล้างไฟล์ใหม่หากบันทึกโพสต์ไม่ได้
   Future<void> addPost({
     required String groupId,
     required String content,
     XFile? attachment,
+    List<String> tags = const [],
   }) async {
     final text = content.trim();
     if ((text.isEmpty && attachment == null) || text.length > 1000) {
@@ -476,6 +495,7 @@ class GroupService {
             ? user!.displayName!.trim()
             : 'สมาชิก',
         'content': text,
+        'tags': _cleanTags(tags),
         'createdAt': FieldValue.serverTimestamp(),
         'mediaType': media?.type ?? 'none',
         if (media != null) 'mediaPath': media.path,
@@ -491,6 +511,166 @@ class GroupService {
       rethrow;
     }
   }
+
+  /// แก้โพสต์ของตนเองและสื่อแนบ โดยตรวจรุ่นข้อมูลใน transaction กันการเขียนทับข้ามอุปกรณ์
+  Future<void> updatePost({
+    required String groupId,
+    required String postId,
+    required String content,
+    List<String> tags = const [],
+    XFile? newAttachment,
+    bool removeMedia = false,
+  }) async {
+    final reference = _groups.doc(groupId).collection('posts').doc(postId);
+    final before = await reference.get();
+    final data = before.data();
+    if (data == null ||
+        data['authorId'] != _uid ||
+        data['isDeleting'] == true) {
+      throw const GroupServiceException(
+        'แก้ไขได้เฉพาะโพสต์ของคุณที่ไม่ได้กำลังลบ',
+      );
+    }
+    final text = content.trim();
+    final previousMedia = readOptionalString(data['mediaPath']);
+    final previousThumbnail = readOptionalString(data['thumbnailPath']);
+    if (text.length > 1000 ||
+        (removeMedia && newAttachment != null) ||
+        !PostPolicy.hasContent(
+          text,
+          hasMedia:
+              newAttachment != null || (!removeMedia && previousMedia != null),
+        )) {
+      throw const GroupServiceException(
+        'กรุณาใส่ข้อความไม่เกิน 1,000 ตัวอักษรหรือแนบสื่อ',
+      );
+    }
+    final media = newAttachment == null
+        ? null
+        : await _uploadGroupMedia(groupId, postId, newAttachment);
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final current = await transaction.get(reference);
+        final latest = current.data();
+        if (latest == null ||
+            latest['isDeleting'] == true ||
+            latest['updatedAt'] != data['updatedAt'] ||
+            latest['mediaPath'] != previousMedia ||
+            latest['thumbnailPath'] != previousThumbnail) {
+          throw const GroupServiceException(
+            'โพสต์เปลี่ยนระหว่างบันทึก กรุณาเปิดใหม่แล้วลองอีกครั้ง',
+          );
+        }
+        transaction.update(reference, {
+          'content': text,
+          'tags': _cleanTags(tags),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'editedAt': FieldValue.serverTimestamp(),
+          if (media != null) ...{
+            'mediaPath': media.path,
+            'mediaType': media.type,
+            'thumbnailPath': media.thumbnailPath ?? FieldValue.delete(),
+          },
+          if (removeMedia) ...{
+            'mediaPath': FieldValue.delete(),
+            'thumbnailPath': FieldValue.delete(),
+            'mediaType': 'none',
+          },
+        });
+      });
+    } catch (_) {
+      if (media != null) {
+        await _deleteStorageFile(media.path);
+        if (media.thumbnailPath != null) {
+          await _deleteStorageFile(media.thumbnailPath!);
+        }
+      }
+      rethrow;
+    }
+    if (media != null || removeMedia) {
+      for (final path in [previousMedia, previousThumbnail]) {
+        if (path != null &&
+            path.startsWith('group_media/$groupId/$postId/$_uid/')) {
+          await _deleteStorageFile(path);
+        }
+      }
+    }
+  }
+
+  /// ลบโพสต์พร้อมสื่อ Comment และ Reaction; สถานะ isDeleting ใช้กดลบต่อหลังเน็ตหลุดได้
+  Future<void> deletePost({
+    required String groupId,
+    required String postId,
+  }) async {
+    final reference = _groups.doc(groupId).collection('posts').doc(postId);
+    final data = await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      if (!snapshot.exists) return null;
+      transaction.update(reference, {
+        'isDeleting': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return snapshot.data();
+    });
+    if (data == null) return;
+    for (final path in [
+      readOptionalString(data['mediaPath']),
+      readOptionalString(data['thumbnailPath']),
+    ]) {
+      if (path != null && path.startsWith('group_media/$groupId/$postId/')) {
+        await _deleteStorageFile(path);
+      }
+    }
+    await _deletePostChildren(reference);
+    await reference.delete();
+  }
+
+  /// ล้างข้อมูลย่อยทีละหน้าเพื่อไม่ให้เกินขนาด batch และไม่ทิ้งข้อมูลหลังลบโพสต์หรือกลุ่ม
+  Future<void> _deletePostChildren(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) async {
+    for (final name in ['comments', 'reactions']) {
+      while (true) {
+        final page = await reference.collection(name).limit(200).get();
+        if (page.docs.isEmpty) break;
+        final batch = _firestore.batch();
+        for (final document in page.docs) {
+          batch.delete(document.reference);
+        }
+        await batch.commit();
+      }
+    }
+  }
+
+  /// เก็บรายงานกลุ่มในคิวกลาง โดยแยก ID จากรายงานฟีดหลักและป้องกันการรายงานซ้ำ
+  Future<void> reportPost({
+    required String groupId,
+    required GroupPost post,
+    required String reason,
+    String details = '',
+  }) async {
+    await _firestore
+        .collection('post_reports')
+        .doc('group_${groupId}_${post.id}_$_uid')
+        .set({
+          'groupId': groupId,
+          'postId': post.id,
+          'postOwnerId': post.authorId,
+          'reporterUid': _uid,
+          'reason': reason,
+          'details': details.trim(),
+          'status': 'open',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  List<String> _cleanTags(List<String> tags) => tags
+      .map((tag) => tag.trim().replaceFirst(RegExp(r'^#'), ''))
+      .where((tag) => tag.isNotEmpty)
+      .map((tag) => boundedString(tag, 150))
+      .toSet()
+      .take(5)
+      .toList();
 
   Future<({String path, String type, String? thumbnailPath})> _uploadGroupMedia(
     String groupId,
@@ -513,8 +693,14 @@ class GroupService {
       throw const GroupServiceException('รองรับเฉพาะไฟล์ภาพหรือวิดีโอ');
     }
 
-    final bytes = await file.readAsBytes();
     final maxBytes = type == 'image' ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+    // ตรวจขนาดก่อนอ่านไฟล์ ป้องกันวิดีโอใหญ่ใช้หน่วยความจำจนแอปปิด
+    if (await file.length() > maxBytes) {
+      throw const GroupServiceException(
+        'รูปต้องไม่เกิน 10 MB และวิดีโอต้องไม่เกิน 50 MB',
+      );
+    }
+    final bytes = await file.readAsBytes();
     if (bytes.length > maxBytes) {
       throw GroupServiceException(
         type == 'image'

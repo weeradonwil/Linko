@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/chat_models.dart';
+import '../utils/document_values.dart';
 
 /// รวมการอ่าน/เขียนห้องแชท ข้อความ และไฟล์แนบของผู้ใช้ที่ล็อกอิน
 class ChatService {
@@ -23,8 +24,9 @@ class ChatService {
   final FirebaseStorage _storage;
   String get _uid {
     final u = _auth.currentUser;
-    if (u == null)
+    if (u == null) {
       throw const ChatServiceException('กรุณาเข้าสู่ระบบก่อนใช้แชท');
+    }
     return u.uid;
   }
 
@@ -56,13 +58,14 @@ class ChatService {
   }
 
   // ฟัง 100 ข้อความล่าสุดและเรียงตามเวลาส่งจากเก่าไปใหม่
-  Stream<List<ChatMessage>> watchMessages(String id) => _conversations
-      .doc(id)
-      .collection('messages')
-      .orderBy('createdAt')
-      .limitToLast(100)
-      .snapshots()
-      .map((s) => s.docs.map(ChatMessage.fromSnapshot).toList());
+  Stream<List<ChatMessage>> watchMessages(String id, {int limit = 100}) =>
+      _conversations
+          .doc(id)
+          .collection('messages')
+          .orderBy('createdAt')
+          .limitToLast(limit)
+          .snapshots()
+          .map((s) => s.docs.map(ChatMessage.fromSnapshot).toList());
 
   /// สร้าง ID เดิมให้คู่สมาชิกเดิมเสมอ และใช้ transaction ป้องกันห้องซ้ำ
   Future<String> openConversation({
@@ -70,29 +73,45 @@ class ChatService {
     required String peerName,
   }) async {
     final uid = _uid;
-    if (uid == peerId)
+    if (uid == peerId) {
       throw const ChatServiceException('ไม่สามารถเริ่มแชทกับบัญชีตัวเองได้');
+    }
     final ids = [uid, peerId]..sort();
     final id = base64Url
-        .encode(utf8.encode(ids[0] + '|' + ids[1]))
+        .encode(utf8.encode('${ids[0]}|${ids[1]}'))
         .replaceAll('=', '');
     final ref = _conversations.doc(id);
     await _firestore.runTransaction((tx) async {
-      if ((await tx.get(ref)).exists) {
-        // เปิดห้องเดิมด้วย false ซ้ำได้; Rules ต้องไม่บังคับว่า hiddenFor ต้องเปลี่ยนค่า
-        tx.update(ref, {
-          FieldPath(['hiddenFor', uid]): false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+      final existing = await tx.get(ref);
+      if (existing.exists) {
+        if (readMap(existing.data()?['hiddenFor'])[uid] == true) {
+          tx.update(ref, {
+            FieldPath(['hiddenFor', uid]): false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
         return;
+      }
+      final followsPeer = await tx.get(
+        _firestore
+            .collection('users')
+            .doc(peerId)
+            .collection('followers')
+            .doc(uid),
+      );
+      if (!followsPeer.exists) {
+        throw const ChatServiceException('ติดตามบัญชีนี้ก่อนเริ่มส่งข้อความ');
       }
       final me = _auth.currentUser!;
       final name = me.displayName?.trim();
       tx.set(ref, {
         'participantIds': ids,
         'participantNames': {
-          uid: name == null || name.isEmpty ? 'สมาชิก' : name,
-          peerId: peerName.trim().isEmpty ? 'สมาชิก' : peerName.trim(),
+          uid: boundedString(
+            name == null || name.isEmpty ? 'สมาชิก' : name,
+            60,
+          ),
+          peerId: boundedString(readName(peerName), 60),
         },
         'unreadCounts': {uid: 0, peerId: 0},
         'lastReadAt': {uid: FieldValue.serverTimestamp()},
@@ -123,30 +142,34 @@ class ChatService {
     }
     final conversationRef = _conversations.doc(conversationId);
     final messageRef = conversationRef.collection('messages').doc(message.id);
-    final batch = _firestore.batch();
-    batch.update(messageRef, {
-      'type': 'deleted',
-      'text': 'ยกเลิกข้อความนี้',
-      'mediaPath': FieldValue.delete(),
-      'deletedAt': FieldValue.serverTimestamp(),
-    });
-    final latestMessages = await conversationRef
-        .collection('messages')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
-    if (latestMessages.docs.isNotEmpty &&
-        latestMessages.docs.first.id == message.id) {
-      batch.update(conversationRef, {
-        'lastMessageText': 'ยกเลิกข้อความนี้',
-        'lastMessageType': 'deleted',
-        'updatedAt': FieldValue.serverTimestamp(),
+    String? mediaPath;
+    await _firestore.runTransaction((transaction) async {
+      final room = await transaction.get(conversationRef);
+      final stored = await transaction.get(messageRef);
+      if (!stored.exists || stored.data()?['senderId'] != uid) {
+        throw const ChatServiceException('ไม่พบข้อความที่คุณส่ง');
+      }
+      if (stored.data()?['type'] == 'deleted') return;
+      mediaPath = readOptionalString(stored.data()?['mediaPath']);
+      transaction.update(messageRef, {
+        'type': 'deleted',
+        'text': 'ยกเลิกข้อความนี้',
+        'mediaPath': FieldValue.delete(),
+        'deletedAt': FieldValue.serverTimestamp(),
       });
-    }
-    await batch.commit();
-    if (message.mediaPath != null) {
+      // A concurrent send changes the room version, causing this transaction
+      // to retry rather than replacing a newer message preview.
+      if (room.data()?['lastMessageId'] == message.id) {
+        transaction.update(conversationRef, {
+          'lastMessageText': 'ยกเลิกข้อความนี้',
+          'lastMessageType': 'deleted',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+    if (mediaPath != null) {
       try {
-        await _deleteMedia(message.mediaPath!);
+        await _deleteMedia(mediaPath!);
       } catch (_) {
         // ยกเลิกข้อความสำเร็จแล้ว แม้ลบไฟล์แนบไม่สำเร็จก็ไม่ย้อนผลการยกเลิก
       }
@@ -172,10 +195,14 @@ class ChatService {
     XFile? attachment,
   }) async {
     final user = _auth.currentUser;
-    if (user == null)
+    if (user == null) {
       throw const ChatServiceException('กรุณาเข้าสู่ระบบก่อนใช้แชท');
+    }
     final body = text.trim();
     if (body.isEmpty && attachment == null) return;
+    if (body.length > 2000) {
+      throw const ChatServiceException('ข้อความต้องไม่เกิน 2,000 ตัวอักษร');
+    }
     String? path;
     var type = 'text';
     if (attachment != null) {
@@ -197,7 +224,7 @@ class ChatService {
       'senderId': user.uid,
       'type': type,
       'text': body,
-      if (path != null) 'mediaPath': path,
+      'mediaPath': ?path,
       'createdAt': FieldValue.serverTimestamp(),
     });
     // แสดงกิจกรรมแชทผ่าน unread ของห้อง ไม่สร้างรายการ social notification
@@ -213,6 +240,7 @@ class ChatService {
       FieldPath(['unreadCounts', user.uid]): 0,
       FieldPath(['lastReadAt', user.uid]): FieldValue.serverTimestamp(),
       FieldPath(['hiddenFor', user.uid]): false,
+      FieldPath(['hiddenFor', peerId]): false,
     });
     try {
       await batch.commit();
@@ -235,27 +263,29 @@ class ChatService {
         : videos.contains(ext)
         ? 'video'
         : null;
-    if (type == null)
+    if (type == null) {
       throw const ChatServiceException('รองรับเฉพาะไฟล์ภาพหรือวิดีโอ');
+    }
     final max = type == 'image' ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
-    if (await file.length() > max)
+    if (await file.length() > max) {
       throw ChatServiceException(
         type == 'image'
             ? 'ภาพต้องมีขนาดไม่เกิน 10 MB'
             : 'วิดีโอต้องมีขนาดไม่เกิน 50 MB',
       );
+    }
     final bytes = await file.readAsBytes();
-    if (bytes.length > max)
+    if (bytes.length > max) {
       throw const ChatServiceException('ไฟล์มีขนาดใหญ่เกินกำหนด');
+    }
     final uid = _uid;
-    final name =
-        'media_' + DateTime.now().microsecondsSinceEpoch.toString() + '.' + ext;
-    final path = 'chat_media/' + convId + '/' + uid + '/' + name;
+    final name = 'media_${DateTime.now().microsecondsSinceEpoch}.$ext';
+    final path = 'chat_media/$convId/$uid/$name';
     await _storage
         .ref(path)
         .putData(
           bytes,
-          SettableMetadata(contentType: file.mimeType ?? (type + '/' + ext)),
+          SettableMetadata(contentType: file.mimeType ?? ('$type/$ext')),
         );
     return (path: path, type: type);
   }

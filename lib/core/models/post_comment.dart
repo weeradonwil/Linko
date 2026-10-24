@@ -1,6 +1,8 @@
 // โมเดลความคิดเห็นใต้ posts/{postId}/comments/{commentId}
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/document_values.dart';
+
 /// แทนความคิดเห็นหนึ่งรายการ พร้อมแปลง Timestamp จาก Firestore เป็น DateTime
 class PostComment {
   const PostComment({
@@ -25,9 +27,9 @@ class PostComment {
     final timestamp = data['createdAt'];
     return PostComment(
       id: snapshot.id,
-      authorId: data['authorId'] as String? ?? '',
-      authorName: data['authorName'] as String? ?? 'สมาชิก',
-      content: data['content'] as String? ?? '',
+      authorId: readString(data['authorId']),
+      authorName: readName(data['authorName']),
+      content: readString(data['content']),
       createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
     );
   }

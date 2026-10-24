@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -6,6 +8,13 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val releaseKeyFile = rootProject.file("key.properties")
+val releaseKey = Properties().apply {
+    if (releaseKeyFile.isFile) releaseKeyFile.inputStream().use { load(it) }
+}
+val releaseKeyReady = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !releaseKey.getProperty(it).isNullOrBlank() }
 
 android {
     namespace = "com.example.social_app"
@@ -32,13 +41,34 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    signingConfigs {
+        if (releaseKeyReady) {
+            create("release") {
+                storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+                storePassword = releaseKey.getProperty("storePassword")
+                keyAlias = releaseKey.getProperty("keyAlias")
+                keyPassword = releaseKey.getProperty("keyPassword")
+            }
         }
     }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+}
+
+val validateReleaseKey by tasks.registering {
+    doLast {
+        check(releaseKeyReady) {
+            "Release signing is not configured. Copy android/key.properties.example to " +
+                "android/key.properties and supply your own keystore. See AUDIT_FIX_PLAN.md."
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseKey)
 }
 
 kotlin {

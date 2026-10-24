@@ -2,6 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../utils/document_values.dart';
+
 /// อ่านและเปลี่ยนปฏิกิริยาใน groups/{groupId}/posts/{postId}/reactions/{uid}
 class GroupReactionService {
   GroupReactionService({FirebaseAuth? auth, FirebaseFirestore? firestore})
@@ -11,7 +13,15 @@ class GroupReactionService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
-  static const supportedReactions = {'like', 'dislike'};
+  static const supportedReactions = {
+    'like',
+    'love',
+    'haha',
+    'wow',
+    'sad',
+    'angry',
+    'dislike',
+  };
 
   CollectionReference<Map<String, dynamic>> _reactions(
     String groupId,
@@ -46,11 +56,34 @@ class GroupReactionService {
       await reference.delete();
       return;
     }
-    await reference.set({
+    final batch = _firestore.batch();
+    batch.set(reference, {
       'uid': uid,
       'reaction': reaction,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    // แจ้งเฉพาะเจ้าของโพสต์ที่ยังอยู่ในกลุ่ม และบันทึกพร้อม Like ใน batch เดียว
+    if (reaction == 'like') {
+      final group = _firestore.collection('groups').doc(groupId);
+      final post = await group.collection('posts').doc(postId).get();
+      final author = readString(post.data()?['authorId']);
+      if (author.isNotEmpty &&
+          author != uid &&
+          (await group.collection('members').doc(author).get()).exists) {
+        batch.set(_firestore.collection('notifications').doc(), {
+          'recipientId': author,
+          'actorId': uid,
+          'actorName': readName(_auth.currentUser?.displayName),
+          'type': 'like',
+          'body': '',
+          'groupId': groupId,
+          'postId': postId,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+    await batch.commit();
   }
 }
 

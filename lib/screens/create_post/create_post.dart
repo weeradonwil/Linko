@@ -7,17 +7,26 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/post.dart';
 import '../../core/services/post_service.dart';
+import '../../core/services/group_service.dart';
 import '../../core/widgets/post_media.dart';
 
 /// หน้าสร้างและแก้ไขโพสต์ข้อความ พร้อมแท็ก ระดับการมองเห็น และสื่อหนึ่งไฟล์
 class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({required this.user, this.post, super.key});
+  const CreatePostScreen({
+    required this.user,
+    this.post,
+    this.groupId,
+    super.key,
+  });
 
   /// บัญชีที่ล็อกอินอยู่ ใช้ระบุเจ้าของโพสต์ใหม่
   final User user;
 
   /// เมื่อมีค่า หน้านี้จะเปิดในโหมดแก้ไขโพสต์เดิม
   final Post? post;
+
+  /// เมื่อระบุกลุ่ม ฟอร์มใช้สิทธิ์และพื้นที่จัดเก็บของกลุ่มแทนโพสต์สาธารณะ
+  final String? groupId;
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -57,28 +66,45 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickImage() async {
-    final file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _attachment = file;
-      _attachmentPreview = bytes;
-      _removeExistingMedia = false;
-    });
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 2000,
+        maxHeight: 2000,
+      );
+      if (file == null) return;
+      if (await file.length() > 10 * 1024 * 1024) {
+        throw const FormatException('กรุณาเลือกรูปขนาดไม่เกิน 10 MB');
+      }
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _attachment = file;
+        _attachmentPreview = bytes;
+        _removeExistingMedia = false;
+      });
+    } catch (error) {
+      _showError('เลือกรูปไม่สำเร็จ: $error');
+    }
   }
 
   Future<void> _pickVideo() async {
-    final file = await _picker.pickVideo(source: ImageSource.gallery);
-    if (file == null || !mounted) return;
-    setState(() {
-      _attachment = file;
-      _attachmentPreview = null;
-      _removeExistingMedia = false;
-    });
+    try {
+      final file = await _picker.pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+      if (await file.length() > 50 * 1024 * 1024) {
+        throw const FormatException('กรุณาเลือกวิดีโอขนาดไม่เกิน 50 MB');
+      }
+      if (!mounted) return;
+      setState(() {
+        _attachment = file;
+        _attachmentPreview = null;
+        _removeExistingMedia = false;
+      });
+    } catch (error) {
+      _showError('เลือกวิดีโอไม่สำเร็จ: $error');
+    }
   }
 
   Future<void> _savePost() async {
@@ -92,7 +118,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         .toList();
 
     try {
-      if (_isEditing) {
+      if (widget.groupId != null) {
+        final groups = GroupService();
+        if (_isEditing) {
+          await groups.updatePost(
+            groupId: widget.groupId!,
+            postId: widget.post!.id,
+            content: _contentController.text,
+            tags: tags,
+            newAttachment: _attachment,
+            removeMedia: _removeExistingMedia,
+          );
+        } else {
+          await groups.addPost(
+            groupId: widget.groupId!,
+            content: _contentController.text,
+            tags: tags,
+            attachment: _attachment,
+          );
+        }
+      } else if (_isEditing) {
         await _postService.updatePost(
           postId: widget.post!.id,
           content: _contentController.text,
@@ -113,6 +158,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (mounted) Navigator.of(context).pop(true);
     } on PostServiceException catch (error) {
+      _showError(error.message);
+    } on GroupServiceException catch (error) {
       _showError(error.message);
     } catch (_) {
       _showError(
@@ -179,23 +226,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                  DropdownButton<String>(
-                    value: _visibility,
-                    onChanged: _isSaving
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              setState(() => _visibility = value);
-                            }
-                          },
-                    items: const [
-                      DropdownMenuItem(value: 'public', child: Text('สาธารณะ')),
-                      DropdownMenuItem(
-                        value: 'private',
-                        child: Text('ส่วนตัว'),
-                      ),
-                    ],
-                  ),
+                  if (widget.groupId != null)
+                    const Chip(label: Text('สมาชิกกลุ่ม'))
+                  else
+                    DropdownButton<String>(
+                      value: _visibility,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _visibility = value);
+                              }
+                            },
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'public',
+                          child: Text('สาธารณะ'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'private',
+                          child: Text('ส่วนตัว'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 12),

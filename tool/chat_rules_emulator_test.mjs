@@ -1,254 +1,72 @@
-// ทดสอบ Firestore Rules ของแชทผ่าน REST: ส่งต่อ/ส่งซ้ำ อ่าน เปิดห้อง และยกเลิกข้อความ
-// รับเฉพาะ demo project และ Emulator ในเครื่อง ไม่ส่งข้อมูลไป Firebase จริง
-// firebase.cmd --config firebase.emulator.test.json emulators:exec --only auth,firestore --project demo-linko "node tool/chat_rules_emulator_test.mjs --diagnose"
-import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+// Regression tests for consecutive messages, visibility, permissions and unsend.
+import { createUser, createProfile, follow, commit, get, write, s, n, b, m, a,
+  field, allowed, denied, assert } from './emulator_test_support.mjs';
 
-const projectId = process.env.GCLOUD_PROJECT ?? 'demo-linko';
-const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
-const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
-// ตรวจปลายทางก่อนสร้างบัญชีหรือเขียนข้อมูลใด ๆ
-assert(projectId.startsWith('demo-'), 'A demo- project is required.');
-for (const host of [firestoreHost, authHost]) {
-  assert(/^(127\.0\.0\.1|localhost):\d+$/.test(host), 'Only loopback emulators are allowed.');
+const sender = await createUser(), recipient = await createUser(), outsider = await createUser();
+for (const user of [sender, recipient, outsider]) await createProfile(user);
+const room = `conversations/chat_regression_${Date.now()}`;
+const ids = [sender.uid, recipient.uid].sort();
+function createRoom(path = room, unread = m({ [sender.uid]: n(0), [recipient.uid]: n(0) })) {
+  return write(path, {
+    participantIds: a(ids.map(s)), participantNames: m({ [sender.uid]: s('Sender'), [recipient.uid]: s('Recipient') }),
+    unreadCounts: unread, lastReadAt: m({}),
+  }, { timestamps: ['createdAt', 'updatedAt', field('lastReadAt', sender.uid)], exists: false });
 }
-const root = `projects/${projectId}/databases/(default)/documents`;
-const base = `http://${firestoreHost}/v1/${root}`;
-const diagnostic = process.argv.includes('--diagnose');
-// ตัวช่วยเข้ารหัสค่าและ serverTimestamp ให้ตรงรูปแบบ Firestore REST API
-const s = (value) => ({ stringValue: value });
-const n = (value) => ({ integerValue: String(value) });
-const b = (value) => ({ booleanValue: value });
-const map = (fields) => ({ mapValue: { fields } });
-const stamp = { timestampValue: '2026-01-01T00:00:00Z' };
-const path = (...parts) => parts.map((part) => '`' + part.replaceAll('`', '\\`') + '`').join('.');
-const time = (fieldPath) => ({ fieldPath, setToServerValue: 'REQUEST_TIME' });
-
-async function request(url, { token, body, method = 'GET' } = {}) {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(20000),
-  });
-  const text = await response.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  return { status: response.status, data };
-}
-
-const commit = (token, writes) => request(`${base}:commit`, { token, method: 'POST', body: { writes } });
-const read = (token, name) => request(`${base}/${name}`, { token });
-function ok(result, context) {
-  assert.equal(result.status, 200, `${context}: ${JSON.stringify(result.data)}`);
-}
-
-// สร้างบัญชี Emulator พร้อม ID token เพื่อทดสอบผ่าน Rules ในสิทธิ์ของแต่ละคน
-async function user() {
-  const response = await request(`http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=emulator-only`, {
-    method: 'POST', body: { returnSecureToken: true },
-  });
-  ok(response, 'Create emulator user');
-  return { uid: response.data.localId, token: response.data.idToken };
-}
-
-// เปลี่ยน Rules เฉพาะ Emulator เพื่อเทียบรุ่นก่อนแก้กับไฟล์ปัจจุบัน
-async function loadRules(content) {
-  const result = await request(`http://${firestoreHost}/emulator/v1/projects/${projectId}:securityRules`, {
-    method: 'PUT', token: 'owner', body: { rules: { files: [{ name: 'firestore.rules', content }] } },
-  });
-  ok(result, 'Load rules in emulator');
-}
-
-const [alice, bob, outsider] = await Promise.all([user(), user(), user()]);
-for (const account of [alice, bob, outsider]) {
-  ok(await commit('owner', [{ update: {
-    name: `${root}/users/${account.uid}`, fields: { displayName: s('Emulator user') },
-  } }]), 'Seed emulator profile');
-}
-
-let sequence = 0;
-let legacy = false;
-function conversationFields({ previousType, previousSender = alice, previousText = 'Earlier message', hidden = false } = {}) {
-  const fields = {
-    participantIds: { arrayValue: { values: [alice.uid, bob.uid].sort().map(s) } },
-    participantNames: map({ [alice.uid]: s('Alice'), [bob.uid]: s('Bob') }),
-    unreadCounts: map({ [alice.uid]: n(0), [bob.uid]: n(2) }),
-    lastReadAt: map({ [alice.uid]: stamp, [bob.uid]: stamp }),
-    createdAt: stamp, updatedAt: stamp,
-  };
-  if (!legacy) fields.hiddenFor = map({ [alice.uid]: b(hidden), [bob.uid]: b(false) });
-  if (previousType) Object.assign(fields, {
-    lastMessageText: s(previousText), lastMessageType: s(previousType),
-    lastMessageSenderId: s(previousSender.uid), lastMessageAt: stamp,
-    ...(!legacy ? { lastMessageId: s('previous') } : {}),
-  });
-  return fields;
-}
-
-// เตรียมสถานะห้องด้วย owner token เฉพาะข้อมูลตั้งต้น; คำสั่งที่ทดสอบใช้ token สมาชิก
-async function fixture(options = {}) {
-  const id = `chat_diagnostic_${++sequence}`;
-  const writes = [{ update: { name: `${root}/conversations/${id}`, fields: conversationFields(options) } }];
-  if (options.previousType) writes.push({ update: {
-    name: `${root}/conversations/${id}/messages/previous`,
-    fields: {
-      senderId: s((options.previousSender ?? alice).uid), type: s(options.previousType),
-      text: s(options.previousText ?? 'Earlier message'), createdAt: stamp,
-    },
-  } });
-  ok(await commit('owner', writes), 'Seed conversation');
-  return id;
-}
-
-// จำลอง field/transform ของ ChatService.sendMessage รวมข้อมูลปลอมสำหรับทดสอบการปฏิเสธ
-// กรณีสื่อทดสอบเฉพาะ metadata ของข้อความ ไม่ได้อัปโหลด/ดาวน์โหลดไฟล์จริง
-function sendWrites(id, sender = alice, { text = 'New message', type = 'text', spoofSender, increment = 1,
-  changePeerRead = false, changeParticipants = false, omitMessage = false } = {}) {
-  const peer = sender.uid === alice.uid ? bob : alice;
-  const messageId = `message_${++sequence}`;
-  const preview = text || (type === 'image' ? 'ส่งรูปภาพให้คุณ' : 'ส่งวิดีโอให้คุณ');
-  const fields = {
-    lastMessageText: s(preview), lastMessageType: s(type), lastMessageSenderId: s(sender.uid),
-    unreadCounts: map({ [sender.uid]: n(0) }),
-    ...(!legacy ? { lastMessageId: s(messageId), hiddenFor: map({ [sender.uid]: b(false) }) } : {}),
-    ...(changeParticipants ? { participantIds: { arrayValue: { values: [sender.uid, outsider.uid].map(s) } } } : {}),
-  };
-  const updateMask = { fieldPaths: [
-    'lastMessageText', 'lastMessageType', 'lastMessageSenderId', path('unreadCounts', sender.uid),
-    ...(!legacy ? ['lastMessageId', path('hiddenFor', sender.uid)] : []),
-    ...(changeParticipants ? ['participantIds'] : []),
-  ] };
-  const updateTransforms = [
-    time('lastMessageAt'), time('updatedAt'),
-    { fieldPath: path('unreadCounts', peer.uid), increment: n(increment) },
-    time(path('lastReadAt', sender.uid)),
-    ...(changePeerRead ? [time(path('lastReadAt', peer.uid))] : []),
+denied(await commit(sender.token, [createRoom()]), 'A new DM requires an approved follow');
+await follow(sender, recipient);
+denied(await commit(sender.token, [createRoom(room + '_bad', m({ [sender.uid]: n(0), [recipient.uid]: s('bad') }))]), 'Reject malformed counters');
+allowed(await commit(sender.token, [createRoom()]), 'Create followed conversation');
+function sendWrites(actor, peer, id, text) {
+  return [
+    write(`${room}/messages/${id}`, { senderId: s(actor.uid), type: s('text'), text: s(text) }, { timestamps: ['createdAt'], exists: false }),
+    write(room, {
+      lastMessageText: s(text), lastMessageType: s('text'), lastMessageSenderId: s(actor.uid), lastMessageId: s(id),
+      unreadCounts: m({ [actor.uid]: n(0) }), hiddenFor: m({ [actor.uid]: b(false), [peer.uid]: b(false) }),
+    }, {
+      mask: ['lastMessageText', 'lastMessageType', 'lastMessageSenderId', 'lastMessageId', field('unreadCounts', actor.uid), field('hiddenFor', actor.uid), field('hiddenFor', peer.uid)],
+      timestamps: ['lastMessageAt', 'updatedAt', field('lastReadAt', actor.uid)],
+      increments: [{ fieldPath: field('unreadCounts', peer.uid), increment: n(1) }],
+    }),
   ];
-  const message = { update: {
-    name: `${root}/conversations/${id}/messages/${messageId}`,
-    fields: { senderId: s(spoofSender?.uid ?? sender.uid), type: s(type), text: s(text),
-      ...(type !== 'text' ? { mediaPath: s(`chat_media/${id}/${sender.uid}/image.jpg`) } : {}),
-    },
-  }, updateTransforms: [time('createdAt')], currentDocument: { exists: false } };
-  const summary = { update: { name: `${root}/conversations/${id}`, fields }, updateMask, updateTransforms,
-    currentDocument: { exists: true } };
-  return { writes: [...(!omitMessage ? [message] : []), summary], messageId };
 }
-
-const reports = [];
-// ตรวจทั้งรายการที่ควรผ่านและควรถูกปฏิเสธ พร้อมยืนยันว่า batch ไม่บันทึกค้างบางส่วน
-async function suite(label, rules, oldClient = false) {
-  legacy = oldClient;
-  await loadRules(rules);
-  const results = [];
-  async function check(name, action, expected = 200) {
-    const response = await action();
-    const passed = response.status === expected;
-    results.push({ name, passed, expected, actual: response.status,
-      ...(!passed ? { error: response.data?.error?.message ?? response.data } : {}) });
-    console.log(`${passed ? 'PASS' : 'FAIL'} [${label}] ${name}: HTTP ${response.status} (expected ${expected})`);
-  }
-  async function sendCase(name, before, sending = {}, sender = alice, expected = 200) {
-    const id = await fixture(before);
-    const { writes, messageId } = sendWrites(id, sender, sending);
-    await check(name, async () => {
-      const result = await commit(sender.token, writes);
-      const savedMessage = await read('owner', `conversations/${id}/messages/${messageId}`);
-      // เมื่อ Rules ปฏิเสธ batch ต้องไม่เหลือข้อความที่หลุดบันทึกไว้เพียงอย่างเดียว
-      assert.equal(savedMessage.status, result.status === 200 ? 200 : 404, `${name}: batch atomicity`);
-      if (result.status === 200) {
-        const room = await read('owner', `conversations/${id}`);
-        const peer = sender.uid === alice.uid ? bob : alice;
-        assert.equal(Number(room.data.fields.unreadCounts.mapValue.fields[peer.uid].integerValue),
-          (peer.uid === bob.uid ? 2 : 0) + 1, `${name}: recipient unread count`);
-      }
-      return result;
-    }, expected);
-  }
-  const createdId = `created_${++sequence}`;
-  const createdFields = conversationFields();
-  delete createdFields.hiddenFor;
-  delete createdFields.createdAt;
-  delete createdFields.updatedAt;
-  createdFields.unreadCounts = map({ [alice.uid]: n(0), [bob.uid]: n(0) });
-  createdFields.lastReadAt = map({});
-  await check('create conversation', () => commit(alice.token, [{
-    update: { name: `${root}/conversations/${createdId}`, fields: createdFields },
-    updateTransforms: [time('createdAt'), time('updatedAt'), time(path('lastReadAt', alice.uid))],
-  }]));
-  const firstSend = sendWrites(createdId);
-  await check('first text in newly created conversation', () => commit(alice.token, firstSend.writes));
-  const secondSend = sendWrites(createdId, alice, { text: 'Second message in same conversation' });
-  await check('actual first-then-second send sequence', async () => {
-    const response = await commit(alice.token, secondSend.writes);
-    const saved = await read(bob.token, `conversations/${createdId}/messages/${secondSend.messageId}`);
-    assert.equal(saved.status, response.status === 200 ? 200 : 404, 'Peer sees only successfully committed messages');
-    return response;
-  });
-  await sendCase('second text, same sender/type', { previousType: 'text' });
-  await sendCase('identical text, same sender/type', { previousType: 'text', previousText: 'New message' });
-  await sendCase('reply from other user, same type', { previousType: 'text', previousSender: bob });
-  await sendCase('text after unsend, same sender', { previousType: 'deleted', previousText: 'ยกเลิกข้อความนี้' });
-  await sendCase('text after unsend, different sender', { previousType: 'deleted', previousSender: bob, previousText: 'ยกเลิกข้อความนี้' });
-  await sendCase('different type, same sender', { previousType: 'image', previousText: 'ส่งรูปภาพให้คุณ' });
-  await sendCase('consecutive image metadata', { previousType: 'image', previousText: 'ส่งรูปภาพให้คุณ' }, { type: 'image', text: '' });
-  await sendCase('nonparticipant cannot send', {}, {}, outsider, 403);
-  await sendCase('sender cannot impersonate peer', {}, { spoofSender: bob }, alice, 403);
-  await sendCase('text length 2000', {}, { text: 'x'.repeat(2000) });
-  await sendCase('text length 2001 rejected', {}, { text: 'x'.repeat(2001) }, alice, 403);
-  if (!oldClient) {
-    await sendCase('recipient unread count must increment', {}, { increment: 0 }, alice, 403);
-    await sendCase('cannot change peer lastReadAt', {}, { changePeerRead: true }, alice, 403);
-    await sendCase('cannot change participants', {}, { changeParticipants: true }, alice, 403);
-    await sendCase('summary without message rejected', {}, { omitMessage: true }, alice, 403);
-    const roomId = await fixture();
-    await check('mark own messages read', () => commit(alice.token, [{
-      update: { name: `${root}/conversations/${roomId}`, fields: { unreadCounts: map({ [alice.uid]: n(0) }) } },
-      updateMask: { fieldPaths: [path('unreadCounts', alice.uid)] },
-      updateTransforms: [time('updatedAt'), time(path('lastReadAt', alice.uid))],
-    }]));
-    for (const hidden of [true, false]) {
-      const id = await fixture({ hidden });
-      await check(hidden ? 'reopen hidden conversation' : 'reopen already visible conversation', () => commit(alice.token, [{
-        update: { name: `${root}/conversations/${id}`, fields: { hiddenFor: map({ [alice.uid]: b(false) }) } },
-        updateMask: { fieldPaths: [path('hiddenFor', alice.uid)] }, updateTransforms: [time('updatedAt')],
-      }]));
-    }
-    for (const previousText of ['Earlier message', 'ยกเลิกข้อความนี้']) {
-      const id = await fixture({ previousType: 'text', previousText });
-      await check(`unsend latest: ${previousText}`, () => commit(alice.token, [{
-        update: { name: `${root}/conversations/${id}/messages/previous`, fields: { type: s('deleted'), text: s('ยกเลิกข้อความนี้') } },
-        updateMask: { fieldPaths: ['type', 'text', 'mediaPath'] }, updateTransforms: [time('deletedAt')],
-      }, {
-        update: { name: `${root}/conversations/${id}`, fields: { lastMessageText: s('ยกเลิกข้อความนี้'), lastMessageType: s('deleted') } },
-        updateMask: { fieldPaths: ['lastMessageText', 'lastMessageType'] }, updateTransforms: [time('updatedAt')],
-      }]));
-    }
-  }
-  const readId = await fixture({ previousType: 'text' });
-  await check('peer can read chat messages', () => read(bob.token, `conversations/${readId}/messages`));
-  await check('nonparticipant cannot read chat messages', () => read(outsider.token, `conversations/${readId}/messages`), 403);
-  console.log(`${label}: ${results.filter((r) => r.passed).length}/${results.length} passed\n`);
-  reports.push({ label, results });
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'first', 'Hello')), 'First message');
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'second', 'Hello')), 'Repeated text/type/sender');
+allowed(await commit(recipient.token, sendWrites(recipient, sender, 'reply', 'Reply')), 'Reply with the same type');
+for (let i = 0; i < 2; i++) {
+  allowed(await commit(sender.token, [write(room, { hiddenFor: m({ [sender.uid]: b(false) }) }, {
+    mask: [field('hiddenFor', sender.uid)], timestamps: ['updatedAt'],
+  })]), 'Idempotent reopen');
 }
-
-const current = await readFile('firestore.rules', 'utf8');
-if (diagnostic) {
-  // ใช้ Rules และรูปแบบข้อมูลของ client ตาม commit นั้น เพื่อเทียบสาเหตุได้ตรงรุ่น
-  const brokenRules = execFileSync('git', ['show', '7f50d79:firestore.rules'], { encoding: 'utf8' });
-  await suite('regression in commit 7f50d79', brokenRules);
-  const oldRules = execFileSync('git', ['show', '778fe86:firestore.rules'], { encoding: 'utf8' });
-  await suite('previous commit 778fe86 + previous send fields', oldRules, true);
-}
-await suite('current working tree', current);
-await mkdir('build/chat_diagnostics', { recursive: true });
-await writeFile('build/chat_diagnostics/results.json', JSON.stringify({ projectId, reports }, null, 2));
-// เมื่อจบการเทียบรุ่น ให้ Emulator กลับมาใช้ Rules จาก working tree ปัจจุบัน
-await loadRules(current);
-const selected = reports.at(-1);
-process.exitCode = selected.results.some((r) => !r.passed) ? 1 : 0;
+allowed(await commit(recipient.token, [write(room, { hiddenFor: m({ [recipient.uid]: b(true) }) }, {
+  mask: [field('hiddenFor', recipient.uid)], timestamps: ['updatedAt'],
+})]), 'Hide own room');
+denied(await commit(sender.token, [write(room, { hiddenFor: m({ [recipient.uid]: b(false) }) }, {
+  mask: [field('hiddenFor', recipient.uid)], timestamps: ['updatedAt'],
+})]), 'Peer visibility cannot change without a new message');
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'after_hidden', 'New message')), 'New message resurfaces a hidden room');
+const state = await get(recipient.token, room);
+assert(state.body.fields.hiddenFor.mapValue.fields[recipient.uid].booleanValue === false, 'Recipient room must reappear');
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'cancel', 'ยกเลิกข้อความนี้')), 'Send cancellation-like text');
+allowed(await commit(sender.token, [
+  write(`${room}/messages/cancel`, { type: s('deleted'), text: s('ยกเลิกข้อความนี้') }, {
+    mask: ['type', 'text', 'mediaPath', 'deletedAt'], timestamps: ['deletedAt'],
+  }),
+  write(room, { lastMessageText: s('ยกเลิกข้อความนี้'), lastMessageType: s('deleted') }, {
+    mask: ['lastMessageText', 'lastMessageType'], timestamps: ['updatedAt'],
+  }),
+]), 'Unsend even if the preview text stays unchanged');
+denied(await get(outsider.token, room), 'Outsider cannot read conversation');
+denied(await commit(outsider.token, sendWrites(outsider, recipient, 'intrusion', 'No')), 'Outsider cannot send');
+denied(await commit(sender.token, [write(`${room}/messages/without_summary`, {
+  senderId: s(sender.uid), type: s('text'), text: s('Unread bypass'),
+}, { timestamps: ['createdAt'] })]), 'Message must update its summary atomically');
+// Admin seed represents a legacy document created before schema validation.
+allowed(await commit('owner', [write(room, { unreadCounts: m({
+  [sender.uid]: n(0), [recipient.uid]: s('legacy-string'),
+}) }, { mask: ['unreadCounts'] })]), 'Seed old non-numeric unread counter');
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'legacy_counter', 'Recovered')),
+  'Atomic increment repairs a legacy non-numeric recipient counter');
+const repaired = await get(recipient.token, room);
+assert(repaired.body.fields.unreadCounts.mapValue.fields[recipient.uid].integerValue === '1',
+  'Legacy counter resumes at one unread message');
+console.log('PASS chat: follow gate, schema, repeated messages, reply, reopen, hidden room, unsend, outsider and atomic summary');

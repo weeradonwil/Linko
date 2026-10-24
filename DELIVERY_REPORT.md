@@ -1,0 +1,76 @@
+# Linko — งานแก้ไขและตรวจรับ 24 ตุลาคม 2026
+
+รายงานนี้เป็นสถานะของโค้ดในเครื่องรอบปัจจุบัน ผลวันที่ 21–22 ตุลาคมในเอกสารเดิมเป็นประวัติคนละรุ่น
+
+## ขอบเขตและเงื่อนไขที่ตกลง
+
+- เก็บงานเดิมใน working tree และรวมส่วนที่ merge ค้างโดยรักษาธีม การซ่อมโปรไฟล์ และการล้างเซสชัน
+- วิดีโอใช้ขนาดไม่เกิน **50 MB (50 × 1024 × 1024 bytes)** ตามคำตอบผู้ใช้ ไม่จำกัดจำนวนวินาที
+- ทำระบบกลุ่มให้ครบตามทางเลือก “กลุ่มหรือเพจ”; Pages เป็นงานต่อยอด
+- เพิ่มคอมเมนต์ภาษาไทยในส่วนสำคัญที่พัฒนา อธิบายหน้าที่ เงื่อนไขสิทธิ์ และเหตุผลของการจัดการข้อมูล
+
+## สิ่งที่เปลี่ยน
+
+1. รวม conflict 10 ไฟล์ของแอป Rules ชุดทดสอบ และเอกสาร
+2. โพสต์กลุ่ม: Comment, แก้ข้อความ/แท็ก/สื่อ, ลบโพสต์พร้อมข้อมูลย่อย, รายงาน และการลบโดยผู้ดูแล
+3. ใช้ฟอร์มโพสต์และหน้าความคิดเห็นร่วมกันระหว่างฟีดหลักกับกลุ่ม; แยกการ์ดกลุ่มออกจากหน้าจอขนาดใหญ่
+4. เพิ่มการแจ้งเตือน Like/Comment ของกลุ่มให้เจ้าของโพสต์ที่ยังเป็นสมาชิก และเปิดกลับไปยังโพสต์กลุ่มได้
+5. ค้นสมาชิกเก่าทุกช่วงด้วย cursor รวมบัญชีที่ไม่มี `createdAt` หรือ `displayNameLower`
+6. โหลดแจ้งเตือนย้อนหลังเกิน 100 รายการ และแสดง error/ลองใหม่ได้เมื่ออ่านสิทธิ์ผู้ดูแลล้มเหลว
+7. ตรวจขนาดไฟล์กลุ่มก่อนอ่านเข้าหน่วยความจำ และใช้ Firebase SDK อ่านวิดีโอก่อนส่งให้ตัวเล่นผ่านไฟล์ชั่วคราว/Blob
+8. เพิ่ม regression test สำหรับหน้าผู้ดูแล, Rules ของโพสต์กลุ่ม และบริการ Flutter หลายบัญชีบน Chrome
+
+## การตรวจรับ
+
+| การตรวจ | สถานะ |
+|---|---|
+| ชุดเดิมหลังรวม merge | ผ่าน 53 เคส รวม thumbnail 2 เคส |
+| Analyzer ทั้งโปรเจกต์ | ผ่าน ไม่มี error, warning หรือ info |
+| Flutter tests รวม regression ใหม่ | ผ่าน 54/54 เคส รวมการลองอ่านสิทธิ์ใหม่เมื่อเครือข่ายล้มเหลว |
+| Firebase Emulator Rules รุ่นสุดท้าย | ผ่าน 7/7 suites รวม notification กลุ่มและสิทธิ์ล้าง Reaction ของเจ้าของโพสต์; ชุดวินิจฉัยแชทผ่าน 25/25 |
+| Flutter services / Chrome / Emulator | ChatService ผ่าน 6/6 และ Social services ผ่าน 9/9 กรณี |
+| Android Debug | ผ่าน `:app:assembleDebug --offline`; APK อยู่ที่ `build/app/outputs/flutter-apk/app-debug.apk` |
+| Build เว็บแอปหลัก | ผ่าน release build จาก `lib/main.dart`; ผลอยู่ใน `build/web` |
+| Syntax สคริปต์ Node | ผ่าน 14/14 ไฟล์ |
+
+ผล Social 9 กรณีครอบคลุมสมัคร/ล็อกอิน/แก้โปรไฟล์, โพสต์หลัก, โพสต์กลุ่ม, ลบทั้งกลุ่มพร้อมข้อมูลย่อย, follow ส่วนตัวและสิทธิ์สื่อ, ค้นบัญชีเก่าเกิน 150 ราย, แจ้งเตือนเกิน 100 รายการ, อัปโหลด/เล่นวิดีโอจริง และปฏิเสธไฟล์เกิน 50 MB
+
+หลักฐานรอบนี้:
+
+- `build/audit-2026-10-24/final-analyzer.log` — ว่างเมื่อไม่มี findings และคำสั่งจบด้วย exit code 0
+- `build/audit-2026-10-24/flutter-final-tests.log` — Flutter 54 เคสผ่าน
+- `build/chat_diagnostics/chat_service_results.json` — ChatService 6 กรณี
+- `build/social_diagnostics/chat_service_results.json` — Social 9 กรณีพร้อมเวลาจริงราย flow
+- `build/audit-2026-10-24/delivery-tests.log` — browser และ Rules จบด้วย exit code 0
+- `build/audit-2026-10-24/android-debug.log`, `app-web-build.log` — ผล build
+
+ระหว่างพัฒนาทดสอบพบและแก้ error ของ callback `setState` ที่คืน Future, การรับ error เร็วก่อน FutureBuilder แนบ listener และสิทธิ์เจ้าของโพสต์ในการล้าง Reaction ของสมาชิกคนอื่น ชุดทดสอบเว็บรอ build ใหม่พร้อมก่อนเปิด Chrome และรองรับเสิร์ฟ build แยกเพื่อหลีกเลี่ยงการโหลดผลรอบเก่า
+
+การทดสอบ CRUD โพสต์กลุ่มกับการลบทั้งกลุ่มแยกเป็นสอง flow มี timeout จำกัด 240 วินาทีต่อ flow และบันทึกเวลาจริง เพื่อให้คำขอเดิมจบก่อนเริ่มกรณีถัดไป ผลนี้ยืนยันความถูกต้องของขั้นตอนใน Emulator ยังไม่ใช่การวัดประสิทธิภาพบน production
+
+รอบสุดท้าย CRUD โพสต์กลุ่มใช้ 61.63 วินาที และ flow สร้าง/เข้าร่วม/โพสต์/ออก/ลบทั้งกลุ่มใช้ 120.13 วินาทีรวมหลายคำสั่งต่อเนื่อง ควรวัดเวลารายการกระทำบน Firebase และอุปกรณ์จริงก่อนใช้เป็นเกณฑ์ประสิทธิภาพ
+
+Git ไม่มีไฟล์ unmerged เหลืออยู่ เก็บการเปลี่ยนแปลงเดิมไว้ และยังไม่ได้สร้าง commit หรือ deploy production
+
+## คำสั่งทดสอบ
+
+```powershell
+dart analyze
+flutter test --no-pub test packages/video_thumbnail/test/video_thumbnail_test.dart
+firebase --config firebase.emulator.test.json emulators:exec --only "auth,firestore,storage" --project demo-linko "node tool/run_emulator_tests.mjs"
+# กำหนด CHROME_EXECUTABLE และ LINKO_FLUTTER_SDK ให้ชี้เครื่องนี้ก่อนรัน
+firebase --config firebase.emulator.test.json emulators:exec --only "auth,firestore,storage" --project demo-linko "node tool/run_service_checks.mjs"
+flutter build web --release --no-pub --no-web-resources-cdn --no-wasm-dry-run
+```
+
+## สิ่งที่ต้องตรวจแยกจากผลในเครื่อง
+
+- สถานะการ deploy Rules/indexes และการทดสอบหลายบัญชีบน Firebase เป้าหมาย
+- อุปกรณ์จริงและ iOS/macOS บน Mac; Windows ยังแสดงข้อความว่าวิดีโอไม่รองรับ และ Linux ยังไม่มี Firebase configuration
+- Signed release ต้องใช้ keystore ของเจ้าของแอป; ไม่สร้างกุญแจแทนเจ้าของ
+- วิดีโอใหม่ในแอปอ่านด้วย SDK; download URL ที่แจกไว้ก่อนหน้านี้ต้องเพิกถอน token แยกหากต้องการปิดลิงก์เดิม
+- ตัวเล่นวิดีโอรูปแบบนี้ดาวน์โหลดไฟล์ก่อนเริ่มเล่น และล้างไฟล์ชั่วคราว/Blob เมื่อปิดตัวเล่น
+- การแจ้งเตือนแบบ Push และงานคิว backend เมื่อปิดแอปยังเป็นงานต่อยอด
+- หลักฐาน pain-point จากผู้ใช้จริงยังรอข้อมูลจากผู้ใช้ ไม่สร้างผลสัมภาษณ์หรือผลทดลองใช้แทน
+
+ชุดทดสอบวิดีโอใช้ [ไฟล์ตัวอย่างจากเอกสาร Flutter](https://docs.flutter.dev/cookbook/plugins/play-video) โดย cache ที่ `build/social_diagnostics/butterfly.mp4` และเสิร์ฟเฉพาะในเครื่องขณะทดสอบ ไม่แนบไฟล์นี้ในแอปส่งมอบ
