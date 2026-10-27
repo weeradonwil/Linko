@@ -4,6 +4,19 @@
 
 > แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลตรวจและขอบเขตรอบล่าสุด 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md)
 
+## 2026-10-27 — ไอคอน Linko เต็มพื้นที่แบบ Settings
+
+- ผู้ใช้ต้องการให้พื้นไอคอนเต็มวง ไม่เป็นสี่เหลี่ยมเล็กบนวงขาว
+- ใช้ built-in imagegen เตรียมภาพพื้นแดงคมชัดใน `assets/branding/linko-adaptive-source.png`; เก็บภาพแบรนด์ต้นฉบับเดิมไว้
+- เพิ่ม `mipmap-anydpi-v26/ic_launcher.xml`, พื้นหลัง `#C92847`, foreground inset 6dp และ artwork 432px; Manifest ใช้ resource เดียวกันกับ icon/roundIcon
+- คง legacy PNG เป็น fallback และส่งออกภาพแบรนด์ทุกแพลตฟอร์มจากต้นฉบับเดียวกันผ่านสคริปต์เดิม
+- เพิ่มเวอร์ชันเป็น `1.0.2+3`; ชื่อ Linko, application ID และการตั้งค่าลายเซ็นคงเดิม
+- Build ด้วย `flutter build apk --debug --no-pub` สำเร็จ; ตรวจ APK ได้ versionName `1.0.2`, versionCode `3`, label Linko และ adaptive resource ถูกเลือกทุก density
+- ติดตั้ง APK สำเร็จและดูหน้ารวมแอปใน Android API 31 บน Emulator แบบ headless/read-only แยกที่ `emulator-5580`; เห็นพื้นแดงเต็มวงและโลโก้ใหญ่ขึ้น เทียบกับ Settings บนหน้าเดียวกันแล้ว
+- ภาพแสดงผลจริงอยู่ที่ `build/branding-2026-10-27/launcher.png`; APK พร้อมติดตั้ง `build/app/outputs/flutter-apk/Linko-1.0.2-debug.apk`
+- รอบนี้ไม่ได้รัน unit/integration test suites หรือ deploy Firebase; เป็นการเปลี่ยนทรัพยากรไอคอนและ build/ดูผล launcher ของเวอร์ชันใหม่
+
+
 ## 2026-10-24 — ชื่อและไอคอน Linko รุ่น 1.0.1+2
 
 - เปลี่ยนชื่อที่แสดงเป็น Linko บน Android, iOS, macOS, Windows/Linux และเว็บ โดยคง Android application ID, Bundle IDs, ชื่อ Dart package และคีย์การตั้งค่าเดิม

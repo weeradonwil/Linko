@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ชั้น Adaptive Icon มีพื้นที่ 108dp; inset นี้จัดสัญลักษณ์ให้อยู่ใน safe zone
+     โดยส่วนพื้นแดงของภาพยังคลุม viewport จึงไม่มีแผ่นสี่เหลี่ยมเล็กซ้อนในวงขาว -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_artwork"
+    android:inset="6dp" />

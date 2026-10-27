@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$sourcePath = Join-Path $projectRoot 'assets/branding/linko-icon-source.png'
+$sourcePath = Join-Path $projectRoot 'assets/branding/linko-adaptive-source.png'
 $source = [System.Drawing.Bitmap]::new($sourcePath)
 $writtenCount = 0
 
@@ -105,6 +105,8 @@ function Write-WindowsIcon {
 try {
     if ($source.Width -ne $source.Height) { throw 'The source icon must be square.' }
     Write-IconPng 'assets/branding/linko-icon.png' 1024
+    # 108dp ที่สเกล 4x; ใช้กับ Adaptive Icon แทน legacy icon ที่ launcher ย่อใส่วงขาว
+    Write-IconPng 'android/app/src/main/res/drawable-nodpi/ic_launcher_artwork.png' 432
     foreach ($density in @(
         @{ Name = 'mdpi'; Size = 48 },
         @{ Name = 'hdpi'; Size = 72 },
