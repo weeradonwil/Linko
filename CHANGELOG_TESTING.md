@@ -9,14 +9,17 @@
 - เพิ่ม backend Node22/Cloud Functions สำหรับ ticket, rate limit, รายงาน, คิวเจ้าของกลุ่ม, แชร์ และเก็บหลักฐาน; ไม่ให้ client ตั้งโทษเอง
 - กติกาที่ผู้ใช้ยืนยัน: 2 บัญชี → เตือน 24 ชั่วโมง → นำโพสต์ออก/พักโพสต์ 72 ชั่วโมง มีสิทธิ์แก้ไข/ลบ/โต้แย้งและขอบเขตโทษกลุ่มแยกจากทั้งแอป
 - แชร์ต้นฉบับสาธารณะลง Feed/กลุ่ม/แชท พร้อมตรวจสิทธิ์ต้นฉบับปัจจุบัน เลือกคนที่ติดตามได้ โหลดรายชื่อเพิ่มเป็นหน้าๆ
-- Analyzer ไม่พบปัญหา; Flutter 73/73, policy 14/14, Chrome chat 6/6 และ social 9/9 ผ่าน; Rules เดิม 7 ชุดและ integration ใหม่ 21 เคสผ่านบน emulators
+- Analyzer ไม่พบปัญหา; Flutter 73/73, policy 14/14, Chrome chat 6/6 และ social 9/9 ผ่าน; Rules เดิม 7 ชุดและ integration ใหม่ 25 เคสผ่านบน emulators
 - Android debug build ผ่าน ตรวจ APK จริงได้ชื่อ Linko และ version 1.1.0+4; ยังมี warning dependency Kotlin/Java สำหรับการอัปเกรด toolchain ครั้งหน้า
 - รายละเอียดและข้อจำกัด: [SOCIAL_FEATURES_DELIVERY.md](SOCIAL_FEATURES_DELIVERY.md); ผลจริง: [test_reports/social_2026-10-31/summary.json](test_reports/social_2026-10-31/summary.json)
-- สำรอง production Rules แล้ว แต่ auto-review ปฏิเสธ production deploy เพราะยังไม่มีการอนุมัติ production แยก กำลังรอคำยืนยัน; ยังไม่ได้เปิด flags หรือย้ายบัญชีจริง
+- หลังผู้ใช้ยืนยัน production เผยแพร่ Rules/indexes และ Functions 9 ตัวสำเร็จ เปิด flags กับกติกา 2/24/72 แล้ว บัญชีเดิม 10 บัญชีผ่อนผันถึง 14 พ.ย. 2026 เวลา 18:22 น. (Asia/Bangkok)
+- ฐานข้อมูล Bangkok ทำให้ Functions API ปฏิเสธ Firestore trigger ทั้งสอง generation จึงใช้ worker แบบ checkpoint/lease ทุกนาทีแทน พร้อมคัดลอกหลักฐานก่อนตอบรายงาน; ทดสอบ paging, overlap และ interruption เพิ่ม
+- ตรวจ production Rules ตรง source, indexes 15 READY, Functions 9 ACTIVE, Scheduler 4 ENABLED, unauthenticated callable 401 และ CORS 204 ผ่าน; worker ทั้ง 3 รันและเขียน cursor จริงหลัง activation
+- Gen1 3 resource ที่สร้างล้มเหลวยังเก็บไว้ตามคำถามล่าสุดของผู้ใช้ ยังไม่ได้รับอนุมัติลบ ไม่กระทบระบบใหม่
 
 บันทึกการเปลี่ยนแปลงและผลตรวจของ Profile, Like/Reaction, Follow, Groups และ Comment Notification
 
-> แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลตรวจและขอบเขตรอบล่าสุด 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md)
+> แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลก่อนหน้าวันที่ 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md); ผลล่าสุดวันที่ 2026-10-31 ดู [SOCIAL_FEATURES_DELIVERY.md](SOCIAL_FEATURES_DELIVERY.md)
 
 ## 2026-10-27 — ไอคอน Linko เต็มพื้นที่แบบ Settings
 

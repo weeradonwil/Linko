@@ -1,0 +1,192 @@
+{
+  "project": "social-network-app-c22eb",
+  "checkedAt": "2026-10-31T11:31:06.425Z",
+  "phase": "activated",
+  "rules": [
+    {
+      "file": "firestore.rules",
+      "matches": true,
+      "sha256": "27b289c13b1bf58d8ea23949ea27a6c3a59177e1d65419b4ec755be679b0fc7c",
+      "ruleset": "projects/social-network-app-c22eb/rulesets/513dbb2d-7c39-4e89-95e6-8732900e9f25"
+    },
+    {
+      "file": "storage.rules",
+      "matches": true,
+      "sha256": "c7d4ed750b45593efc667be896d8429d7a9bff87560da9daeb65cd15eb8743c1",
+      "ruleset": "projects/social-network-app-c22eb/rulesets/f787d071-cd49-448b-b762-2164bd335ee2"
+    }
+  ],
+  "indexes": {
+    "ready": 15,
+    "expected": 15
+  },
+  "functions": [
+    {
+      "name": "enforceWarnings",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "legacyReportWorker",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "blockCleanupWorker",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "evidenceCopyWorker",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "reserveWrite",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "respondToWarning",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "reviewGroupReport",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "sharePost",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    },
+    {
+      "name": "submitReport",
+      "state": "ACTIVE",
+      "runtime": "nodejs22",
+      "generation": "GEN_2"
+    }
+  ],
+  "retiredResources": [
+    {
+      "name": "preserveEvidence",
+      "state": "UNKNOWN"
+    },
+    {
+      "name": "onBlockChanged",
+      "state": "UNKNOWN"
+    },
+    {
+      "name": "ingestLegacyReport",
+      "state": "UNKNOWN"
+    }
+  ],
+  "schedulers": [
+    {
+      "name": "enforceWarnings",
+      "state": "ENABLED",
+      "schedule": "every 5 minutes",
+      "timeZone": "UTC",
+      "lastAttemptTime": "2026-10-31T11:30:00.955543Z",
+      "lastAttemptCode": 0
+    },
+    {
+      "name": "legacyReportWorker",
+      "state": "ENABLED",
+      "schedule": "* * * * *",
+      "timeZone": "UTC",
+      "lastAttemptTime": "2026-10-31T11:31:03.863303Z",
+      "lastAttemptCode": 0
+    },
+    {
+      "name": "blockCleanupWorker",
+      "state": "ENABLED",
+      "schedule": "* * * * *",
+      "timeZone": "UTC",
+      "lastAttemptTime": "2026-10-31T11:30:04.511558Z",
+      "lastAttemptCode": 0
+    },
+    {
+      "name": "evidenceCopyWorker",
+      "state": "ENABLED",
+      "schedule": "* * * * *",
+      "timeZone": "UTC",
+      "lastAttemptTime": "2026-10-31T11:31:01.911996Z",
+      "lastAttemptCode": 0
+    }
+  ],
+  "callableChecks": [
+    {
+      "name": "reserveWrite",
+      "status": 401,
+      "error": "UNAUTHENTICATED",
+      "via": "cloudfunctions.net"
+    },
+    {
+      "name": "respondToWarning",
+      "status": 401,
+      "error": "UNAUTHENTICATED",
+      "via": "cloudfunctions.net"
+    },
+    {
+      "name": "reviewGroupReport",
+      "status": 401,
+      "error": "UNAUTHENTICATED",
+      "via": "cloudfunctions.net"
+    },
+    {
+      "name": "sharePost",
+      "status": 401,
+      "error": "UNAUTHENTICATED",
+      "via": "cloudfunctions.net"
+    },
+    {
+      "name": "submitReport",
+      "status": 401,
+      "error": "UNAUTHENTICATED",
+      "via": "cloudfunctions.net"
+    }
+  ],
+  "browserPreflight": {
+    "status": 204,
+    "allowed": true
+  },
+  "activation": {
+    "reportThreshold": 2,
+    "warningHours": 24,
+    "suspensionHours": 72,
+    "autoEnforce": true,
+    "legacyAccounts": 10,
+    "rolloutAt": "2026-10-31T11:22:36.560Z",
+    "graceUntil": "2026-11-14T11:22:36.560Z"
+  },
+  "workerExecutions": [
+    {
+      "name": "legacyReportWorker",
+      "cursorExists": true,
+      "ranAfterActivation": true,
+      "firestoreWriteObserved": true
+    },
+    {
+      "name": "blockCleanupWorker",
+      "cursorExists": true,
+      "ranAfterActivation": true,
+      "firestoreWriteObserved": true
+    },
+    {
+      "name": "evidenceCopyWorker",
+      "cursorExists": true,
+      "ranAfterActivation": true,
+      "firestoreWriteObserved": true
+    }
+  ]
+}

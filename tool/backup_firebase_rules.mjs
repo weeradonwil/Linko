@@ -25,4 +25,4 @@ try {
   if(error.reason !== 'SERVICE_DISABLED') throw error;
   functionsApi='not-enabled';
 }
-console.log(JSON.stringify({project,backedUpReleases:metadata.length,functionsApi,existingFunctions:(functions?.functions ?? []).map(item=>({name:item.name,codebase:item.labels?.['firebase-codebase']}))}));
+console.log(JSON.stringify({project,backedUpReleases:metadata.length,functionsApi,existingFunctions:(functions?.functions ?? []).map(item=>({name:item.name,codebase:item.labels?.['firebase-functions-codebase']}))}));

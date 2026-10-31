@@ -1,17 +1,17 @@
-✔ default policy matches two reporters and 24/72 hours (1.1491ms)
-✔ invalid policy cannot produce an immediate or indefinite ban (0.1645ms)
-✔ auto enforcement requires an explicit server configuration (0.1411ms)
-✔ one reporter cannot reach the selected public threshold (0.148ms)
-✔ second reporter reaches the selected public threshold (0.1401ms)
-✔ ordinary group reports wait for the owner (0.3254ms)
-✔ warning is not expired before its deadline (0.3532ms)
-✔ warning expires at the exact deadline (0.2692ms)
-✔ contested reports cannot be automatically expired (0.2256ms)
-✔ suspension lasts exactly 72 hours and expires without a client clock (0.4093ms)
-✔ whitespace-only edits do not change the evidence hash (1.0217ms)
-✔ changing media or text changes the evidence hash (0.1785ms)
-✔ post locations cannot collide across groups and feed (0.1341ms)
-✔ rate limiter rejects a burst and opens a fresh window (0.9074ms)
+✔ default policy matches two reporters and 24/72 hours (1.5856ms)
+✔ invalid policy cannot produce an immediate or indefinite ban (0.2124ms)
+✔ auto enforcement requires an explicit server configuration (0.1671ms)
+✔ one reporter cannot reach the selected public threshold (0.1776ms)
+✔ second reporter reaches the selected public threshold (0.4014ms)
+✔ ordinary group reports wait for the owner (0.2429ms)
+✔ warning is not expired before its deadline (1.204ms)
+✔ warning expires at the exact deadline (0.2933ms)
+✔ contested reports cannot be automatically expired (0.2522ms)
+✔ suspension lasts exactly 72 hours and expires without a client clock (0.3623ms)
+✔ whitespace-only edits do not change the evidence hash (0.7949ms)
+✔ changing media or text changes the evidence hash (0.219ms)
+✔ post locations cannot collide across groups and feed (0.1509ms)
+✔ rate limiter rejects a burst and opens a fresh window (1.0319ms)
 ℹ tests 14
 ℹ suites 0
 ℹ pass 14
@@ -19,4 +19,4 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 90.5528
+ℹ duration_ms 106.9752

@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { scanWork } from './workers.mjs';
 import { getStorage } from 'firebase-admin/storage';
 import { randomUUID } from 'node:crypto';
 import { setGlobalOptions } from 'firebase-functions/v2';
@@ -12,6 +12,8 @@ import { readPolicy, caseId, contentHash, needsWarning, suspensionEnd, reserveRa
 initializeApp();
 setGlobalOptions({ region: 'asia-southeast1', maxInstances: 5 });
 const db = getFirestore();
+// งานหลังบ้านใช้ worker มี checkpoint เพราะ Functions API ยังไม่รับ trigger จาก Bangkok
+const workerSchedule = {schedule:'* * * * *',timeoutSeconds:300,maxInstances:1,concurrency:1};
 const stamp = () => FieldValue.serverTimestamp();
 const fail = (code, message) => { throw new HttpsError(code, message); };
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : fail('invalid-argument', 'รหัสรายการไม่ถูกต้อง');
@@ -106,7 +108,7 @@ async function submitReportImpl(request, legacyRef = null) {
   const caseRef = db.doc(`moderation_cases/${caseId(target.path)}`);
   const notificationRef = db.doc(`notifications/warning_${caseRef.id}`);
   const now = Date.now();
-  return db.runTransaction(async tx => {
+  const result = await db.runTransaction(async tx => {
     const [existing, current, fresh, rate] = await tx.getAll(reportRef, caseRef, db.doc(target.path), db.doc(`rate_limits/${uid}_report`));
     if (existing.exists) { if (legacyRef) tx.update(legacyRef, {processed:true}); return { alreadyReported: true }; }
     if (!fresh.exists || fresh.data().isDeleting) fail('not-found', 'โพสต์นี้ไม่พร้อมใช้งาน');
@@ -133,22 +135,27 @@ async function submitReportImpl(request, legacyRef = null) {
     }
     return { alreadyReported: false };
   });
+  // คัดลอกก่อนตอบกลับ เพื่อลดช่วงที่ภาพต้นฉบับอาจถูกแก้/ลบ; worker ลองต่อหาก Storage ขัดข้อง
+  try { await copyEvidence(caseRef); }
+  catch (error) { console.warn('Evidence copy deferred to worker', {code:error.code ?? 'unknown'}); }
+  return result;
 }
 
 export const submitReport = onCall(request => submitReportImpl(request));
 
 // แอปรุ่นเก่ายังส่งรายงานได้ในช่วงผ่อนผัน ระบบจะนำเข้าคิวเดียวกับแอปรุ่นใหม่
-export const ingestLegacyReport = onDocumentCreated({document:'post_reports/{reportKey}',retry:true}, async event => {
+async function ingestReportEvent(event) {
   const data = event.data?.data();
   if (!data || data.processed === true) return;
   try {
     const user = await getAuth().getUser(data.reporterUid);
     await submitReportImpl({auth:{uid:user.uid,token:{email_verified:user.emailVerified}},data:{postId:data.postId,groupId:data.groupId ?? null,reason:data.reason,details:data.details ?? ''}}, event.data.ref);
   } catch (error) {
-    if (!['permission-denied','failed-precondition','invalid-argument','not-found','resource-exhausted'].includes(error.code)) throw error;
+    // บัญชีอาจถูกลบระหว่างส่งกับประมวลผล ไม่ต้อง retry รายงานที่ทำต่อไม่ได้แล้ว
+    if (!['permission-denied','failed-precondition','invalid-argument','not-found','resource-exhausted','auth/user-not-found'].includes(error.code)) throw error;
     await event.data.ref.update({processed:true,status:'ignored',processingReason:error.code});
   }
-});
+}
 
 // เจ้าของกลุ่มตัดสินได้เฉพาะกลุ่มตัวเอง และไม่มีสิทธิ์พักบัญชีทั้งแอป
 export const reviewGroupReport = onCall(async request => {
@@ -230,16 +237,16 @@ export async function processExpiredWarnings() {
 export const enforceWarnings = onSchedule('every 5 minutes', processExpiredWarnings);
 
 // การบล็อกต้องทำให้แชทเดิมส่งต่อไม่ได้ด้วย ไม่ลบข้อความเก่าของใคร
-export const onBlockChanged = onDocumentWritten('users/{uid}/blocks/{peer}', async event => {
-  if (!event.data?.after.exists) return;
-  const { uid, peer } = event.params;
+async function cleanupBlock(uid, peer) {
+  if (!(await db.doc(`users/${uid}/blocks/${peer}`).get()).exists) return;
   const batch = db.batch();
   for (const path of [`users/${uid}/following/${peer}`, `users/${peer}/followers/${uid}`, `users/${peer}/following/${uid}`, `users/${uid}/followers/${peer}`, `users/${uid}/follow_requests/${peer}`, `users/${peer}/follow_requests/${uid}`]) batch.delete(db.doc(path));
   await batch.commit();
-});
+}
 
 // เก็บไฟล์หลักฐานคนละ object กับต้นฉบับ ผู้ใช้แก้ภาพเดิมทีหลังจะไม่เปลี่ยนหลักฐานตาม
-export const preserveEvidence = onDocumentWritten({ document: 'moderation_cases/{caseKey}', retry: true }, async event => {
+async function copyEvidence(ref) {
+  const event = {data:{after:await ref.get()},params:{caseKey:ref.id}};
   const data = event.data?.after.data();
   if (!data?.contentHash || data.evidenceReadyHash === data.contentHash) return;
   if ((await db.doc('app_config/security').get()).data()?.evidenceCopiesEnabled !== true) return;
@@ -263,7 +270,15 @@ export const preserveEvidence = onDocumentWritten({ document: 'moderation_cases/
     if (fresh.data()?.contentHash !== data.contentHash) return;
     tx.update(fresh.ref, { evidencePaths: paths, evidenceReadyHash: data.contentHash });
   });
-});
+ }
+
+// ใช้ handler เดียวกันทั้ง scheduler และ integration test ไม่จำลองผลทำงานของ worker
+export const processLegacyReports = () => scanWork(db,'legacy_reports','post_reports','createdAt',doc => ingestReportEvent({data:doc}));
+export const processBlockChanges = () => scanWork(db,'block_cleanup','block_edges','createdAt',doc => cleanupBlock(doc.data().actorId,doc.data().targetId));
+export const processEvidenceCopies = () => scanWork(db,'evidence_copies','moderation_cases','updatedAt',doc => copyEvidence(doc.ref));
+export const legacyReportWorker = onSchedule(workerSchedule,processLegacyReports);
+export const blockCleanupWorker = onSchedule(workerSchedule,processBlockChanges);
+export const evidenceCopyWorker = onSchedule(workerSchedule,processEvidenceCopies);
 
 // แชร์เก็บแค่รหัสต้นฉบับ ไม่คัดลอกไฟล์หรือข้อความลับไปแปะในที่ใหม่
 export const sharePost = onCall(async request => {

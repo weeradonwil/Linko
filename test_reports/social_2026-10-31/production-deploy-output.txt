@@ -1,0 +1,31 @@
+Initial direct-trigger deployment: Rules/indexes were published; Firestore trigger creation failed for Bangkok.
+
+firebase-deploy-activated-retries.txt:
++  firebase.storage: rules file storage.rules compiled successfully
++  cloud.firestore: rules file firestore.rules compiled successfully
++  firestore: deployed indexes in firestore.indexes.json successfully for (default) database
++  functions: functions source uploaded successfully
++  storage: released rules storage.rules to firebase.storage
++  firestore: released rules firestore.rules to cloud.firestore
++  functions[linko:sharePost(asia-southeast1)] Successful create operation.
++  functions[linko:respondToWarning(asia-southeast1)] Successful create operation.
++  functions[linko:submitReport(asia-southeast1)] Successful create operation.
++  functions[linko:reviewGroupReport(asia-southeast1)] Successful create operation.
++  functions[linko:reserveWrite(asia-southeast1)] Successful create operation.
++  functions[linko:enforceWarnings(asia-southeast1)] Successful create operation.
+
+firebase-deploy-workers.txt:
++  functions: functions source uploaded successfully
++  functions[linko:respondToWarning(asia-southeast1)] Successful update operation.
++  functions[linko:reviewGroupReport(asia-southeast1)] Successful update operation.
++  functions[linko:sharePost(asia-southeast1)] Successful update operation.
++  functions[linko:legacyReportWorker(asia-southeast1)] Successful create operation.
++  functions[linko:enforceWarnings(asia-southeast1)] Successful update operation.
++  functions[linko:blockCleanupWorker(asia-southeast1)] Successful create operation.
++  functions[linko:reserveWrite(asia-southeast1)] Successful update operation.
++  functions[linko:submitReport(asia-southeast1)] Successful update operation.
++  functions[linko:evidenceCopyWorker(asia-southeast1)] Successful create operation.
++  Deploy complete!
+
+Final scheduled-worker deployment exit code: 0
+Legacy Gen1 resources retained; deletion not authorized.

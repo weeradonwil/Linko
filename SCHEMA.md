@@ -116,7 +116,7 @@
 
 - `post_reports/{sha256(sourcePath)}_{reporterUid}` คือ ID canonical รองรับ Feed และกลุ่มโดยไม่ชนกัน เก็บ `groupId`, `postOwnerId`, `reporterUid`, `reason`, `details`, `contentHash`, `status`, `processed`, `createdAt`
 - client รุ่นใหม่ใช้ callable `submitReport`; raw report อ่านได้เฉพาะสิทธิ์ admin เดิม เจ้าของโพสต์และเจ้าของกลุ่มไม่เห็น reporter UID
-- raw report จากแอปรุ่นเก่าสร้างได้ระหว่าง `clientUpgradeGraceUntil` แล้ว trigger `ingestLegacyReport` นำเข้า canonical queue ป้องกันนับซ้ำ ประวัติเดิมก่อนเปิด trigger ไม่ย้อนลงโทษอัตโนมัติ
+- raw report จากแอปรุ่นเก่าสร้างได้ระหว่าง `clientUpgradeGraceUntil` แล้ว `legacyReportWorker` อ่านงานใหม่ทุก 1 นาทีเพื่อนำเข้า canonical queue ป้องกันนับซ้ำ ประวัติเดิมก่อน rollout ไม่ย้อนลงโทษอัตโนมัติ
 - `moderation_cases/{sha256(sourcePath)}`: `sourcePath`, `postId`, `groupId`, `ownerId`, `groupOwnerId`, `reason`, `details`, `reportCount`, `contentHash`, `snapshot`, `status`, `createdAt`, `updatedAt`; อาจมี `deadline`, `suspensionUntil`, `reviewedBy`, `reviewedAt`, `respondedAt`, `removedAt`, `evidencePaths`, `evidenceReadyHash`
 - สถานะ: `queued`, `warned`, `contested`, `changed`, `resolved`, `dismissed`, `removed`; อ่านได้เฉพาะเจ้าของโพสต์หรือเจ้าของกลุ่มนั้น backend เป็นผู้เปลี่ยนสถานะ
 - `moderation_archives/{caseId}` เก็บ snapshot และเวลา archive ก่อนนำโพสต์ออก ไม่มีสิทธิ์แก้จาก client
@@ -130,3 +130,11 @@
 - backend สร้างแชร์ผ่าน `sharePost` โดยใช้ requestId เดิมสำหรับ retry และตรวจสิทธิ์ต้นฉบับ/ปลายทางใหม่ การอ่านการ์ดใช้สิทธิ์ของต้นฉบับปัจจุบัน
 - `notifications` เพิ่ม `type:'moderation'|'moderation_group'`, `caseId` และ `groupId` ถ้ามี ไม่แนบตัวตนผู้รายงาน
 - index ใหม่รวม `reaction + updatedAt` ของ collection reactions, คิว owner/updatedAt, groupOwner/groupId/updatedAt และ status/deadline รวม indexes ทั้งหมด 15 รายการ
+
+
+### Worker ที่รองรับฐานข้อมูล Bangkok
+
+- `backend_cursors/{workerName}`: `lastAt`, `lastId`, `updatedAt` และ `leaseOwner`, `leaseUntil` ระหว่างทำงาน เขียน/อ่านจาก backend เท่านั้น ใช้ชื่อ `legacy_reports`, `block_cleanup`, `evidence_copies`
+- อ่านจาก `post_reports.createdAt`, `block_edges.createdAt` และ `moderation_cases.updatedAt` ตามลำดับ เริ่มที่ `app_config/security.rolloutAt` เมื่อเปิด reportBackendRequired แล้ว ไม่ย้อนประมวลผลรายงานเก่า
+- cursor ผูกทั้ง timestamp กับ ID เพื่อไม่ข้ามรายการเวลาซ้ำ ขยับเมื่อทำครบหน้า (100 รายการ) สูงสุด 4 หน้าต่อรอบ ทำค้างแล้วลองหน้าเดิมใหม่ handlers ป้องกันผลซ้ำเอง
+- งาน Scheduler อยู่ Singapore ส่วนฐานข้อมูลอยู่ Bangkok ผ่าน Admin SDK เดิม ไม่มีการย้ายข้อมูล สถานะพักโพสต์ยังตรวจจากข้อมูลที่ backend ป้องกันอยู่

@@ -1,14 +1,14 @@
 {
   "date": "2026-10-31",
   "version": "1.1.0+4",
-  "baseRevision": "f4d9d21",
+  "baseRevision": "e7d7476",
   "analyze": "No issues found",
   "flutterTests": 73,
   "backendPolicyTests": 14,
   "browserChatFlows": 6,
   "browserSocialFlows": 9,
   "existingFirebaseSuites": 7,
-  "newFirebaseCases": 21,
+  "newFirebaseCases": 25,
   "androidBuild": "passed debug",
   "apkSha256": "165ec4f79ff956b26943dfd9ee63b6eabce363f5923354fa09ef3b749be9b361",
   "manifest": [
@@ -17,5 +17,16 @@
     "targetSdkVersion:'36'",
     "application-label:'Linko'"
   ],
-  "production": "Pending explicit production approval; no production data changed"
+  "production": "Deployed and activated; 9 active Gen2 functions, 15 ready indexes, 4 enabled scheduler jobs; 3 failed Gen1 resources retained pending explicit cleanup approval",
+  "activation": {
+    "reportThreshold": 2,
+    "warningHours": 24,
+    "suspensionHours": 72,
+    "autoEnforce": true,
+    "legacyAccounts": 10,
+    "rolloutAt": "2026-10-31T11:22:36.560Z",
+    "graceUntil": "2026-11-14T11:22:36.560Z"
+  },
+  "productionCheckedAt": "2026-10-31T11:31:06.425Z",
+  "workerExecutionsVerified": true
 }

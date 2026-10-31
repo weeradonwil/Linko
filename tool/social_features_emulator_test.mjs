@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
-import { processExpiredWarnings } from '../functions/index.mjs';
+import { processExpiredWarnings, processLegacyReports, processBlockChanges, processEvidenceCopies } from '../functions/index.mjs';
+import { scanWork } from '../functions/workers.mjs';
 import { caseId } from '../functions/policy.mjs';
 import { projectId, s, b, a, write, commit, get, allowed, denied, assert, documentName, createProfile, storage } from './emulator_test_support.mjs';
 
@@ -33,7 +34,7 @@ async function post(member, key, content = 'Original public post') {
   allowed(await commit(member.token,[write(`posts/${key}`,{userId:s(member.uid),authorName:s('Member'),authorIsPrivate:b(false),content:s(content),tags:a([]),visibility:s('public'),mediaType:s('none')},{timestamps:['createdAt','updatedAt'],exists:false}),{delete:documentName(`write_tickets/${ticket.ticketId}`)}]),'Create post using one-use ticket');
 }
 async function report(member, postId, groupId = null) { return rpc(member,'submitReport',{postId,groupId,reason:'สแปม',details:'รายละเอียดสำหรับทดสอบ'}); }
-await db.doc('app_config/security').set({verificationRequired:true,writeTicketsRequired:true,reportBackendRequired:true,evidenceCopiesEnabled:true});
+await db.doc('app_config/security').set({verificationRequired:true,writeTicketsRequired:true,reportBackendRequired:true,evidenceCopiesEnabled:true,rolloutAt:Timestamp.now()});
 await db.doc('app_config/moderation').set({reportThreshold:2,warningHours:24,suspensionHours:72,minimumAccountHours:0,autoEnforce:true});
 const [author, first, second, owner, outsider, unverified] = await Promise.all([user(),user(),user(),user(),user(),user(false)]);
 
@@ -146,6 +147,10 @@ pass('changing original privacy prevents further sharing and access');
 await db.doc(`posts/${original}`).update({visibility:'public'});
 
 allowed(await commit(first.token,[write(`users/${first.uid}/blocks/${second.uid}`,{uid:s(second.uid)},{timestamps:['createdAt']}),write(`block_edges/${first.uid}_${second.uid}`,{actorId:s(first.uid),targetId:s(second.uid),participants:a([s(first.uid),s(second.uid)])},{timestamps:['createdAt']})]),'create block atomically');
+await db.doc(`users/${first.uid}/following/${second.uid}`).set({createdAt:Timestamp.now()});
+await db.doc(`users/${second.uid}/followers/${first.uid}`).set({createdAt:Timestamp.now()});
+await processBlockChanges();
+assert(!(await db.doc(`users/${first.uid}/following/${second.uid}`).get()).exists,'block cleanup worker left a follow edge');
 await rpc(second,'reserveWrite',{path:`conversations/${room}/messages/blocked_${suffix}`},false);
 await rpc(second,'sharePost',{postId:original,destination:'chat',targetId:room,requestId:`share_blocked_${suffix}`},false);
 denied(await commit(second.token,[{delete:documentName(`block_edges/${first.uid}_${second.uid}`)}]),'remove someone else block');
@@ -169,6 +174,7 @@ allowed(await storage(author.token,photoPath,{method:'POST',bytes:png,contentTyp
 await post(author,photoId,'Photo evidence');
 await db.doc(`posts/${photoId}`).update({mediaType:'image',mediaPath:photoPath});
 await report(first,photoId); await report(second,photoId);
+await processEvidenceCopies();
 const photoCase = db.doc(`moderation_cases/${caseId(`posts/${photoId}`)}`);
 let evidence;
 for(let attempt=0;attempt<40;attempt++) {
@@ -184,12 +190,49 @@ pass('media evidence is copied to protected immutable storage');
 await db.doc(`account_state/${first.uid}`).set({clientUpgradeGraceUntil:Timestamp.fromMillis(Date.now()+86400000)},{merge:true});
 const legacyPost = `restored_${suffix}`;
 allowed(await commit(first.token,[write(`post_reports/${legacyPost}_${first.uid}`,{postId:s(legacyPost),postOwnerId:s(author.uid),reporterUid:s(first.uid),reason:s('สแปม'),details:s('legacy client'),status:s('open')},{timestamps:['createdAt'],exists:false})]),'legacy client submits report');
+await processLegacyReports();
 const legacyCase = db.doc(`moderation_cases/${caseId(`posts/${legacyPost}`)}`);
 for(let attempt=0;attempt<40;attempt++) { if((await legacyCase.get()).exists) break; await new Promise(resolve=>setTimeout(resolve,250)); }
 assert((await legacyCase.get()).data()?.reportCount===1,'legacy report not ingested');
 assert((await report(first,legacyPost)).alreadyReported,'legacy report counted again by new API');
 pass('legacy reports enter the same queue without double counting during upgrade grace');
+const removedReporter = await getAuth().createUser({email:`removed-${suffix}@example.test`,emailVerified:true});
+await getAuth().deleteUser(removedReporter.uid);
+const staleReport = db.doc(`post_reports/deleted_user_${suffix}`);
+await staleReport.set({postId:legacyPost,postOwnerId:author.uid,reporterUid:removedReporter.uid,reason:'สแปม',status:'open',createdAt:Timestamp.now()});
+await processLegacyReports();
+for(let attempt=0;attempt<40;attempt++) { if((await staleReport.get()).data()?.processed) break; await new Promise(resolve=>setTimeout(resolve,250)); }
+assert((await staleReport.get()).data()?.status==='ignored','deleted reporter caused permanent retries');
+pass('a deleted legacy reporter is ignored instead of retrying a permanent failure');
+const sameTime=Timestamp.now();
+for(let i=0;i<5;i++) await db.doc(`worker_test_rows/${suffix}_${i}`).set({createdAt:sameTime});
+const seen=[];
+for(let page=0;page<3;page++) await scanWork(db,'cursor_test','worker_test_rows','createdAt',async doc=>{seen.push(doc.id);},{pageSize:2,maxPages:1});
+assert(seen.length===5 && new Set(seen).size===5,'worker skipped or repeated equal-timestamp rows');
+pass('worker pagination resumes across equal timestamps without skipping or duplicating rows');
+await db.doc('backend_cursors/cursor_test').set({leaseOwner:'another-run',leaseUntil:Timestamp.fromMillis(Date.now()+60000)},{merge:true});
+await db.doc(`worker_test_rows/${suffix}_5`).set({createdAt:Timestamp.now()});
+const busy=await scanWork(db,'cursor_test','worker_test_rows','createdAt',async doc=>{seen.push(doc.id);});
+assert(busy.reason==='already-running' && seen.length===5,'concurrent worker ignored its lease');
+await db.doc('backend_cursors/cursor_test').update({leaseUntil:Timestamp.fromMillis(Date.now()-1)});
+await scanWork(db,'cursor_test','worker_test_rows','createdAt',async doc=>{seen.push(doc.id);});
+assert(seen.length===6,'worker failed to resume after an expired lease');
+pass('worker leases prevent overlap and expired leases recover pending work');
+const visits=[];
+let interrupted=false;
+try {
+  await scanWork(db,'retry_test','worker_test_rows','createdAt',async doc=>{
+    visits.push(doc.id);
+    if(visits.length===2) throw new Error('simulated interruption');
+  },{pageSize:2,maxPages:1});
+} catch(error) { interrupted=error.message==='simulated interruption'; }
+assert(interrupted && !(await db.doc('backend_cursors/retry_test').get()).data().lastAt,'failed page incorrectly advanced checkpoint');
+await scanWork(db,'retry_test','worker_test_rows','createdAt',async doc=>{visits.push(doc.id);},{pageSize:2,maxPages:4});
+assert(new Set(visits).size===6 && visits.length===8,'unfinished page was not retried completely');
+pass('interrupted workers replay the unfinished page before advancing the checkpoint');
 denied(await commit(author.token,[write('app_config/security',{verificationRequired:b(false)},{mask:['verificationRequired']})]),'disable security');
 denied(await commit(author.token,[write(mainCase.path,{status:s('dismissed')},{mask:['status']})]),'fake a moderation result');
+denied(await get(author.token,'backend_cursors/cursor_test'),'read backend worker state');
+denied(await commit(author.token,[write('backend_cursors/cursor_test',{lastId:s('bypass')},{mask:['lastId']})]),'skip worker queue');
 pass('clients cannot change security configuration or moderation results');
 console.log(`PASS all ${passed} social feature integration cases against real local Auth, Firestore, Storage and Functions emulators`);

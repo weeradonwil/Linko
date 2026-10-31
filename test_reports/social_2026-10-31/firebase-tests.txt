@@ -58,5 +58,9 @@ PASS social 17: unsending a shared card removes the source pointer without delet
 PASS social 18: cover uploads and reads respect ownership and profile privacy
 PASS social 19: media evidence is copied to protected immutable storage
 PASS social 20: legacy reports enter the same queue without double counting during upgrade grace
-PASS social 21: clients cannot change security configuration or moderation results
-PASS all 21 social feature integration cases against real local Auth, Firestore, Storage and Functions emulators
+PASS social 21: a deleted legacy reporter is ignored instead of retrying a permanent failure
+PASS social 22: worker pagination resumes across equal timestamps without skipping or duplicating rows
+PASS social 23: worker leases prevent overlap and expired leases recover pending work
+PASS social 24: interrupted workers replay the unfinished page before advancing the checkpoint
+PASS social 25: clients cannot change security configuration or moderation results
+PASS all 25 social feature integration cases against real local Auth, Firestore, Storage and Functions emulators
