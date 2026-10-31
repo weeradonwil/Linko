@@ -1,0 +1,4 @@
+00:00 +0: loading C:/flutter/social_app/packages/video_thumbnail/test/video_thumbnail_test.dart
+00:00 +0: thumbnailFile forwards supported native parameters
+00:00 +1: thumbnailData returns native bytes
+00:00 +2: All tests passed!

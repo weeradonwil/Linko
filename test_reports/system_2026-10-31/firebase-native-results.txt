@@ -1,0 +1,91 @@
+PASS [real ChatService/Chrome] consecutive and identical text received by peer
+PASS [real ChatService/Chrome] replies and read receipts preserve peer state
+PASS [real ChatService/Chrome] reopen visible room and preserve peer hidden state
+PASS [real ChatService/Chrome] unsend identical preview and send another text
+PASS [real ChatService/Chrome] nonparticipant cannot read or send
+PASS [real ChatService/Chrome] peer cannot cancel another sender message
+Real ChatService/Chrome: 6/6 passed
+PASS [real Social services/Chrome] register, repair profile, edit profile, logout and login
+PASS [real Social services/Chrome] main feed posts, 7 reactions, comments, edit and recursive delete
+PASS [real Social services/Chrome] group lifecycle, media edit, comments, reactions, report and cleanup
+PASS [real Social services/Chrome] whole group cleanup removes member media and comments after leaving
+PASS [real Social services/Chrome] private profile follow request, approval, unfollow and media access
+PASS [real Social services/Chrome] legacy users beyond 150 entries can be found across cursor pages
+PASS [real Social services/Chrome] notification history is reachable beyond the first 100 items
+PASS [real Social services/Chrome] video upload, authenticated Blob playback, and denied access after leaving
+PASS [real Social services/Chrome] videos larger than 50 MB are rejected before upload
+PASS [real Social services/Chrome] activated write tickets accept text and photo-only posts
+Real Social services/Chrome: 10/10 passed
+PASS all Flutter service browser suites
+PASS chat: follow gate, schema, repeated messages, reply, reopen, hidden room, unsend, outsider and atomic summary
+PASS public group immediate join, duplicate protection, and leave
+PASS private request, cancellation, duplicate protection, and owner approval
+PASS private post access before and after approval
+PASS group owner can reject a request without adding a member
+PASS non-owner cannot approve private join requests
+PASS post schema, 7 reactions, 25 follower notifications and owner child cleanup
+PASS existing-media editing and empty post prevention
+PASS group media owner cleanup and deletion write barrier
+PASS non-member admin private group approval
+PASS strict profile creation and owner legacy recovery
+PASS privacy: 501 posts, cursor pages, interruption marker, concurrent-write barrier, follower/private/public access
+PASS grouped follower query, outsider denial and 61 posts across cursor pages
+PASS [current working tree] create conversation: HTTP 200 (expected 200)
+PASS [current working tree] first text in newly created conversation: HTTP 200 (expected 200)
+PASS [current working tree] actual first-then-second send sequence: HTTP 200 (expected 200)
+PASS [current working tree] second text, same sender/type: HTTP 200 (expected 200)
+PASS [current working tree] identical text, same sender/type: HTTP 200 (expected 200)
+PASS [current working tree] reply from other user, same type: HTTP 200 (expected 200)
+PASS [current working tree] text after unsend, same sender: HTTP 200 (expected 200)
+PASS [current working tree] text after unsend, different sender: HTTP 200 (expected 200)
+PASS [current working tree] different type, same sender: HTTP 200 (expected 200)
+PASS [current working tree] consecutive image metadata: HTTP 200 (expected 200)
+PASS [current working tree] nonparticipant cannot send: HTTP 403 (expected 403)
+PASS [current working tree] sender cannot impersonate peer: HTTP 403 (expected 403)
+PASS [current working tree] text length 2000: HTTP 200 (expected 200)
+PASS [current working tree] text length 2001 rejected: HTTP 403 (expected 403)
+PASS [current working tree] recipient unread count must increment: HTTP 403 (expected 403)
+PASS [current working tree] cannot change peer lastReadAt: HTTP 403 (expected 403)
+PASS [current working tree] cannot change participants: HTTP 403 (expected 403)
+PASS [current working tree] summary without message rejected: HTTP 403 (expected 403)
+PASS [current working tree] mark own messages read: HTTP 200 (expected 200)
+PASS [current working tree] reopen hidden conversation: HTTP 200 (expected 200)
+PASS [current working tree] reopen already visible conversation: HTTP 200 (expected 200)
+PASS [current working tree] unsend latest: Earlier message: HTTP 200 (expected 200)
+PASS [current working tree] unsend latest: ยกเลิกข้อความนี้: HTTP 200 (expected 200)
+PASS [current working tree] peer can read chat messages: HTTP 200 (expected 200)
+PASS [current working tree] nonparticipant cannot read chat messages: HTTP 403 (expected 403)
+PASS group post parity: edits, 7 reactions, comments, reports, media revocation, moderation and deletion barrier
+PASS all 7 Firebase Emulator suites
+PASS social 1: unverified email cannot reserve a write
+PASS social 2: valid ticket is accepted and missing ticket is denied by Rules
+PASS social 3: same account reports once and does not warn early
+PASS social 4: two reporters warn for 24 hours and reporter identity stays private
+PASS social 5: unchanged post cannot claim an edit; an actual edit closes that warning
+PASS social 6: expired warning removes post, preserves evidence and suspends exactly 72 hours once
+PASS social 7: suspended account cannot bypass restrictions and expired suspension restores posting
+PASS social 8: contesting a warning stops automatic punishment
+PASS social 9: only group owner reviews reports and group punishment stays inside that group
+PASS social 10: feed share references original and retries do not duplicate it
+PASS social 11: group share requires real membership
+PASS social 12: shared feed and group captions can be edited without losing the original card
+PASS social 13: chat receives a post card and unread count
+PASS social 14: unverified recipients need verification or a protected legacy grace period
+PASS social 15: changing original privacy prevents further sharing and access
+PASS social 16: block works in both directions and cannot be undone by the other user
+PASS social 17: unsending a shared card removes the source pointer without deleting chat history
+PASS social 18: cover uploads and reads respect ownership and profile privacy
+PASS social 19: media evidence is copied to protected immutable storage
+PASS social 20: legacy reports enter the same queue without double counting during upgrade grace
+PASS social 21: a deleted legacy reporter is ignored instead of retrying a permanent failure
+PASS social 22: worker pagination resumes across equal timestamps without skipping or duplicating rows
+PASS social 23: worker leases prevent overlap and expired leases recover pending work
+PASS social 24: interrupted workers replay the unfinished page before advancing the checkpoint
+PASS social 25: clients cannot change security configuration or moderation results
+PASS all 25 social feature integration cases against real local Auth, Firestore, Storage and Functions emulators
+PASS [native Android] native callable and text-only posting with enforced tickets
+PASS [native Android] native photo-only posting uploads and reads Storage bytes
+PASS [native Android] native post edit retains existing media
+PASS [native Android] native group accepts an image without a caption
+PASS [native Android] native deletion cleans posts and uploaded images
+RESTORED normal Linko build; existing app data preserved

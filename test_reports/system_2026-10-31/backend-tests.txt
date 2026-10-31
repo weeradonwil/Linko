@@ -1,0 +1,22 @@
+✔ default policy matches two reporters and 24/72 hours (2.1443ms)
+✔ invalid policy cannot produce an immediate or indefinite ban (0.1759ms)
+✔ auto enforcement requires an explicit server configuration (0.1399ms)
+✔ one reporter cannot reach the selected public threshold (0.1465ms)
+✔ second reporter reaches the selected public threshold (0.3874ms)
+✔ ordinary group reports wait for the owner (0.1176ms)
+✔ warning is not expired before its deadline (0.1873ms)
+✔ warning expires at the exact deadline (0.1401ms)
+✔ contested reports cannot be automatically expired (0.1306ms)
+✔ suspension lasts exactly 72 hours and expires without a client clock (0.2777ms)
+✔ whitespace-only edits do not change the evidence hash (3.8878ms)
+✔ changing media or text changes the evidence hash (0.1887ms)
+✔ post locations cannot collide across groups and feed (0.127ms)
+✔ rate limiter rejects a burst and opens a fresh window (1.7979ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 125.8445

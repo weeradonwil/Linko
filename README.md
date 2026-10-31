@@ -2,7 +2,7 @@
 
 > Flutter / Dart / Firebase Authentication / Cloud Firestore / Firebase Storage
 
-สถานะและผลทดสอบของรอบ **24 ตุลาคม 2026** อยู่ที่ [DELIVERY_REPORT.md](DELIVERY_REPORT.md) ส่วนผลวันที่ 21–22 ตุลาคมด้านล่างเป็นประวัติของรุ่นก่อนหน้า
+ผลตรวจล่าสุด **31 ตุลาคม 2026 — แก้โพสต์ไม่ได้และตรวจ UX/UI** อยู่ที่ [SYSTEM_TEST_REPORT_2026-10-31.md](SYSTEM_TEST_REPORT_2026-10-31.md) พร้อม output ของ unit/widget, Chrome/Firebase และ Android native ส่วนรอบ 24 ตุลาคมอยู่ที่ [DELIVERY_REPORT.md](DELIVERY_REPORT.md) และผลวันที่ 21–22 ตุลาคมด้านล่างเป็นประวัติรุ่นก่อนหน้า
 >
 > ประวัติการเปลี่ยนแปลงและผลตรวจอยู่ใน [CHANGELOG_TESTING.md](CHANGELOG_TESTING.md) และโครงสร้างข้อมูลอยู่ใน [SCHEMA.md](SCHEMA.md)
 > แผนแก้ผลตรวจระบบและขอบเขตการทดสอบรอบ 22 ตุลาคม 2026 อยู่ใน [AUDIT_FIX_PLAN.md](AUDIT_FIX_PLAN.md)

@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-31",
+  "finishedAtBangkok": "2026-10-31T21:43:14.659566+07:00",
+  "baseRevision": "9ff1bce",
+  "version": "1.1.0+4",
+  "analyze": "No issues found",
+  "flutterUnitWidget": 101,
+  "localPluginUnit": 2,
+  "backendUnit": 14,
+  "chromeChat": 6,
+  "chromeSocial": 10,
+  "firebaseRuleSuites": 7,
+  "firebaseFeatureCases": 25,
+  "nativeAndroidCases": 5,
+  "androidBuild": "passed debug; installed 1.1.0+4 and restored normal app with original data",
+  "functionsNativePlugin": true,
+  "originalInstalledApk": {
+    "version": "1.0.2+3",
+    "functionsNativePlugin": false
+  },
+  "apkSha256": "78cdc0ef880bb8020e2033d76547b2444456bdec55e89d33e62755f7e679c779",
+  "coverage": {
+    "scope": "Flutter unit/widget instrumentation only; excludes integration and native execution",
+    "files": 66,
+    "hit": 1109,
+    "instrumented": 6813,
+    "percent": 16.28
+  },
+  "production": "read-only readiness checks; no test posts or deployment",
+  "reruns": [
+    "Corrected deleted-ticket assertion to use Emulator admin; Rules unchanged",
+    "Restarted existing local Android AVD after it was no longer running",
+    "Used a syntactically valid fake API key for native SDK fixture and single-line result errors"
+  ],
+  "allReportedSuitesPassed": true
+}

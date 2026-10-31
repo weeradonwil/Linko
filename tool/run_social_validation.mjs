@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 mkdirSync('build/social-validation', {recursive:true});
 const log = 'build/social-validation/firebase-tests.txt';
 writeFileSync(log, '');
-for (const script of [...(process.env.LINKO_INCLUDE_BROWSER === 'true' ? ['tool/run_service_checks.mjs'] : []), 'tool/run_emulator_tests.mjs', 'tool/social_features_emulator_test.mjs']) {
+for (const script of [...(process.env.LINKO_INCLUDE_BROWSER === 'true' ? ['tool/run_service_checks.mjs'] : []), 'tool/run_emulator_tests.mjs', 'tool/social_features_emulator_test.mjs', ...(process.env.LINKO_INCLUDE_ANDROID === 'true' ? ['tool/run_android_post_smoke.mjs'] : [])]) {
   const result = spawnSync(process.execPath, [script], { env: process.env, encoding:'utf8', windowsHide:true });
   appendFileSync(log, (result.stdout ?? '') + (result.stderr ?? ''));
   process.stdout.write(result.stdout ?? '');

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "native callable and text-only posting with enforced tickets",
+    "passed": true
+  },
+  {
+    "name": "native photo-only posting uploads and reads Storage bytes",
+    "passed": true
+  },
+  {
+    "name": "native post edit retains existing media",
+    "passed": true
+  },
+  {
+    "name": "native group accepts an image without a caption",
+    "passed": true
+  },
+  {
+    "name": "native deletion cleans posts and uploaded images",
+    "passed": true
+  }
+]

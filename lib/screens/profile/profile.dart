@@ -20,6 +20,7 @@ import '../../core/widgets/post_media.dart';
 import '../admin/admin_reports_screen.dart';
 import '../chat/chat_room.dart';
 import 'edit_profile_screen.dart';
+import 'profile_image_screen.dart';
 
 /// แสดงโปรไฟล์ตนเองหรือสมาชิกที่เปิดจากผลค้นหา/โพสต์
 class ProfileScreen extends StatefulWidget {
@@ -144,6 +145,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _openProfileImage(ProfileImageKind kind) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileImageScreen(ownerUid: _profileUid, kind: kind),
+      ),
+    );
+  }
+
   Future<void> _togglePrivacy(bool isPrivate) async {
     if (_privacyBusy) return;
     setState(() => _privacyBusy = true);
@@ -242,6 +251,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final isPrivate = PostPolicy.profileIsPrivate(data);
           final privacyPending = data['privacyTarget'] is bool;
           final avatarPath = readOptionalString(data['avatarPath']);
+          final coverPath = readOptionalString(data['coverPath']);
+          // คนอื่นเปิดรูปใหญ่ได้เฉพาะบัญชีสาธารณะ เจ้าของดูรูปตัวเองได้เสมอ
+          final canOpenImages = _isOwnProfile || !isPrivate;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
@@ -254,34 +266,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
                   child: Column(
                     children: [
-                      ProfileCover(
-                        path: readOptionalString(data['coverPath']),
-                        ownerUid: _profileUid,
-                        isPrivate: isPrivate,
+                      InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap:
+                            canOpenImages &&
+                                coverPath != null &&
+                                coverPath.isNotEmpty
+                            ? () => _openProfileImage(ProfileImageKind.cover)
+                            : null,
+                        child: ProfileCover(
+                          path: coverPath,
+                          ownerUid: _profileUid,
+                          isPrivate: isPrivate,
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      FutureBuilder<String>(
-                        future: avatarPath == null || avatarPath.isEmpty
-                            ? null
-                            : FirebaseStorage.instance
-                                  .ref(avatarPath)
-                                  .getDownloadURL(),
-                        builder: (context, avatar) => CircleAvatar(
-                          radius: 40,
-                          backgroundColor: colors.primaryContainer,
-                          backgroundImage: avatar.data == null
+                      InkResponse(
+                        customBorder: const CircleBorder(),
+                        onTap:
+                            canOpenImages &&
+                                avatarPath != null &&
+                                avatarPath.isNotEmpty
+                            ? () => _openProfileImage(ProfileImageKind.avatar)
+                            : null,
+                        child: FutureBuilder<String>(
+                          future: avatarPath == null || avatarPath.isEmpty
                               ? null
-                              : NetworkImage(avatar.data!),
-                          child: avatar.data == null
-                              ? Text(
-                                  (name.isEmpty ? '?' : name.characters.first)
-                                      .toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 32,
-                                    color: colors.onPrimaryContainer,
-                                  ),
-                                )
-                              : null,
+                              : FirebaseStorage.instance
+                                    .ref(avatarPath)
+                                    .getDownloadURL(),
+                          builder: (context, avatar) => CircleAvatar(
+                            radius: 40,
+                            backgroundColor: colors.primaryContainer,
+                            backgroundImage: avatar.data == null
+                                ? null
+                                : NetworkImage(avatar.data!),
+                            child: avatar.data == null
+                                ? Text(
+                                    (name.isEmpty ? '?' : name.characters.first)
+                                        .toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 32,
+                                      color: colors.onPrimaryContainer,
+                                    ),
+                                  )
+                                : null,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),

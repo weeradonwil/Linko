@@ -1,10 +1,15 @@
 import 'package:cloud_functions/cloud_functions.dart';
 // แปลง error code จาก Firebase ให้เป็นข้อความอ่านง่ายสำหรับแสดงในแอป
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/services.dart';
 
 /// แปลง Firebase error code เป็นข้อความสั้นพร้อมแนวทางตรวจสาเหตุเบื้องต้น
 /// แยกปัญหาสิทธิ์ เครือข่าย และเซสชัน โดยไม่คาดเดาว่าต้อง deploy เสมอ
 String firebaseErrorMessage(Object? error, {required String action}) {
+  // แอปที่ Hot Reload หลังเพิ่มปลั๊กอินยังใช้ native ตัวเก่า ต้องติดตั้ง build ใหม่
+  if (error is MissingPluginException) {
+    return '$actionไม่สำเร็จ: ส่วนประกอบแอปยังไม่พร้อม กรุณาอัปเดตแอปแล้วเปิดใหม่';
+  }
   // ข้อความจาก callable เป็นกติกาของแอป เช่น บล็อกกันหรือยังอยู่ในช่วงพักโพสต์
   if (error is FirebaseFunctionsException &&
       error.message?.isNotEmpty == true) {

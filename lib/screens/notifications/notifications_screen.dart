@@ -160,6 +160,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ],
               ),
             ),
+            // คำเตือนจริงอยู่ในรายการแจ้งเตือนอยู่แล้ว ทางลัดนี้ใช้ดูสิทธิ์ย้อนหลังได้ด้วย
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Card(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.gpp_maybe_outlined,
+                    color: colors.primary,
+                  ),
+                  title: const Text('คำเตือน / สิทธิ์โพสต์'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ModerationScreen(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: SegmentedButton<bool>(

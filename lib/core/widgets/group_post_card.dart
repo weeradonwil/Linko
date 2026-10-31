@@ -1,3 +1,4 @@
+import 'post_action_button.dart';
 import 'content_visibility.dart';
 import 'shared_post_card.dart';
 import 'reaction_people_sheet.dart';
@@ -277,15 +278,27 @@ class _GroupPostCardState extends State<GroupPostCard> {
                         path:
                             'groups/${widget.groupId}/posts/${post.id}/reactions',
                       ),
-                      Wrap(
-                        spacing: 4,
+                      Row(
                         children: [
-                          Builder(
-                            builder: (anchor) => TextButton.icon(
+                          Expanded(
+                            child: PostActionButton(
+                              icon: Icons.thumb_up_alt_outlined,
+                              emoji:
+                                  selected != null && selected.id != 'dislike'
+                                  ? selected.emoji
+                                  : null,
+                              label:
+                                  selected != null && selected.id != 'dislike'
+                                  ? selected.label
+                                  : 'ถูกใจ',
+                              color:
+                                  selected != null && selected.id != 'dislike'
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
                               onPressed: _busy ? null : () => react('like'),
                               onLongPress: _busy
                                   ? null
-                                  : () async {
+                                  : (anchor) async {
                                       final choice =
                                           await SocialReactionPicker.show(
                                             anchor,
@@ -294,29 +307,26 @@ class _GroupPostCardState extends State<GroupPostCard> {
                                         await react(choice);
                                       }
                                     },
-                              icon: selected != null && selected.id != 'dislike'
-                                  ? Text(selected.emoji)
-                                  : const Icon(Icons.thumb_up_outlined),
-                              label: Text(
-                                selected != null && selected.id != 'dislike'
-                                    ? selected.label
-                                    : 'Like',
-                              ),
                             ),
                           ),
-                          TextButton.icon(
-                            onPressed: _busy ? null : () => react('dislike'),
-                            icon: Icon(
-                              mine == 'dislike'
-                                  ? Icons.thumb_down
-                                  : Icons.thumb_down_outlined,
+                          Expanded(
+                            child: PostActionButton(
+                              icon: mine == 'dislike'
+                                  ? Icons.thumb_down_alt
+                                  : Icons.thumb_down_alt_outlined,
+                              label: 'ไม่ถูกใจ',
+                              color: mine == 'dislike'
+                                  ? Theme.of(context).colorScheme.error
+                                  : null,
+                              onPressed: _busy ? null : () => react('dislike'),
                             ),
-                            label: const Text('Dislike'),
                           ),
-                          TextButton.icon(
-                            onPressed: _comments,
-                            icon: const Icon(Icons.chat_bubble_outline),
-                            label: const Text('คอมเมนต์'),
+                          Expanded(
+                            child: PostActionButton(
+                              icon: Icons.mode_comment_outlined,
+                              label: 'ความคิดเห็น',
+                              onPressed: _comments,
+                            ),
                           ),
                         ],
                       ),

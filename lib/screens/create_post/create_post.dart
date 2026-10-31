@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/models/post.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/group_service.dart';
+import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/post_media.dart';
 
 /// หน้าสร้างและแก้ไขโพสต์ข้อความ พร้อมแท็ก ระดับการมองเห็น และสื่อหนึ่งไฟล์
@@ -18,6 +19,9 @@ class CreatePostScreen extends StatefulWidget {
     required this.user,
     this.post,
     this.groupId,
+    this.postService,
+    this.groupService,
+    this.imagePicker,
     super.key,
   });
 
@@ -30,6 +34,11 @@ class CreatePostScreen extends StatefulWidget {
   /// เมื่อระบุกลุ่ม ฟอร์มใช้สิทธิ์และพื้นที่จัดเก็บของกลุ่มแทนโพสต์สาธารณะ
   final String? groupId;
 
+  // ส่งบริการแยกเข้ามาได้ เพื่อทดสอบฟอร์มจริงโดยไม่ส่งโพสต์ไป production
+  final PostService? postService;
+  final GroupService? groupService;
+  final ImagePicker? imagePicker;
+
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
 }
@@ -38,8 +47,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _formKey = GlobalKey<FormState>();
   final _contentController = TextEditingController();
   final _tagsController = TextEditingController();
-  final _postService = PostService();
-  final _picker = ImagePicker();
+  late final _postService = widget.postService ?? PostService();
+  late final _picker = widget.imagePicker ?? ImagePicker();
 
   XFile? _attachment;
   Uint8List? _attachmentPreview;
@@ -110,6 +119,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _savePost() async {
+    // กันกดจากปุ่มบนกับปุ่มล่างติดกันก่อนหน้าจอวาดสถานะกำลังบันทึก
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
@@ -121,7 +132,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     try {
       if (widget.groupId != null) {
-        final groups = GroupService();
+        final groups = widget.groupService ?? GroupService();
         if (_isEditing) {
           await groups.updatePost(
             groupId: widget.groupId!,
@@ -163,10 +174,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       _showError(error.message);
     } on GroupServiceException catch (error) {
       _showError(error.message);
-    } catch (_) {
-      _showError(
-        'บันทึกโพสต์ไม่สำเร็จ ตรวจอินเทอร์เน็ต, Firebase Storage และ Firestore Rules',
-      );
+    } catch (error) {
+      // แยกสาเหตุจริง เช่น สิทธิ์ เครือข่าย หรือปลั๊กอินขาด แทนข้อความรวมที่เดาไม่ได้
+      debugPrint('Save post failed (${error.runtimeType}): $error');
+      _showError(firebaseErrorMessage(error, action: 'บันทึกโพสต์'));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

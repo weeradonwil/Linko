@@ -119,6 +119,24 @@ Future<XFile> _videoFixture() async {
   return XFile.fromData(bytes, name: 'fixture.mp4', mimeType: 'video/mp4');
 }
 
+Future<bool> _ticketExistsForTest(String path) async {
+  _check(_options.projectId == 'demo-linko', 'Local fixture reads only');
+  // ticket ใช้แล้วถูกลบทันที Rules จึงไม่ให้ client อ่าน doc ที่หายไป ใช้ admin ของ Emulator ตรวจแทน
+  final headers = web.Headers()..set('Authorization', 'Bearer owner');
+  final response = await web.window
+      .fetch(
+        'http://127.0.0.1:8080/v1/projects/demo-linko/databases/(default)/documents/$path'
+            .toJS,
+        web.RequestInit(headers: headers),
+      )
+      .toDart;
+  _check(
+    response.status == 200 || response.status == 404,
+    'Local ticket inspection failed',
+  );
+  return response.status == 200;
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
@@ -665,6 +683,65 @@ Future<void> main() async {
       await owner.groups.deleteGroup(id);
     },
   );
+
+  await scenario(
+    'activated write tickets accept text and photo-only posts',
+    () async {
+      // เปิด flags เหมือน production หลัง flow รุ่นเก่าทั้งหมดจบแล้ว ไม่มี grace มาช่วยข้าม ticket
+      await _seed([
+        {
+          'path': 'app_config/security',
+          'fields': {
+            'verificationRequired': {'booleanValue': true},
+            'writeTicketsRequired': {'booleanValue': true},
+          },
+        },
+      ]);
+      final poster = await createAccount('ActivatedPoster');
+      for (final photoOnly in [false, true]) {
+        await poster.posts.createPost(
+          content: photoOnly ? '' : 'Text with activated security',
+          tags: [],
+          visibility: 'public',
+          attachment: photoOnly ? image() : null,
+        );
+      }
+      final created = await ownPosts(poster);
+      _check(
+        created.length == 2,
+        'Activated posting did not save exactly two posts',
+      );
+      final photo = created.singleWhere((post) => post.mediaType == 'image');
+      _check(
+        photo.content.isEmpty && photo.mediaPath != null,
+        'Photo-only post lost its attachment',
+      );
+      _check(
+        (await poster.storage.ref(photo.mediaPath!).getData(10 * 1024 * 1024))!
+            .isNotEmpty,
+        'Uploaded photo cannot be read by its owner',
+      );
+      for (final post in created) {
+        _check(
+          !await _ticketExistsForTest('write_tickets/${poster.uid}_${post.id}'),
+          'Successful post did not consume its one-use ticket',
+        );
+        await poster.posts.deletePost(post);
+      }
+      _check((await ownPosts(poster)).isEmpty, 'Activated post cleanup failed');
+    },
+  );
+
+  // คืน flags ของ fixture เพื่อให้ชุด Rules รุ่นเก่าที่รันต่อไม่ปนกับ enforcement ชุดใหม่
+  await _seed([
+    {
+      'path': 'app_config/security',
+      'fields': {
+        'verificationRequired': {'booleanValue': false},
+        'writeTicketsRequired': {'booleanValue': false},
+      },
+    },
+  ]);
 
   for (final account in accounts) {
     await account.auth.signOut();

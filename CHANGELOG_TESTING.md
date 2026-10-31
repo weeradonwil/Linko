@@ -1,5 +1,15 @@
 # Change Log and Test Report
 
+## 2026-10-31 — ตรวจโพสต์ไม่ได้, native Android และ UI รอบล่าสุด
+
+- APK เดิมที่ติดตั้งเป็น 1.0.2+3 ไม่มี Cloud Functions native plugin ขณะที่ source ใหม่ขอ write ticket ก่อนโพสต์ จึงต้อง rebuild/install ทั้งแอปแทน Hot Reload อย่างเดียว
+- เพิ่ม INTERNET ใน main Android manifest, แยกข้อความ error ของฟอร์มโพสต์ และกันการกดส่งซ้ำก่อนวาดสถานะบันทึก
+- รวมไอคอนใต้โพสต์ในแถวเดียว ซ่อนเฉพาะช่องสร้างโพสต์ตามการเลื่อน และย้ายคำเตือน/สิทธิ์โพสต์ไปหน้าแจ้งเตือน
+- เพิ่มหน้าดูรูปโปรไฟล์/ภาพปกพร้อมซูมและตรวจ privacy ซ้ำ บัญชีส่วนตัวเปิดให้เจ้าของดูได้เท่านั้น; แก้ปุ่มลองโหลดรูปใหม่
+- Analyzer ผ่าน; Flutter 101/101, local plugin 2/2, backend 14/14, Chrome chat 6/6, social 10/10, Rules 7 suites, feature integration 25/25 และ Android native 5/5 ผ่าน
+- Android debug build ผ่านและติดตั้งคืนเป็น Linko 1.1.0+4 พร้อมข้อมูลบัญชีเดิม ทดสอบการเขียนด้วย demo emulators ไม่สร้างโพสต์/รายงานทดสอบบน production
+- รายงาน ขอบเขต coverage และงานพัฒนาต่ออยู่ใน [SYSTEM_TEST_REPORT_2026-10-31.md](SYSTEM_TEST_REPORT_2026-10-31.md); ผลจริงอยู่ใน [test_reports/system_2026-10-31/summary.json](test_reports/system_2026-10-31/summary.json)
+
 
 ## 2026-10-31 — Linko 1.1.0+4: Email, Block, Report, Reaction, Share และภาพปก
 

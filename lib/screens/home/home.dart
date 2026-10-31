@@ -1,7 +1,7 @@
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/shared_post_card.dart';
 import '../../core/widgets/share_post_sheet.dart';
-import '../profile/moderation_screen.dart';
+import '../../core/widgets/post_action_button.dart';
 import '../../core/widgets/reaction_people_sheet.dart';
 import '../../core/widgets/content_visibility.dart';
 
@@ -289,74 +289,64 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         body: Column(
           children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ModerationScreen(),
-                  ),
-                ),
-                icon: const Icon(Icons.gpp_maybe_outlined, size: 18),
-                label: const Text('คำเตือน / สิทธิ์โพสต์'),
-              ),
-            ),
-            // ช่องเริ่มโพสต์เป็นทางลัดหลักของหน้า Feed
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () => _openCreatePost(context),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 25,
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .primary,
-                          foregroundColor: Theme.of(context)
-                              .colorScheme
-                              .onPrimary,
-                          child: Text(title.characters.first.toUpperCase()),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHigh,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
+            // ซ่อนเฉพาะช่องสร้างโพสต์ตามการเลื่อน แถบ Linko ด้านบนอยู่ตามปกติ
+            ScrollHidingHeader(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Card(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _openCreatePost(context),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary,
+                            foregroundColor: Theme.of(context)
+                                .colorScheme
+                                .onPrimary,
+                            child: Text(title.characters.first.toUpperCase()),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
                                 color: Theme.of(context)
                                     .colorScheme
-                                    .outlineVariant,
+                                    .surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant,
+                                ),
+                              ),
+                              child: Text(
+                                'คุณกำลังคิดอะไรอยู่?',
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
                               ),
                             ),
-                            child: Text(
-                              'คุณกำลังคิดอะไรอยู่?',
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.add_photo_alternate_outlined,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.add_photo_alternate_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -732,15 +722,6 @@ class _PostCard extends StatelessWidget {
                 thumbnailPath: post.thumbnailPath,
               ),
             ],
-            if (post.visibility == 'public' && post.sharedPostId == null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => SharePostSheet.show(context, post.id),
-                  icon: const Icon(Icons.share_outlined, size: 18),
-                  label: const Text('แชร์'),
-                ),
-              ),
             const SizedBox(height: 14),
             Divider(color: theme.colorScheme.outlineVariant, height: 1),
             const SizedBox(height: 4),
@@ -787,7 +768,7 @@ class _PostCard extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: _PostAction(
+                          child: PostActionButton(
                             icon: selected == 'like'
                                 ? Icons.thumb_up_alt
                                 : Icons.thumb_up_alt_outlined,
@@ -814,7 +795,7 @@ class _PostCard extends StatelessWidget {
                           ),
                         ),
                         Expanded(
-                          child: _PostAction(
+                          child: PostActionButton(
                             icon: selected == 'dislike'
                                 ? Icons.thumb_down_alt
                                 : Icons.thumb_down_alt_outlined,
@@ -826,12 +807,23 @@ class _PostCard extends StatelessWidget {
                           ),
                         ),
                         Expanded(
-                          child: _PostAction(
+                          child: PostActionButton(
                             icon: Icons.mode_comment_outlined,
                             label: 'ความคิดเห็น',
                             onPressed: onComment,
                           ),
                         ),
+                        // แชร์อยู่แถวเดียวกัน และใช้เงื่อนไขสิทธิ์เดิมของโพสต์
+                        if (post.visibility == 'public' &&
+                            post.sharedPostId == null)
+                          Expanded(
+                            child: PostActionButton(
+                              icon: Icons.share_outlined,
+                              label: 'แชร์',
+                              onPressed: () =>
+                                  SharePostSheet.show(context, post.id),
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -852,58 +844,6 @@ class _PostCard extends StatelessWidget {
     final minute = thailandTime.minute.toString().padLeft(2, '0');
 
     return '$hour:$minute ${thailandTime.day}/${thailandTime.month}/${thailandTime.year}';
-  }
-}
-
-class _PostAction extends StatelessWidget {
-  const _PostAction({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-    this.color,
-    this.emoji,
-    this.onLongPress,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-  final Color? color;
-  final String? emoji;
-  final ValueChanged<BuildContext>? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Builder(
-      builder: (buttonContext) => TextButton(
-        onPressed: onPressed,
-        onLongPress: onLongPress == null
-            ? null
-            : () => onLongPress!(buttonContext),
-        style: TextButton.styleFrom(
-          foregroundColor: color ?? Theme.of(context).colorScheme.onSurface,
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 10),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (emoji == null)
-              Icon(icon, size: 20)
-            else
-              Text(emoji!, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                label == 'แสดงความคิดเห็น' ? 'ความคิดเห็น' : label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

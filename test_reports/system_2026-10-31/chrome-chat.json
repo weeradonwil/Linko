@@ -1,0 +1,26 @@
+[
+  {
+    "name": "consecutive and identical text received by peer",
+    "passed": true
+  },
+  {
+    "name": "replies and read receipts preserve peer state",
+    "passed": true
+  },
+  {
+    "name": "reopen visible room and preserve peer hidden state",
+    "passed": true
+  },
+  {
+    "name": "unsend identical preview and send another text",
+    "passed": true
+  },
+  {
+    "name": "nonparticipant cannot read or send",
+    "passed": true
+  },
+  {
+    "name": "peer cannot cancel another sender message",
+    "passed": true
+  }
+]

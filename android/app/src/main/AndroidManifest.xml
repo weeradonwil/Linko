@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ทุก build ต้องใช้อินเทอร์เน็ต ไม่ใช่แค่ debug เพราะแอปคุยกับ Firebase -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

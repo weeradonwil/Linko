@@ -1,0 +1,52 @@
+[
+  {
+    "name": "register, repair profile, edit profile, logout and login",
+    "passed": true,
+    "durationMs": 504
+  },
+  {
+    "name": "main feed posts, 7 reactions, comments, edit and recursive delete",
+    "passed": true,
+    "durationMs": 383
+  },
+  {
+    "name": "group lifecycle, media edit, comments, reactions, report and cleanup",
+    "passed": true,
+    "durationMs": 62878
+  },
+  {
+    "name": "whole group cleanup removes member media and comments after leaving",
+    "passed": true,
+    "durationMs": 120074
+  },
+  {
+    "name": "private profile follow request, approval, unfollow and media access",
+    "passed": true,
+    "durationMs": 400
+  },
+  {
+    "name": "legacy users beyond 150 entries can be found across cursor pages",
+    "passed": true,
+    "durationMs": 162
+  },
+  {
+    "name": "notification history is reachable beyond the first 100 items",
+    "passed": true,
+    "durationMs": 136
+  },
+  {
+    "name": "video upload, authenticated Blob playback, and denied access after leaving",
+    "passed": true,
+    "durationMs": 431
+  },
+  {
+    "name": "videos larger than 50 MB are rejected before upload",
+    "passed": true,
+    "durationMs": 130
+  },
+  {
+    "name": "activated write tickets accept text and photo-only posts",
+    "passed": true,
+    "durationMs": 59250
+  }
+]

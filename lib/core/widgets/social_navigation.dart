@@ -389,6 +389,29 @@ class ScrollHidingNavigationBar extends StatelessWidget {
   final Widget child;
 
   @override
+  Widget build(BuildContext context) =>
+      _ScrollHidingRegion(alignment: Alignment.bottomCenter, child: child);
+}
+
+/// หัวหน้าจะหลบเมื่อเลื่อนลง และกลับมาทันทีที่เลื่อนขึ้นเหมือนแถบล่าง
+class ScrollHidingHeader extends StatelessWidget {
+  const ScrollHidingHeader({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      _ScrollHidingRegion(alignment: Alignment.topCenter, child: child);
+}
+
+// รวมแอนิเมชันไว้จุดเดียว เพื่อให้แถบบนและล่างใช้จังหวะเดียวกัน
+class _ScrollHidingRegion extends StatelessWidget {
+  const _ScrollHidingRegion({required this.child, required this.alignment});
+
+  final Widget child;
+  final Alignment alignment;
+
+  @override
   Widget build(BuildContext context) {
     final visible = _ScrollNavigationScope.maybeOf(context);
     if (visible == null) return child;
@@ -400,7 +423,7 @@ class ScrollHidingNavigationBar extends StatelessWidget {
         child: AnimatedSize(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          alignment: Alignment.bottomCenter,
+          alignment: alignment,
           child: show ? nav! : const SizedBox.shrink(),
         ),
       ),
