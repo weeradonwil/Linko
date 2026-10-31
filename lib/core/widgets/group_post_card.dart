@@ -1,3 +1,7 @@
+import 'content_visibility.dart';
+import 'shared_post_card.dart';
+import 'reaction_people_sheet.dart';
+
 // การ์ดโพสต์กลุ่ม: แสดงสื่อ แท็ก ปฏิกิริยา ความคิดเห็น และเมนูจัดการตามสิทธิ์
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -90,15 +94,20 @@ class _GroupPostCardState extends State<GroupPostCard> {
     );
     if (draft == null || !mounted) return;
     await _perform(() async {
-      await _groups.reportPost(
+      final already = await _groups.reportPost(
         groupId: widget.groupId,
         post: widget.post,
         reason: draft.reason,
         details: draft.details,
+        hidePost: draft.hidePost,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ส่งรายงานให้ผู้ดูแลแล้ว')),
+          SnackBar(
+            content: Text(
+              already ? 'คุณรายงานโพสต์นี้แล้ว' : 'ได้รับรายงานแล้ว',
+            ),
+          ),
         );
       }
     });
@@ -130,190 +139,193 @@ class _GroupPostCardState extends State<GroupPostCard> {
       );
     }
     final date = post.createdAt?.toLocal();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ProfileScreen(
-                          user: widget.user,
-                          profileUid: post.authorId,
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          post.authorName,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        Text(
-                          date == null
-                              ? 'เมื่อสักครู่'
-                              : '${date.day}/${date.month}/${date.year} '
-                                    '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
-                                    '${post.editedAt == null ? '' : ' · แก้ไขแล้ว'}',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  enabled: !_busy,
-                  tooltip: 'จัดการโพสต์',
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<bool>(
-                          builder: (_) => CreatePostScreen(
+    return ContentVisibility(
+      authorId: widget.post.authorId,
+      postKey: 'group_${widget.groupId}_${widget.post.id}',
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ProfileScreen(
                             user: widget.user,
-                            post: post.asPost(),
-                            groupId: widget.groupId,
+                            profileUid: post.authorId,
                           ),
                         ),
-                      );
-                    }
-                    if (value == 'delete') _delete();
-                    if (value == 'report') _report();
-                  },
-                  itemBuilder: (_) => [
-                    if (_ownsPost)
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Text('แก้ไขโพสต์'),
                       ),
-                    if (_ownsPost || widget.canModerate)
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('ลบโพสต์'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            post.authorName,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          Text(
+                            date == null
+                                ? 'เมื่อสักครู่'
+                                : '${date.day}/${date.month}/${date.year} '
+                                      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
+                                      '${post.editedAt == null ? '' : ' · แก้ไขแล้ว'}',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ],
                       ),
-                    if (!_ownsPost)
-                      const PopupMenuItem(
-                        value: 'report',
-                        child: Text('รายงานโพสต์'),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-            if (post.content.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: SelectableText(post.content),
-              ),
-            if (post.tags.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                children: post.tags
-                    .map((tag) => Chip(label: Text('#$tag')))
-                    .toList(),
-              ),
-            if (post.mediaPath != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: PostMedia(
-                  path: post.mediaPath!,
-                  type: post.mediaType,
-                  thumbnailPath: post.thumbnailPath,
-                ),
-              ),
-            const Divider(height: 24),
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _reactions.watchReactions(widget.groupId, post.id),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Text('โหลดปฏิกิริยาไม่สำเร็จ');
-                }
-                final counts = {
-                  for (final reaction in SocialReaction.options) reaction.id: 0,
-                };
-                String? mine;
-                for (final doc
-                    in snapshot.data?.docs ??
-                        <QueryDocumentSnapshot<Map<String, dynamic>>>[]) {
-                  final reaction = readOptionalString(doc.data()['reaction']);
-                  if (reaction != null && counts.containsKey(reaction)) {
-                    counts[reaction] = counts[reaction]! + 1;
-                  }
-                  if (doc.id == widget.user.uid) mine = reaction;
-                }
-                final selected = SocialReaction.byId(mine);
-                Future<void> react(String value) => _perform(
-                  () => _reactions.toggleReaction(
-                    groupId: widget.groupId,
-                    postId: post.id,
-                    reaction: value,
+                    ),
                   ),
-                );
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      children: counts.entries
-                          .where((entry) => entry.value > 0)
-                          .map(
-                            (entry) => Text(
-                              '${SocialReaction.byId(entry.key)?.emoji} ${entry.value}',
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    Wrap(
-                      spacing: 4,
-                      children: [
-                        Builder(
-                          builder: (anchor) => TextButton.icon(
-                            onPressed: _busy ? null : () => react('like'),
-                            onLongPress: _busy
-                                ? null
-                                : () async {
-                                    final choice =
-                                        await SocialReactionPicker.show(anchor);
-                                    if (choice != null && mounted) {
-                                      await react(choice);
-                                    }
-                                  },
-                            icon: selected != null && selected.id != 'dislike'
-                                ? Text(selected.emoji)
-                                : const Icon(Icons.thumb_up_outlined),
-                            label: Text(
-                              selected != null && selected.id != 'dislike'
-                                  ? selected.label
-                                  : 'Like',
+                  PopupMenuButton<String>(
+                    enabled: !_busy,
+                    tooltip: 'จัดการโพสต์',
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<bool>(
+                            builder: (_) => CreatePostScreen(
+                              user: widget.user,
+                              post: post.asPost(),
+                              groupId: widget.groupId,
                             ),
                           ),
+                        );
+                      }
+                      if (value == 'delete') _delete();
+                      if (value == 'report') _report();
+                    },
+                    itemBuilder: (_) => [
+                      if (_ownsPost)
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('แก้ไขโพสต์'),
                         ),
-                        TextButton.icon(
-                          onPressed: _busy ? null : () => react('dislike'),
-                          icon: Icon(
-                            mine == 'dislike'
-                                ? Icons.thumb_down
-                                : Icons.thumb_down_outlined,
-                          ),
-                          label: const Text('Dislike'),
+                      if (_ownsPost || widget.canModerate)
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('ลบโพสต์'),
                         ),
-                        TextButton.icon(
-                          onPressed: _comments,
-                          icon: const Icon(Icons.chat_bubble_outline),
-                          label: const Text('คอมเมนต์'),
+                      if (!_ownsPost)
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Text('รายงานโพสต์'),
                         ),
-                      ],
+                    ],
+                  ),
+                ],
+              ),
+              if (post.content.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SelectableText(post.content),
+                ),
+              if (post.tags.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  children: post.tags
+                      .map((tag) => Chip(label: Text('#$tag')))
+                      .toList(),
+                ),
+              if (post.mediaPath != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: PostMedia(
+                    path: post.mediaPath!,
+                    type: post.mediaType,
+                    thumbnailPath: post.thumbnailPath,
+                  ),
+                ),
+              if (post.sharedPostId != null)
+                SharedPostCard(postId: post.sharedPostId!),
+              const Divider(height: 24),
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _reactions.watchReactions(widget.groupId, post.id),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Text('โหลดปฏิกิริยาไม่สำเร็จ');
+                  }
+                  final counts = {
+                    for (final reaction in SocialReaction.options)
+                      reaction.id: 0,
+                  };
+                  String? mine;
+                  for (final doc
+                      in snapshot.data?.docs ??
+                          <QueryDocumentSnapshot<Map<String, dynamic>>>[]) {
+                    final reaction = readOptionalString(doc.data()['reaction']);
+                    if (reaction != null && counts.containsKey(reaction)) {
+                      counts[reaction] = counts[reaction]! + 1;
+                    }
+                    if (doc.id == widget.user.uid) mine = reaction;
+                  }
+                  final selected = SocialReaction.byId(mine);
+                  Future<void> react(String value) => _perform(
+                    () => _reactions.toggleReaction(
+                      groupId: widget.groupId,
+                      postId: post.id,
+                      reaction: value,
                     ),
-                  ],
-                );
-              },
-            ),
-          ],
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ReactionSummaryBar(
+                        counts: counts,
+                        path:
+                            'groups/${widget.groupId}/posts/${post.id}/reactions',
+                      ),
+                      Wrap(
+                        spacing: 4,
+                        children: [
+                          Builder(
+                            builder: (anchor) => TextButton.icon(
+                              onPressed: _busy ? null : () => react('like'),
+                              onLongPress: _busy
+                                  ? null
+                                  : () async {
+                                      final choice =
+                                          await SocialReactionPicker.show(
+                                            anchor,
+                                          );
+                                      if (choice != null && mounted) {
+                                        await react(choice);
+                                      }
+                                    },
+                              icon: selected != null && selected.id != 'dislike'
+                                  ? Text(selected.emoji)
+                                  : const Icon(Icons.thumb_up_outlined),
+                              label: Text(
+                                selected != null && selected.id != 'dislike'
+                                    ? selected.label
+                                    : 'Like',
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _busy ? null : () => react('dislike'),
+                            icon: Icon(
+                              mine == 'dislike'
+                                  ? Icons.thumb_down
+                                  : Icons.thumb_down_outlined,
+                            ),
+                            label: const Text('Dislike'),
+                          ),
+                          TextButton.icon(
+                            onPressed: _comments,
+                            icon: const Icon(Icons.chat_bubble_outline),
+                            label: const Text('คอมเมนต์'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

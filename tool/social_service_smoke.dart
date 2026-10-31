@@ -1,3 +1,5 @@
+import 'package:cloud_functions/cloud_functions.dart';
+
 // ทดสอบบริการ Flutter จริงบน Chrome กับ Firebase Emulator เท่านั้น ไม่แตะฐานข้อมูล production
 import 'dart:convert';
 import 'dart:js_interop';
@@ -125,6 +127,14 @@ Future<void> main() async {
       child: Center(child: Text('Checking Linko services...')),
     ),
   );
+  await _seed([
+    {
+      'path': 'app_config/moderation',
+      'fields': {
+        'minimumAccountHours': {'integerValue': '0'},
+      },
+    },
+  ]);
   final results = <Map<String, Object?>>[];
   final accounts = <_Account>[];
   final suffix = DateTime.now().microsecondsSinceEpoch.toString();
@@ -143,6 +153,10 @@ Future<void> main() async {
     final auth = FirebaseAuth.instanceFor(app: app);
     await auth.useAuthEmulator('127.0.0.1', 9099);
     await auth.setPersistence(Persistence.NONE);
+    FirebaseFunctions.instanceFor(
+      app: app,
+      region: 'asia-southeast1',
+    ).useFunctionsEmulator('127.0.0.1', 5001);
     final db = FirebaseFirestore.instanceFor(app: app);
     db.settings = const Settings(persistenceEnabled: false);
     db.useFirestoreEmulator('127.0.0.1', 8080);
@@ -161,6 +175,27 @@ Future<void> main() async {
       email: account.email,
       password: _password,
     );
+    // ยืนยันผ่าน Auth Emulator จริง เพื่อให้ SDK รีเฟรช token เหมือนผู้ใช้กดลิงก์
+    final headers = web.Headers()
+      ..set('Authorization', 'Bearer owner')
+      ..set('Content-Type', 'application/json');
+    final verified = await web.window
+        .fetch(
+          'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/demo-linko/accounts:update'
+              .toJS,
+          web.RequestInit(
+            method: 'POST',
+            headers: headers,
+            body: jsonEncode({
+              'localId': auth.currentUser!.uid,
+              'emailVerified': true,
+            }).toJS,
+          ),
+        )
+        .toDart;
+    _check(verified.ok, 'Emulator email verification failed');
+    await auth.currentUser!.reload();
+    await auth.currentUser!.getIdToken(true);
     return account;
   }
 
@@ -392,11 +427,7 @@ Future<void> main() async {
       _check(error.code == 'object-not-found', 'Unexpected cleanup error');
     }
     trace('report group post');
-    await reader.groups.reportPost(
-      groupId: id,
-      post: post,
-      reason: 'ไม่เหมาะสม',
-    );
+    await reader.groups.reportPost(groupId: id, post: post, reason: 'อื่น ๆ');
     trace('delete group post with comments and reactions');
     await member.groups.deletePost(groupId: id, postId: post.id);
     _check(

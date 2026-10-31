@@ -52,3 +52,9 @@ app.*.map.json
 /android/key.properties
 *.jks
 *.keystore
+
+# Backend packages and local credentials stay on this machine
+/functions/node_modules/
+/functions/.env
+/functions/.env.*
+!/functions/.env.example

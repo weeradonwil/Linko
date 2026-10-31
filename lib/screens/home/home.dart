@@ -1,3 +1,10 @@
+import '../../core/utils/firebase_error_message.dart';
+import '../../core/widgets/shared_post_card.dart';
+import '../../core/widgets/share_post_sheet.dart';
+import '../profile/moderation_screen.dart';
+import '../../core/widgets/reaction_people_sheet.dart';
+import '../../core/widgets/content_visibility.dart';
+
 // หน้า Feed หลัก เชื่อมการโหลดโพสต์ การจัดการโพสต์ และทางลัดไปฟีเจอร์อื่น
 import 'dart:async';
 
@@ -144,20 +151,27 @@ class _HomeScreenState extends State<HomeScreen> {
     if (draft == null || !context.mounted) return;
 
     try {
-      await PostService().reportPost(
+      final already = await PostService().reportPost(
         post: post,
         reason: draft.reason,
         details: draft.details,
+        hidePost: draft.hidePost,
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ขอบคุณที่ช่วยรายงานโพสต์นี้')),
+        SnackBar(
+          content: Text(
+            already
+                ? 'คุณรายงานโพสต์นี้แล้ว'
+                : 'ได้รับรายงานแล้ว ขอบคุณที่ช่วยดูแลกัน',
+          ),
+        ),
       );
-    } catch (_) {
+    } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('ส่งรายงานไม่สำเร็จ กรุณาตรวจ Firestore Rules'),
+        SnackBar(
+          content: Text(firebaseErrorMessage(error, action: 'ส่งรายงาน')),
         ),
       );
     }
@@ -275,6 +289,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         body: Column(
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ModerationScreen(),
+                  ),
+                ),
+                icon: const Icon(Icons.gpp_maybe_outlined, size: 18),
+                label: const Text('คำเตือน / สิทธิ์โพสต์'),
+              ),
+            ),
             // ช่องเริ่มโพสต์เป็นทางลัดหลักของหน้า Feed
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -399,31 +425,35 @@ class _HomeScreenState extends State<HomeScreen> {
                       // ใช้ UID เทียบเจ้าของ; ซ่อนเมนูแก้ไข/ลบสำหรับโพสต์คนอื่น
                       final isOwner = post.userId == widget.user.uid;
 
-                      return _PostCard(
-                        post: post,
-                        isOwner: isOwner,
-                        onEdit: isOwner
-                            ? () => _openEditPost(context, post)
-                            : null,
-                        onDelete: isOwner
-                            ? () => _deletePost(context, post)
-                            : null,
-                        onReport: isOwner
-                            ? null
-                            : () => _reportPost(context, post),
-                        currentUid: widget.user.uid,
-                        reactionService: _reactionService,
-                        onReaction: (reaction) =>
-                            _setReaction(context, post, reaction),
-                        onAuthorTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => ProfileScreen(
-                              user: widget.user,
-                              profileUid: post.userId,
+                      return ContentVisibility(
+                        authorId: post.userId,
+                        postKey: post.id,
+                        child: _PostCard(
+                          post: post,
+                          isOwner: isOwner,
+                          onEdit: isOwner
+                              ? () => _openEditPost(context, post)
+                              : null,
+                          onDelete: isOwner
+                              ? () => _deletePost(context, post)
+                              : null,
+                          onReport: isOwner
+                              ? null
+                              : () => _reportPost(context, post),
+                          currentUid: widget.user.uid,
+                          reactionService: _reactionService,
+                          onReaction: (reaction) =>
+                              _setReaction(context, post, reaction),
+                          onAuthorTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => ProfileScreen(
+                                user: widget.user,
+                                profileUid: post.userId,
+                              ),
                             ),
                           ),
+                          onComment: () => _openComments(context, post),
                         ),
-                        onComment: () => _openComments(context, post),
                       );
                     },
                   );
@@ -669,6 +699,8 @@ class _PostCard extends StatelessWidget {
             const SizedBox(height: 14),
             if (post.content.isNotEmpty)
               SelectableText(post.content, style: theme.textTheme.bodyLarge),
+            if (post.sharedPostId != null)
+              SharedPostCard(postId: post.sharedPostId!),
             if (post.tags.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
@@ -700,6 +732,15 @@ class _PostCard extends StatelessWidget {
                 thumbnailPath: post.thumbnailPath,
               ),
             ],
+            if (post.visibility == 'public' && post.sharedPostId == null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => SharePostSheet.show(context, post.id),
+                  icon: const Icon(Icons.share_outlined, size: 18),
+                  label: const Text('แชร์'),
+                ),
+              ),
             const SizedBox(height: 14),
             Divider(color: theme.colorScheme.outlineVariant, height: 1),
             const SizedBox(height: 4),
@@ -737,17 +778,9 @@ class _PostCard extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 4, bottom: 4),
-                          child: Wrap(
-                            spacing: 8,
-                            children: counts.entries
-                                .where((entry) => entry.value > 0)
-                                .map(
-                                  (entry) => Text(
-                                    '${SocialReaction.byId(entry.key)?.emoji ?? '👍'} ${entry.value}',
-                                    style: theme.textTheme.labelMedium,
-                                  ),
-                                )
-                                .toList(),
+                          child: ReactionSummaryBar(
+                            counts: counts,
+                            path: 'posts/${post.id}/reactions',
                           ),
                         ),
                       ),

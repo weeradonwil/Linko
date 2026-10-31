@@ -1,5 +1,19 @@
 # Change Log and Test Report
 
+
+## 2026-10-31 — Linko 1.1.0+4: Email, Block, Report, Reaction, Share และภาพปก
+
+- เพิ่มการยืนยันอีเมล ช่วงผ่อนผันบัญชีเก่า ระบบบล็อกสองทาง และภาพปกโปรไฟล์ 3:1
+- เปิดรายชื่อคนกดอิโมจิ แยกยอด Like/Dislike และรวมอารมณ์อื่นเมื่อมีหลายชนิด
+- Report หนึ่งบัญชีต่อโพสต์ เลือกซ่อนเฉพาะตัวเองได้ ไม่มีหน้าติดตามผลของผู้รายงาน
+- เพิ่ม backend Node22/Cloud Functions สำหรับ ticket, rate limit, รายงาน, คิวเจ้าของกลุ่ม, แชร์ และเก็บหลักฐาน; ไม่ให้ client ตั้งโทษเอง
+- กติกาที่ผู้ใช้ยืนยัน: 2 บัญชี → เตือน 24 ชั่วโมง → นำโพสต์ออก/พักโพสต์ 72 ชั่วโมง มีสิทธิ์แก้ไข/ลบ/โต้แย้งและขอบเขตโทษกลุ่มแยกจากทั้งแอป
+- แชร์ต้นฉบับสาธารณะลง Feed/กลุ่ม/แชท พร้อมตรวจสิทธิ์ต้นฉบับปัจจุบัน เลือกคนที่ติดตามได้ โหลดรายชื่อเพิ่มเป็นหน้าๆ
+- Analyzer ไม่พบปัญหา; Flutter 73/73, policy 14/14, Chrome chat 6/6 และ social 9/9 ผ่าน; Rules เดิม 7 ชุดและ integration ใหม่ 21 เคสผ่านบน emulators
+- Android debug build ผ่าน ตรวจ APK จริงได้ชื่อ Linko และ version 1.1.0+4; ยังมี warning dependency Kotlin/Java สำหรับการอัปเกรด toolchain ครั้งหน้า
+- รายละเอียดและข้อจำกัด: [SOCIAL_FEATURES_DELIVERY.md](SOCIAL_FEATURES_DELIVERY.md); ผลจริง: [test_reports/social_2026-10-31/summary.json](test_reports/social_2026-10-31/summary.json)
+- สำรอง production Rules แล้ว แต่ auto-review ปฏิเสธ production deploy เพราะยังไม่มีการอนุมัติ production แยก กำลังรอคำยืนยัน; ยังไม่ได้เปิด flags หรือย้ายบัญชีจริง
+
 บันทึกการเปลี่ยนแปลงและผลตรวจของ Profile, Like/Reaction, Follow, Groups และ Comment Notification
 
 > แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลตรวจและขอบเขตรอบล่าสุด 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md)

@@ -2,6 +2,8 @@
 
 เอกสารนี้สรุป path ที่แอปใช้อยู่ ให้ตรวจ `firestore.rules` และ `storage.rules` ประกอบก่อนเปลี่ยนข้อมูลหรือสิทธิ์
 
+รายละเอียดที่เพิ่มในรุ่น 1.1.0 ดูหัวข้อท้ายเอกสาร; โครงสร้างรายงานแบบเก่าด้านล่างเก็บไว้เพื่ออ้างอิงข้อมูลเดิม
+
 ## Collections หลัก
 
 ### `users/{uid}`
@@ -89,3 +91,42 @@
 - Profile/Group posts เริ่ม 30, Chat/Comments เริ่ม 50 และเพิ่มเมื่อกดโหลดก่อนหน้า โดยขยายหน้าต่าง real-time query
 - Explore/Search โพสต์ใช้ document cursor; ค้นในโพสต์สาธารณะเป็นหน้า ๆ ละ 80 เอกสาร และกดค้นต่อในข้อมูลเก่าได้ แท็กยอดนิยมยังคำนวณจาก 100 โพสต์ล่าสุด
 - ระบบค้นหานี้ยังไม่ใช่ full-text search index และ real-time windows มีค่าอ่าน/หน่วยความจำเพิ่มเมื่อโหลดข้อมูลมากขึ้น
+
+
+## ส่วนเพิ่มเติมรุ่น 1.1.0 — 31 ตุลาคม 2026
+
+### โปรไฟล์และการบล็อก
+
+- `users/{uid}.coverPath` ชี้ PNG ที่ `profile_covers/{uid}/{fileName}` ขนาดไม่เกิน 5 MiB เจ้าของหรือผู้มีสิทธิ์ติดตามบัญชีส่วนตัวอ่านได้
+- `users/{uid}/blocks/{peerUid}`: `uid` ของเป้าหมาย, `createdAt`; เจ้าของอ่าน/สร้าง/ลบได้
+- `block_edges/{actorUid}_{targetUid}`: `actorId`, `targetId`, `participants`, `createdAt`; อ่านได้เฉพาะคู่ที่เกี่ยวข้อง สร้าง/ลบพร้อมเอกสาร blocks แบบ atomic เพื่อให้ UI ซ่อนทั้งสองทิศทาง
+- `users/{uid}/hidden_posts/{postKey}`: `createdAt`; ใช้ postId สำหรับ Feed และ `group_{groupId}_{postId}` สำหรับกลุ่ม ซ่อนเฉพาะเจ้าของรายการ
+
+### ข้อมูลสิทธิ์ที่ backend ดูแล
+
+- `app_config/security`: `verificationRequired`, `writeTicketsRequired`, `reportBackendRequired`, `evidenceCopiesEnabled`, `rolloutAt`
+- `app_config/moderation`: `reportThreshold:2`, `warningHours:24`, `suspensionHours:72`, `minimumAccountHours:24`, `autoEnforce`
+- `account_state/{uid}`: `uid`, `verificationGraceUntil`, `clientUpgradeGraceUntil`, `postingSuspendedUntil`, `lastCaseId` ตามที่ใช้งาน
+- `group_account_state/{groupId}_{uid}`: `uid`, `postingSuspendedUntil`, `lastCaseId`; โทษเฉพาะกลุ่ม ไม่แทนโทษรวมทั้งแอป
+- `write_tickets/{uid}_{itemId}`: `uid`, `targetPath`, `expiresAt`; backend ออกให้ มีอายุ 5 นาที และต้องลบใน batch เดียวกับการสร้างโพสต์/ข้อความ
+- `rate_limits/{uid}_{action}`: `started`, `count`; ใช้ transaction บน server ผู้ใช้เขียนเองไม่ได้
+- บัญชีเดิมได้ช่วงผ่อนผัน 14 วันตามวัน rollout สิทธิ์นี้และโทษพักโพสต์แก้จาก client ไม่ได้
+
+### รายงานและหลักฐานรุ่นใหม่
+
+- `post_reports/{sha256(sourcePath)}_{reporterUid}` คือ ID canonical รองรับ Feed และกลุ่มโดยไม่ชนกัน เก็บ `groupId`, `postOwnerId`, `reporterUid`, `reason`, `details`, `contentHash`, `status`, `processed`, `createdAt`
+- client รุ่นใหม่ใช้ callable `submitReport`; raw report อ่านได้เฉพาะสิทธิ์ admin เดิม เจ้าของโพสต์และเจ้าของกลุ่มไม่เห็น reporter UID
+- raw report จากแอปรุ่นเก่าสร้างได้ระหว่าง `clientUpgradeGraceUntil` แล้ว trigger `ingestLegacyReport` นำเข้า canonical queue ป้องกันนับซ้ำ ประวัติเดิมก่อนเปิด trigger ไม่ย้อนลงโทษอัตโนมัติ
+- `moderation_cases/{sha256(sourcePath)}`: `sourcePath`, `postId`, `groupId`, `ownerId`, `groupOwnerId`, `reason`, `details`, `reportCount`, `contentHash`, `snapshot`, `status`, `createdAt`, `updatedAt`; อาจมี `deadline`, `suspensionUntil`, `reviewedBy`, `reviewedAt`, `respondedAt`, `removedAt`, `evidencePaths`, `evidenceReadyHash`
+- สถานะ: `queued`, `warned`, `contested`, `changed`, `resolved`, `dismissed`, `removed`; อ่านได้เฉพาะเจ้าของโพสต์หรือเจ้าของกลุ่มนั้น backend เป็นผู้เปลี่ยนสถานะ
+- `moderation_archives/{caseId}` เก็บ snapshot และเวลา archive ก่อนนำโพสต์ออก ไม่มีสิทธิ์แก้จาก client
+- ไฟล์หลักฐานแยกที่ `moderation_evidence/{caseId}/{contentHash}/media|thumbnail` เป็น object ที่ client เขียนไม่ได้ อ่านได้เฉพาะผู้มีสิทธิ์ใน case ไม่ใช้ download token เดียวกับต้นฉบับ
+- ยังไม่มีงานล้างหลักฐานตามอายุ และการนำโพสต์ออกฝั่ง backend ยังเก็บสื่อ/ข้อมูลย่อยเดิมไว้โดยสิทธิ์เข้าถึงอิงเอกสารแม่ที่ถูกนำออก
+
+### การแชร์และการแจ้งเตือน
+
+- `posts/{postId}` และ `groups/{groupId}/posts/{postId}` อาจมี `sharedPostId`; เนื้อหาคือ caption ของผู้แชร์ ใช้ reaction/comment แยกจากต้นฉบับ
+- ข้อความแชร์: `type:'post'`, `senderId`, `text`, `sharedPostId`, `createdAt`; ยกเลิกข้อความแล้วล้าง sharedPostId ด้วย
+- backend สร้างแชร์ผ่าน `sharePost` โดยใช้ requestId เดิมสำหรับ retry และตรวจสิทธิ์ต้นฉบับ/ปลายทางใหม่ การอ่านการ์ดใช้สิทธิ์ของต้นฉบับปัจจุบัน
+- `notifications` เพิ่ม `type:'moderation'|'moderation_group'`, `caseId` และ `groupId` ถ้ามี ไม่แนบตัวตนผู้รายงาน
+- index ใหม่รวม `reaction + updatedAt` ของ collection reactions, คิว owner/updatedAt, groupOwner/groupId/updatedAt และ status/deadline รวม indexes ทั้งหมด 15 รายการ

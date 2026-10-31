@@ -1,3 +1,5 @@
+import 'trusted_service.dart';
+
 // จัดการการสนทนา ข้อความ การอ่านแล้ว/ยังไม่อ่าน และไฟล์แนบของบัญชีปัจจุบัน
 import 'dart:convert';
 
@@ -155,6 +157,7 @@ class ChatService {
         'type': 'deleted',
         'text': 'ยกเลิกข้อความนี้',
         'mediaPath': FieldValue.delete(),
+        'sharedPostId': FieldValue.delete(),
         'deletedAt': FieldValue.serverTimestamp(),
       });
       // A concurrent send changes the room version, causing this transaction
@@ -203,6 +206,8 @@ class ChatService {
     if (body.length > 2000) {
       throw const ChatServiceException('ข้อความต้องไม่เกิน 2,000 ตัวอักษร');
     }
+    final msg = _conversations.doc(conversationId).collection('messages').doc();
+    final ticket = await TrustedService.reserve(_firestore, msg.path);
     String? path;
     var type = 'text';
     if (attachment != null) {
@@ -219,7 +224,7 @@ class ChatService {
         ? 'ส่งรูปภาพให้คุณ'
         : 'ส่งวิดีโอให้คุณ';
     final batch = _firestore.batch();
-    final msg = ref.collection('messages').doc();
+    if (ticket != null) batch.delete(ticket);
     batch.set(msg, {
       'senderId': user.uid,
       'type': type,

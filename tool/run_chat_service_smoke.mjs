@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 // เปิด Flutter test entry point และ Chrome แบบ headless เพื่อทดสอบบริการแชทหรือ Social ตัวจริง
 // เก็บผล JSON/log ใน build/chat_diagnostics และปิดเฉพาะ process ที่สคริปต์นี้สร้าง
 import assert from 'node:assert/strict';
@@ -121,7 +122,9 @@ try {
   }
   console.log('Flutter service-check page ready; starting isolated headless Chrome.');
   // ใช้โปรไฟล์ชั่วคราวแยก เพื่อไม่ใช้เซสชันหรือการตั้งค่าของ Chrome ที่ผู้ใช้เปิดอยู่
-  chrome = spawn(process.env.CHROME_EXECUTABLE, [
+  const chromeExecutable = process.env.CHROME_EXECUTABLE ?? ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(existsSync);
+  if (!chromeExecutable) throw new Error('Set CHROME_EXECUTABLE to Chrome or Edge');
+  chrome = spawn(chromeExecutable, [
     '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-extensions',
     '--autoplay-policy=no-user-gesture-required',
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding',

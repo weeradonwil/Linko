@@ -32,44 +32,86 @@
       "collectionGroup": "post_reports",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "recipientId", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" }
+        {
+          "fieldPath": "recipientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "recipientId", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "recipientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "recipientId", "order": "ASCENDING" },
-        { "fieldPath": "isRead", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" }
+        {
+          "fieldPath": "recipientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isRead",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "recipientId", "order": "ASCENDING" },
-        { "fieldPath": "isRead", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "recipientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isRead",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -122,9 +164,78 @@
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "visibility", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reaction",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "moderation_cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "moderation_cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "groupOwnerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "groupId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "moderation_cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "deadline",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

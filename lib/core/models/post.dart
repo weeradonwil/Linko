@@ -18,6 +18,7 @@ class Post {
     this.thumbnailPath,
     this.editedAt,
     this.isDeleting = false,
+    this.sharedPostId,
   });
 
   /// ID ของ document ใน posts; ใช้ระบุรายการเวลาแก้ไขหรือลบ
@@ -38,6 +39,7 @@ class Post {
   /// Latest edit time; null means this post has not been edited.
   final DateTime? editedAt;
   final bool isDeleting;
+  final String? sharedPostId;
 
   /// คำค้นของโพสต์ ใช้แสดงเป็นป้ายกำกับและต่อยอดทำหน้าค้นหาตามแท็ก
   final List<String> tags;
@@ -81,6 +83,7 @@ class Post {
           readDate(data['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       editedAt: readDate(data['editedAt']),
       isDeleting: data['isDeleting'] == true,
+      sharedPostId: readOptionalString(data['sharedPostId']),
       tags: readStrings(data['tags']),
       // โพสต์รุ่นก่อนที่ยังไม่มี visibility ให้คงพฤติกรรมเดิมคือเป็นสาธารณะ
       visibility: readString(data['visibility'], 'public'),

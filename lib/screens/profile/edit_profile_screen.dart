@@ -1,3 +1,5 @@
+import '../../core/widgets/cover_editor.dart';
+
 // หน้าเดียวสำหรับแก้ชื่อ รูปโปรไฟล์ และคำแนะนำตัว
 import 'dart:typed_data';
 
@@ -14,12 +16,14 @@ class EditProfileScreen extends StatefulWidget {
     required this.initialName,
     required this.initialBio,
     this.initialAvatarPath,
+    this.initialCoverPath,
   });
 
   final User user;
   final String initialName;
   final String initialBio;
   final String? initialAvatarPath;
+  final String? initialCoverPath;
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -87,6 +91,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Uint8List? _coverBytes;
+  bool _removeCover = false;
+  Future<void> _chooseCover() async {
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 85,
+      );
+      if (file == null || !mounted) return;
+      if (await file.length() > 10 * 1024 * 1024) {
+        throw const FormatException('ภาพต้นฉบับต้องไม่เกิน 10 MB');
+      }
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(builder: (_) => CoverEditor(bytes: bytes)),
+      );
+      if (cropped != null && mounted) {
+        setState(() {
+          _coverBytes = cropped;
+          _removeCover = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('เลือกรูปปกไม่สำเร็จ ลองอีกครั้งนะ')),
+        );
+      }
+    }
+  }
+
   Future<void> _saveProfile() async {
     final name = _nameController.text.trim();
     final bio = _bioController.text.trim();
@@ -100,6 +138,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _saving = true);
 
     String? uploadedPath;
+    String? uploadedCover;
+    bool profileSaved = false;
     try {
       if (_selectedAvatar != null && _selectedAvatarBytes != null) {
         uploadedPath =
@@ -112,6 +152,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             );
       }
 
+      if (_coverBytes != null) {
+        uploadedCover =
+            'profile_covers/${widget.user.uid}/cover_${DateTime.now().microsecondsSinceEpoch}.png';
+        await FirebaseStorage.instance
+            .ref(uploadedCover)
+            .putData(_coverBytes!, SettableMetadata(contentType: 'image/png'));
+      }
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.user.uid)
@@ -120,8 +168,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             'displayNameLower': name.toLowerCase(),
             'bio': bio,
             'avatarPath': ?uploadedPath,
+            'coverPath': ?uploadedCover,
+            if (_removeCover) 'coverPath': FieldValue.delete(),
           });
 
+      profileSaved = true;
+      // เปลี่ยน path ให้สำเร็จก่อนค่อยลบไฟล์เก่า โปรไฟล์จะไม่ชี้ไปที่รูปที่หายไปแล้ว
+      if ((uploadedCover != null || _removeCover) &&
+          widget.initialCoverPath?.startsWith(
+                'profile_covers/${widget.user.uid}/',
+              ) ==
+              true) {
+        try {
+          await FirebaseStorage.instance.ref(widget.initialCoverPath!).delete();
+        } catch (_) {
+          /* เก็บไฟล์ค้างให้ backend ล้างต่อ */
+        }
+      }
       var authNameSynced = true;
       try {
         await widget.user.updateDisplayName(name);
@@ -146,7 +209,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(authNameSynced);
     } catch (error) {
-      if (uploadedPath != null) {
+      if (!profileSaved && uploadedCover != null) {
+        try {
+          await FirebaseStorage.instance.ref(uploadedCover).delete();
+        } catch (_) {
+          /* แสดง error ต้นเหตุแทน error ตอนล้างไฟล์ */
+        }
+      }
+      if (!profileSaved && uploadedPath != null) {
         try {
           await FirebaseStorage.instance.ref(uploadedPath).delete();
         } catch (_) {
@@ -200,6 +270,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
+          if (_coverBytes != null)
+            AspectRatio(
+              aspectRatio: 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Image.memory(_coverBytes!, fit: BoxFit.cover),
+              ),
+            )
+          else
+            ProfileCover(path: _removeCover ? null : widget.initialCoverPath),
+          Wrap(
+            spacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _saving ? null : _chooseCover,
+                icon: const Icon(Icons.panorama_outlined, size: 18),
+                label: const Text('เปลี่ยนรูปปก'),
+              ),
+              if (_coverBytes != null ||
+                  widget.initialCoverPath != null && !_removeCover)
+                TextButton(
+                  onPressed: _saving
+                      ? null
+                      : () => setState(() {
+                          _coverBytes = null;
+                          _removeCover = true;
+                        }),
+                  child: const Text('เอารูปปกออก'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),

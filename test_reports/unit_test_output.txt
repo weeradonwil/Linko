@@ -1,0 +1,12 @@
+00:00 +0: loading C:/flutter/social_app/test/unit/linko_unit_test.dart
+00:00 +0: TC01 supports seven unique reactions with correct emoji
+00:00 +1: TC02 unknown reaction returns null
+00:00 +2: TC03 text-only post is valid
+00:00 +3: TC04 media-only post is valid
+00:00 +4: TC05 blank post without media is invalid
+00:00 +5: TC06 pending privacy target overrides current profile setting
+00:00 +6: TC07 explicitly private post stays private for either profile mode
+00:00 +7: TC08 malformed post data uses safe defaults
+00:00 +8: TC09 malformed conversation data uses safe defaults
+00:00 +9: TC10 slower old request cannot overwrite latest result
+00:00 +10: All tests passed!

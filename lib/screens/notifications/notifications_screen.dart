@@ -1,3 +1,5 @@
+import '../profile/moderation_screen.dart';
+
 // แสดง social notifications และจัดการตัวกรอง/สถานะอ่านแล้วของผู้ใช้
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -70,6 +72,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (!item.isRead) await _service.markRead(item.id);
     } catch (_) {}
     if (!mounted) return;
+    if (item.type == 'moderation' || item.type == 'moderation_group') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ModerationScreen(
+            caseId: item.caseId,
+            groupId: item.type == 'moderation_group' ? item.groupId : null,
+          ),
+        ),
+      );
+      return;
+    }
     if ((item.type == 'comment' || item.type == 'like') &&
         item.postId != null) {
       try {
@@ -303,6 +316,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   String _notificationTitle(AppNotification item) => switch (item.type) {
+    'moderation' => 'คำเตือนและสิทธิ์โพสต์',
+    'moderation_group' => 'มีรายงานใหม่ในกลุ่มของคุณ',
     'comment' => '${item.actorName} แสดงความคิดเห็นในโพสต์ของคุณ',
     'like' => '${item.actorName} ถูกใจโพสต์ของคุณ',
     'follow' => '${item.actorName} เริ่มติดตามคุณ',

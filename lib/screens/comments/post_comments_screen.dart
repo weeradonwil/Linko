@@ -1,3 +1,5 @@
+import '../../core/widgets/content_visibility.dart';
+
 // หน้าความคิดเห็นของโพสต์ แสดงรายการสดและเปิดให้สมาชิกเพิ่ม/ลบคอมเมนต์ของตน
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -156,12 +158,15 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                     }
                     final comment =
                         comments[index - (comments.length >= _limit ? 1 : 0)];
-                    return _CommentTile(
-                      comment: comment,
-                      canDelete:
-                          comment.authorId == widget.user.uid ||
-                          widget.post.userId == widget.user.uid,
-                      onDelete: () => _delete(comment),
+                    return ContentVisibility(
+                      authorId: comment.authorId,
+                      child: _CommentTile(
+                        comment: comment,
+                        canDelete:
+                            comment.authorId == widget.user.uid ||
+                            widget.post.userId == widget.user.uid,
+                        onDelete: () => _delete(comment),
+                      ),
                     );
                   },
                 );

@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-31",
+  "version": "1.1.0+4",
+  "baseRevision": "f4d9d21",
+  "analyze": "No issues found",
+  "flutterTests": 73,
+  "backendPolicyTests": 14,
+  "browserChatFlows": 6,
+  "browserSocialFlows": 9,
+  "existingFirebaseSuites": 7,
+  "newFirebaseCases": 21,
+  "androidBuild": "passed debug",
+  "apkSha256": "165ec4f79ff956b26943dfd9ee63b6eabce363f5923354fa09ef3b749be9b361",
+  "manifest": [
+    "package: name='com.example.social_app' versionCode='4' versionName='1.1.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+    "sdkVersion:'24'",
+    "targetSdkVersion:'36'",
+    "application-label:'Linko'"
+  ],
+  "production": "Pending explicit production approval; no production data changed"
+}

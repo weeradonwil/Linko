@@ -1,3 +1,5 @@
+import 'trusted_service.dart';
+
 // จัดการสร้าง ค้นหา เข้าร่วม และโพสต์ข้อความในกลุ่ม
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -485,11 +487,13 @@ class GroupService {
     }
     final user = _auth.currentUser;
     final post = _groups.doc(groupId).collection('posts').doc();
+    final ticket = await TrustedService.reserve(_firestore, post.path);
     final media = attachment == null
         ? null
         : await _uploadGroupMedia(groupId, post.id, attachment);
     try {
-      await post.set({
+      final create = _firestore.batch();
+      create.set(post, {
         'authorId': _uid,
         'authorName': user?.displayName?.trim().isNotEmpty == true
             ? user!.displayName!.trim()
@@ -501,6 +505,8 @@ class GroupService {
         if (media != null) 'mediaPath': media.path,
         if (media?.thumbnailPath != null) 'thumbnailPath': media!.thumbnailPath,
       });
+      if (ticket != null) create.delete(ticket);
+      await create.commit();
     } catch (_) {
       if (media != null) {
         await _deleteStorageFile(media.path);
@@ -539,7 +545,9 @@ class GroupService {
         !PostPolicy.hasContent(
           text,
           hasMedia:
-              newAttachment != null || (!removeMedia && previousMedia != null),
+              data['sharedPostId'] is String ||
+              newAttachment != null ||
+              (!removeMedia && previousMedia != null),
         )) {
       throw const GroupServiceException(
         'กรุณาใส่ข้อความไม่เกิน 1,000 ตัวอักษรหรือแนบสื่อ',
@@ -643,25 +651,28 @@ class GroupService {
   }
 
   /// เก็บรายงานกลุ่มในคิวกลาง โดยแยก ID จากรายงานฟีดหลักและป้องกันการรายงานซ้ำ
-  Future<void> reportPost({
+  Future<bool> reportPost({
     required String groupId,
     required GroupPost post,
     required String reason,
     String details = '',
+    bool hidePost = true,
   }) async {
-    await _firestore
-        .collection('post_reports')
-        .doc('group_${groupId}_${post.id}_$_uid')
-        .set({
-          'groupId': groupId,
-          'postId': post.id,
-          'postOwnerId': post.authorId,
-          'reporterUid': _uid,
-          'reason': reason,
-          'details': details.trim(),
-          'status': 'open',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+    final result = await TrustedService.call('submitReport', {
+      'postId': post.id,
+      'groupId': groupId,
+      'reason': reason,
+      'details': details,
+    }, app: _firestore.app);
+    if (hidePost) {
+      await _firestore
+          .collection('users')
+          .doc(_uid)
+          .collection('hidden_posts')
+          .doc('group_${groupId}_${post.id}')
+          .set({'createdAt': FieldValue.serverTimestamp()});
+    }
+    return result['alreadyReported'] == true;
   }
 
   List<String> _cleanTags(List<String> tags) => tags

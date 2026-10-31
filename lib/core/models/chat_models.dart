@@ -79,6 +79,7 @@ class ChatMessage {
     required this.createdAt,
     this.mediaPath,
     this.isUnsent = false,
+    this.sharedPostId,
   });
   final String id;
   final String senderId;
@@ -87,6 +88,7 @@ class ChatMessage {
   final DateTime? createdAt;
   final String? mediaPath;
   final bool isUnsent;
+  final String? sharedPostId;
   factory ChatMessage.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> s,
   ) {
@@ -99,6 +101,7 @@ class ChatMessage {
       createdAt: _dateFrom(d['createdAt']),
       mediaPath: readOptionalString(d['mediaPath']),
       isUnsent: d['type'] == 'deleted',
+      sharedPostId: readOptionalString(d['sharedPostId']),
     );
   }
 }
@@ -117,6 +120,7 @@ class AppNotification {
     this.postId,
     this.commentId,
     this.groupId,
+    this.caseId,
   });
   final String id;
   final String actorId;
@@ -129,6 +133,7 @@ class AppNotification {
   final String? postId;
   final String? commentId;
   final String? groupId;
+  final String? caseId;
   factory AppNotification.fromSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> s,
   ) {
@@ -145,6 +150,7 @@ class AppNotification {
       postId: readOptionalString(d['postId']),
       commentId: readOptionalString(d['commentId']),
       groupId: readOptionalString(d['groupId']),
+      caseId: readOptionalString(d['caseId']),
     );
   }
 }

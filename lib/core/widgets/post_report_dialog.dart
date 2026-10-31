@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 class PostReportDraft {
-  const PostReportDraft(this.reason, this.details);
+  const PostReportDraft(this.reason, this.details, {this.hidePost = true});
   final String reason;
   final String details;
+  final bool hidePost;
 }
 
 class PostReportDialog extends StatefulWidget {
@@ -23,6 +24,7 @@ class _PostReportDialogState extends State<PostReportDialog> {
   ];
   final _details = TextEditingController();
   String _reason = _reasons.first;
+  bool _hide = true;
 
   @override
   void dispose() {
@@ -48,6 +50,12 @@ class _PostReportDialogState extends State<PostReportDialog> {
               if (r != null) setState(() => _reason = r);
             },
           ),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('ซ่อนโพสต์นี้จากหน้าของฉันด้วย'),
+            value: _hide,
+            onChanged: (value) => setState(() => _hide = value ?? true),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _details,
@@ -68,7 +76,7 @@ class _PostReportDialogState extends State<PostReportDialog> {
       FilledButton(
         onPressed: () => Navigator.pop(
           context,
-          PostReportDraft(_reason, _details.text.trim()),
+          PostReportDraft(_reason, _details.text.trim(), hidePost: _hide),
         ),
         child: const Text('ส่งรายงาน'),
       ),

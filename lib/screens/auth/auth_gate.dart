@@ -7,6 +7,7 @@ import '../../core/widgets/post_media.dart';
 import '../../core/widgets/auth_session_boundary.dart';
 import '../home/home.dart';
 import '../login/login.dart';
+import 'verify_email_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -90,7 +91,11 @@ class _AuthGateState extends State<AuthGate> {
                       body: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  return HomeScreen(user: user);
+                  return VerifiedAccountGate(
+                    key: ValueKey(user.uid),
+                    user: user,
+                    child: HomeScreen(user: user),
+                  );
                 },
               ),
       );

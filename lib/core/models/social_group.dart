@@ -88,6 +88,7 @@ class GroupPost {
     this.tags = const [],
     this.editedAt,
     this.isDeleting = false,
+    this.sharedPostId,
   });
 
   final String id;
@@ -101,6 +102,7 @@ class GroupPost {
   final List<String> tags;
   final DateTime? editedAt;
   final bool isDeleting;
+  final String? sharedPostId;
 
   /// แปลงเป็นข้อมูลกลาง เพื่อใช้ฟอร์มแก้ไขและหน้าความคิดเห็นร่วมกับฟีดหลัก
   Post asPost() => Post.fromData(id, {
@@ -115,6 +117,7 @@ class GroupPost {
     'mediaType': mediaType,
     'thumbnailPath': thumbnailPath,
     'isDeleting': isDeleting,
+    'sharedPostId': sharedPostId,
   });
 
   factory GroupPost.fromSnapshot(
@@ -136,6 +139,7 @@ class GroupPost {
           ? (data['editedAt'] as Timestamp).toDate()
           : null,
       isDeleting: data['isDeleting'] == true,
+      sharedPostId: readOptionalString(data['sharedPostId']),
     );
   }
 }

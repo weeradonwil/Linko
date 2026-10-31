@@ -11,7 +11,13 @@ class NotificationService {
       _firestore = firestore ?? FirebaseFirestore.instance;
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
-  static const _socialTypes = ['like', 'comment', 'follow'];
+  static const _socialTypes = [
+    'like',
+    'comment',
+    'follow',
+    'moderation',
+    'moderation_group',
+  ];
   // กรองด้วย recipientId ให้ตรงกับเงื่อนไขอ่านใน Firestore Rules
   /// ขยายช่วงรายการได้ เพื่อให้เปิดอ่านแจ้งเตือนเก่าที่ badge ยังนับอยู่ได้
   Stream<List<AppNotification>> watchNotifications({

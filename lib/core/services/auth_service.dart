@@ -48,6 +48,13 @@ class AuthService {
         'สร้างบัญชีแล้ว แต่บันทึกโปรไฟล์ไม่สำเร็จ กรุณาตรวจ Firestore Rules และลองเข้าสู่ระบบอีกครั้ง',
       );
     }
+    try {
+      // หากอีเมลส่งไม่ผ่าน บัญชียังอยู่และมีปุ่มส่งใหม่ในหน้ารอยืนยัน
+      await _auth.setLanguageCode('th');
+      await user.sendEmailVerification();
+    } on FirebaseAuthException {
+      // ไม่ย้อนลบบัญชีที่สมัครแล้ว เพราะการส่งอีเมลลองใหม่ได้
+    }
   }
 
   /// เข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ Firebase Authentication ตรวจสอบให้

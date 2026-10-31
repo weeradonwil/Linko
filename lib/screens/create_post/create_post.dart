@@ -1,3 +1,5 @@
+import '../../core/widgets/shared_post_card.dart';
+
 // ฟอร์มสร้างหรือแก้ไขโพสต์ พร้อมจัดการข้อความ แท็ก การมองเห็น และไฟล์แนบ
 import 'dart:typed_data';
 
@@ -285,6 +287,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   return tags.length > 5 ? 'ใส่แท็กได้ไม่เกิน 5 รายการ' : null;
                 },
               ),
+              if (widget.post?.sharedPostId != null)
+                SharedPostCard(postId: widget.post!.sharedPostId!),
               const SizedBox(height: 8),
               if (_attachment != null ||
                   (widget.post?.mediaPath != null && !_removeExistingMedia))

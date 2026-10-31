@@ -1,3 +1,6 @@
+import '../../core/widgets/shared_post_card.dart';
+import '../../core/widgets/content_visibility.dart';
+
 // หน้าสนทนา 1:1 แสดงข้อความใหม่แบบ real-time และส่งข้อความหรือสื่อแนบ
 import 'dart:async';
 
@@ -266,6 +269,21 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.maybePop(context),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'บล็อกผู้ใช้',
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              builder: (_) => SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: BlockUserButton(uid: widget.peerId),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.block),
+          ),
+        ],
         titleSpacing: 0,
         title: Row(
           children: [
@@ -542,6 +560,9 @@ class _MessageBubble extends StatelessWidget {
                                     ),
                                   ),
                                 ),
+                              if (!message.isUnsent &&
+                                  message.sharedPostId != null)
+                                SharedPostCard(postId: message.sharedPostId!),
                               if (message.text.isNotEmpty)
                                 Padding(
                                   padding: message.mediaPath == null

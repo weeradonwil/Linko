@@ -1,3 +1,5 @@
+import 'trusted_service.dart';
+
 // รวมการเข้าถึง posts และ post_reports รวมถึงอัปโหลด/ลบสื่อที่เป็นของโพสต์
 import 'dart:async';
 
@@ -38,9 +40,6 @@ class PostService {
 
   CollectionReference<Map<String, dynamic>> get _posts =>
       _firestore.collection('posts');
-
-  CollectionReference<Map<String, dynamic>> get _reports =>
-      _firestore.collection('post_reports');
 
   /// อ่านโพสต์สาธารณะพร้อมโพสต์ส่วนตัวของผู้ใช้ปัจจุบัน เรียงใหม่ไปเก่า
   /// Filter.or ทำให้เงื่อนไขที่ส่งไป Firestore ตรงกับสิทธิ์ใน Rules
@@ -310,13 +309,15 @@ class PostService {
     }
 
     final postRef = _posts.doc();
+    final ticket = await TrustedService.reserve(_firestore, postRef.path);
     final media = attachment == null
         ? null
         : await _uploadAttachment(postRef.id, attachment);
     final name = user.displayName?.trim();
 
     try {
-      await postRef.set({
+      final create = _firestore.batch();
+      create.set(postRef, {
         'userId': user.uid,
         'authorName': (name == null || name.isEmpty) ? 'สมาชิก' : name,
         'content': cleanContent,
@@ -329,6 +330,8 @@ class PostService {
         if (media != null) ...{'mediaPath': media.path},
         if (media?.thumbnailPath != null) 'thumbnailPath': media!.thumbnailPath,
       });
+      if (ticket != null) create.delete(ticket);
+      await create.commit();
     } catch (_) {
       // ถ้าบันทึกข้อมูลโพสต์ไม่ได้ ให้ลบไฟล์ที่เพิ่งอัปโหลดเพื่อไม่ทิ้งไฟล์กำพร้า
       if (media != null) {
@@ -384,7 +387,10 @@ class PostService {
     final previousThumbnailPath = readOptionalString(
       existing.data()?['thumbnailPath'],
     );
-    if (!PostPolicy.hasContent(cleanContent, hasMedia: hasMedia)) {
+    if (!PostPolicy.hasContent(
+      cleanContent,
+      hasMedia: hasMedia || existing.data()?['sharedPostId'] is String,
+    )) {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
     }
 
@@ -501,22 +507,26 @@ class PostService {
   }
 
   /// บันทึกรายงานหนึ่งรายการต่อผู้ใช้ต่อโพสต์ ป้องกันการส่งซ้ำโดยไม่ตั้งใจ
-  Future<void> reportPost({
+  Future<bool> reportPost({
     required Post post,
     required String reason,
     String details = '',
+    bool hidePost = true,
   }) async {
-    final reporter = _currentUser;
-    final reportId = '${post.id}_${reporter.uid}';
-    await _reports.doc(reportId).set({
+    final result = await TrustedService.call('submitReport', {
       'postId': post.id,
-      'postOwnerId': post.userId,
-      'reporterUid': reporter.uid,
       'reason': reason,
-      'details': details.trim(),
-      'status': 'open',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      'details': details,
+    }, app: _firestore.app);
+    if (hidePost) {
+      await _firestore
+          .collection('users')
+          .doc(_currentUser.uid)
+          .collection('hidden_posts')
+          .doc(post.id)
+          .set({'createdAt': FieldValue.serverTimestamp()});
+    }
+    return result['alreadyReported'] == true;
   }
 
   /// Removes a reported post and its media and child documents for an admin.

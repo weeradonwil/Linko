@@ -1,3 +1,9 @@
+import '../../core/widgets/shared_post_card.dart';
+import '../../core/widgets/cover_editor.dart';
+import 'moderation_screen.dart';
+import '../../core/widgets/content_visibility.dart';
+import 'blocked_users_screen.dart';
+
 // แสดงโปรไฟล์ โพสต์ และความสัมพันธ์ผู้ติดตามของสมาชิก
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -56,6 +62,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String bio,
     required String? avatarPath,
   }) async {
+    final currentCover =
+        (await _firestore.collection('users').doc(_profileUid).get())
+                .data()?['coverPath']
+            as String?;
+    if (!mounted) return;
     final authNameSynced = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => EditProfileScreen(
@@ -63,6 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           initialName: name,
           initialBio: bio,
           initialAvatarPath: avatarPath,
+          initialCoverPath: currentCover,
         ),
       ),
     );
@@ -186,7 +198,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final colors = Theme.of(context).colorScheme;
     final profile = _firestore.collection('users').doc(_profileUid);
     return Scaffold(
-      appBar: AppBar(title: const Text('โปรไฟล์')),
+      appBar: AppBar(
+        title: const Text('โปรไฟล์'),
+        actions: [
+          if (_isOwnProfile)
+            IconButton(
+              tooltip: 'คำเตือนโพสต์',
+              icon: const Icon(Icons.gpp_maybe_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ModerationScreen(),
+                ),
+              ),
+            ),
+          if (_isOwnProfile)
+            IconButton(
+              tooltip: 'บัญชีที่บล็อก',
+              icon: const Icon(Icons.block),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const BlockedUsersScreen(),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: profile.snapshots(),
         builder: (context, snapshot) {
@@ -218,6 +254,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
                   child: Column(
                     children: [
+                      ProfileCover(
+                        path: readOptionalString(data['coverPath']),
+                        ownerUid: _profileUid,
+                        isPrivate: isPrivate,
+                      ),
+                      const SizedBox(height: 16),
                       FutureBuilder<String>(
                         future: avatarPath == null || avatarPath.isEmpty
                             ? null
@@ -244,6 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(name, style: Theme.of(context).textTheme.titleLarge),
+                      if (!_isOwnProfile) BlockUserButton(uid: _profileUid),
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(bio, textAlign: TextAlign.center),
@@ -474,7 +517,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-              _buildProfilePosts(isPrivate),
+              ContentVisibility(
+                authorId: _profileUid,
+                child: _buildProfilePosts(isPrivate),
+              ),
             ],
           );
         },
@@ -830,6 +876,15 @@ class _ProfilePost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (post.sharedPostId != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (post.content.isNotEmpty) Text(post.content),
+          SharedPostCard(postId: post.sharedPostId!),
+        ],
+      );
+    }
     if (post.mediaPath == null) return _buildTextPost(context);
 
     // โพสต์ที่มีสื่อคงการ์ดรูปแบบเดิมไว้ เพื่อไม่เปลี่ยนการแสดงภาพและวิดีโอ

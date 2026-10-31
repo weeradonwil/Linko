@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-10-30T18:25:12+07:00",
+  "finished_at": "2026-10-30T18:25:24+07:00",
+  "base_revision": "f4d9d21",
+  "flutter_version": "3.47.0",
+  "dart_version": "3.13.0",
+  "platform": "win32",
+  "target": "test/unit/linko_unit_test.dart",
+  "command": [
+    "C:\\Users\\Admin\\flutter\\bin\\cache\\dart-sdk\\bin\\dart.exe",
+    "C:\\Users\\Admin\\flutter\\bin\\cache\\flutter_tools.snapshot",
+    "--suppress-analytics",
+    "test",
+    "--no-pub",
+    "--reporter",
+    "expanded",
+    "test/unit/linko_unit_test.dart"
+  ],
+  "reproduce_command": "flutter test --no-pub --reporter expanded test/unit/linko_unit_test.dart",
+  "exit_code": 0
+}

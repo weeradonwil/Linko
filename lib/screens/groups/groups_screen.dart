@@ -1,3 +1,5 @@
+import '../profile/moderation_screen.dart';
+
 // รายการกลุ่มที่ค้นพบได้ พร้อมสร้างกลุ่มและเปิดหน้าสนทนาในกลุ่ม
 import 'dart:async';
 
@@ -435,6 +437,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       appBar: AppBar(
         title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          if (isOwner)
+            IconButton(
+              tooltip: 'รายงานในกลุ่ม',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ModerationScreen(groupId: group.id),
+                ),
+              ),
+              icon: const Icon(Icons.flag_outlined),
+            ),
           if (isOwner || _isAdmin)
             IconButton(
               tooltip: 'จัดการกลุ่ม',

@@ -7,6 +7,73 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // เปิด enforcement หลังย้ายบัญชีเก่าแล้ว config นี้เขียนได้จาก backend เท่านั้น
+    function securityEnabled(key) {
+      return exists(/databases/$(database)/documents/app_config/security) &&
+        get(/databases/$(database)/documents/app_config/security).data.get(key, false) == true;
+    }
+    function verifiedMember() {
+      return signedIn() && (!securityEnabled('verificationRequired') ||
+        request.auth.token.get('email_verified', false) == true ||
+        (exists(/databases/$(database)/documents/account_state/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/account_state/$(request.auth.uid)).data.get('verificationGraceUntil', request.time) > request.time));
+    }
+    function notBlocked(peer) {
+      return signedIn() && (peer == request.auth.uid ||
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)/blocks/$(peer)) &&
+         !exists(/databases/$(database)/documents/users/$(peer)/blocks/$(request.auth.uid))));
+    }
+    function canPost() {
+      return verifiedMember() && (!exists(/databases/$(database)/documents/account_state/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/account_state/$(request.auth.uid)).data.get('postingSuspendedUntil', request.time) <= request.time);
+    }
+    function canPostInGroup(groupId) {
+      let key = groupId + '_' + request.auth.uid;
+      return canPost() && (!exists(/databases/$(database)/documents/group_account_state/$(key)) ||
+        get(/databases/$(database)/documents/group_account_state/$(key)).data.get('postingSuspendedUntil', request.time) <= request.time);
+    }
+    // บัญชีเดิมมีเวลาย้ายมาแอปรุ่นใหม่ แต่โทษพักโพสต์ยังบังคับเสมอ
+    function clientUpgradeGrace() {
+      return signedIn() && exists(/databases/$(database)/documents/account_state/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/account_state/$(request.auth.uid)).data.get('clientUpgradeGraceUntil', request.time) > request.time;
+    }
+    function validWriteTicket(path, itemId) {
+      let key = request.auth.uid + '_' + itemId;
+      let ticket = /databases/$(database)/documents/write_tickets/$(key);
+      return !securityEnabled('writeTicketsRequired') || clientUpgradeGrace() ||
+        (exists(ticket) && !existsAfter(ticket) && get(ticket).data.uid == request.auth.uid &&
+         get(ticket).data.targetPath == path && get(ticket).data.expiresAt > request.time);
+    }
+
+    match /app_config/{name} { allow read: if signedIn(); allow write: if false; }
+    match /account_state/{uid} { allow read: if signedIn() && request.auth.uid == uid; allow write: if false; }
+    match /group_account_state/{key} { allow read: if signedIn() && resource.data.get('uid', '') == request.auth.uid; allow write: if false; }
+    match /write_tickets/{key} {
+      allow read, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if false;
+    }
+    match /block_edges/{edgeId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create: if verifiedMember() && request.resource.data.actorId == request.auth.uid &&
+        edgeId == request.auth.uid + '_' + request.resource.data.targetId &&
+        request.resource.data.targetId != request.auth.uid &&
+        request.resource.data.keys().hasOnly(['actorId', 'targetId', 'participants', 'createdAt']) &&
+        request.resource.data.participants == [request.auth.uid, request.resource.data.targetId] &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/blocks/$(request.resource.data.targetId));
+      allow delete: if signedIn() && resource.data.actorId == request.auth.uid;
+      allow update: if false;
+    }
+    // เคสให้ดูได้เฉพาะเจ้าของโพสต์และเจ้าของกลุ่ม ไม่เผย UID ของผู้รายงาน
+    match /moderation_cases/{caseId} {
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || resource.data.groupOwnerId == request.auth.uid);
+      allow write: if false;
+    }
+    match /moderation_archives/{caseId} {
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || resource.data.groupOwnerId == request.auth.uid);
+      allow write: if false;
+    }
+
     function isAdmin() {
       return signedIn() && request.auth.token.get('admin', false) == true;
     }
@@ -56,6 +123,7 @@ service cloud.firestore {
         data.displayNameLower is string && data.displayNameLower.size() <= 60 &&
         data.bio is string && data.bio.size() <= 160 && data.isPrivate is bool &&
         data.createdAt is timestamp &&
+        (!('coverPath' in data) || (data.coverPath is string && data.coverPath.matches('profile_covers/' + userId + '/[^/]+'))) &&
         (!('privacyTarget' in data) || data.privacyTarget is bool) &&
         (!('avatarPath' in data) ||
           (data.avatarPath is string && data.avatarPath.matches('profile_images/' + userId + '/[^/]+')));
@@ -94,14 +162,14 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == userId &&
         request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'displayNameLower', 'bio', 'isPrivate',
-          'avatarPath', 'createdAt', 'updatedAt'
+          'avatarPath', 'coverPath', 'createdAt', 'updatedAt'
         ]) && validProfileData(request.resource.data, userId) &&
         request.resource.data.createdAt == request.time &&
         (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
       allow delete: if signedIn() && request.auth.uid == userId;
       allow update: if signedIn() && request.auth.uid == userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'displayNameLower', 'isPrivate', 'avatarPath', 'bio',
+          'displayName', 'displayNameLower', 'isPrivate', 'avatarPath', 'coverPath', 'bio',
           'uid', 'createdAt', 'updatedAt', 'privacyTarget'
         ]) &&
         validProfileData(request.resource.data, userId) &&
@@ -111,10 +179,27 @@ service cloud.firestore {
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) ||
          request.resource.data.updatedAt == request.time);
 
+      match /blocks/{peer} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create: if verifiedMember() && request.auth.uid == userId && peer != userId &&
+          exists(/databases/$(database)/documents/users/$(peer)) &&
+          request.resource.data.keys().hasOnly(['uid', 'createdAt']) && request.resource.data.uid == peer &&
+          request.resource.data.createdAt == request.time &&
+          existsAfter(/databases/$(database)/documents/block_edges/$(userId + '_' + peer));
+        allow delete: if signedIn() && request.auth.uid == userId;
+        allow update: if false;
+      }
+      match /hidden_posts/{key} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create, update: if verifiedMember() && request.auth.uid == userId &&
+          request.resource.data.keys().hasOnly(['createdAt']) && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
+
       // สมาชิกอ่านความสัมพันธ์ได้ แต่สร้าง/ลบได้เฉพาะความสัมพันธ์ของตนเอง
       match /followers/{followerUid} {
         allow read: if signedIn();
-        allow create: if signedIn() &&
+        allow create: if verifiedMember() && notBlocked(userId == request.auth.uid ? request.resource.data.uid : userId) &&
           followerUid != userId &&
           exists(/databases/$(database)/documents/users/$(userId)) &&
           request.resource.data.keys().hasOnly(['uid', 'createdAt']) &&
@@ -131,7 +216,7 @@ service cloud.firestore {
 
       match /following/{followedUid} {
         allow read: if signedIn();
-        allow create: if signedIn() &&
+        allow create: if verifiedMember() && notBlocked(userId == request.auth.uid ? request.resource.data.uid : userId) &&
           followedUid != userId &&
           exists(/databases/$(database)/documents/users/$(followedUid)) &&
           request.resource.data.keys().hasOnly(['uid', 'createdAt']) &&
@@ -141,13 +226,13 @@ service cloud.firestore {
             !isPrivateProfile(followedUid)) ||
            (request.auth.uid == followedUid &&
             exists(/databases/$(database)/documents/users/$(followedUid)/follow_requests/$(userId))));
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow delete: if signedIn() && (request.auth.uid == userId || (request.auth.uid == followedUid && !notBlocked(userId)));
         allow update: if false;
       }
 
       match /follow_requests/{requesterUid} {
         allow read: if signedIn() && (request.auth.uid == userId || request.auth.uid == requesterUid);
-        allow create: if signedIn() && request.auth.uid == requesterUid &&
+        allow create: if verifiedMember() && notBlocked(userId == request.auth.uid ? request.resource.data.uid : userId) && request.auth.uid == requesterUid &&
           requesterUid != userId &&
           isPrivateProfile(userId) &&
           !exists(/databases/$(database)/documents/users/$(userId)/followers/$(requesterUid)) &&
@@ -174,7 +259,7 @@ service cloud.firestore {
       allow list: if signedIn() && resource.data.visibility == 'followers' &&
         isApprovedFollower(resource.data.userId);
 
-      allow create: if signedIn() &&
+      allow create: if canPost() && validWriteTicket('posts/' + postId, postId) &&
         request.resource.data.keys().hasAll([
           'userId', 'authorName', 'content', 'tags', 'visibility',
           'createdAt', 'updatedAt', 'mediaType'
@@ -217,7 +302,7 @@ service cloud.firestore {
         request.resource.data.content is string &&
         request.resource.data.content.size() <= 1000 &&
         validPostTags(request.resource.data.tags) &&
-        (request.resource.data.content.size() > 0 || request.resource.data.mediaType != 'none') &&
+        (request.resource.data.content.size() > 0 || request.resource.data.mediaType != 'none' || resource.data.get('sharedPostId', null) is string) &&
         request.resource.data.authorIsPrivate is bool &&
         validPostVisibility(request.resource.data) &&
         request.resource.data.mediaType in ['none', 'image', 'video'] &&
@@ -299,7 +384,7 @@ service cloud.firestore {
            get(/databases/$(database)/documents/groups/$(groupId)/posts/$(data.postId)).data.authorId == data.postOwnerId);
       }
       // รายงานเป็นข้อมูลส่วนตัว ผู้ใช้ส่งได้ แต่มีเพียงแอดมินที่เปิดดู/ปรับสถานะได้
-      allow create: if signedIn() &&
+      allow create: if verifiedMember() && (!securityEnabled('reportBackendRequired') || clientUpgradeGrace()) &&
         request.resource.data.keys().hasAll([
           'postId', 'postOwnerId', 'reporterUid', 'reason',
           'details', 'status', 'createdAt'
@@ -477,7 +562,7 @@ service cloud.firestore {
         (!exists(/databases/$(database)/documents/conversations/$(conversationId)) ||
          isParticipant());
       allow list: if isParticipant();
-      allow create: if signedIn() &&
+      allow create: if verifiedMember() && notBlocked(request.resource.data.participantIds[0]) && notBlocked(request.resource.data.participantIds[1]) &&
         request.resource.data.keys().hasAll(['participantIds','participantNames','unreadCounts','lastReadAt','createdAt','updatedAt']) &&
         request.resource.data.keys().hasOnly(['participantIds','participantNames','unreadCounts','lastReadAt','createdAt','updatedAt']) &&
         request.resource.data.participantIds is list &&
@@ -512,11 +597,11 @@ service cloud.firestore {
             parent.lastMessageAt == request.time;
         }
         allow read: if parentHasParticipant();
-        allow create: if parentHasParticipant() && updatesConversationSummary() &&
+        allow create: if verifiedMember() && parentHasParticipant() && notBlocked(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[0]) && notBlocked(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[1]) && validWriteTicket('conversations/' + conversationId + '/messages/' + messageId, messageId) && updatesConversationSummary() &&
           request.resource.data.keys().hasAll(['senderId','type','text','createdAt']) &&
           request.resource.data.keys().hasOnly(['senderId','type','text','mediaPath','createdAt']) &&
           request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.type in ['text','image','video'] &&
+          request.resource.data.type in ['text','image','video','post'] &&
           request.resource.data.text is string && request.resource.data.text.size() <= 2000 &&
           (request.resource.data.type != 'text' || request.resource.data.text.size() > 0) &&
           request.resource.data.createdAt == request.time &&
@@ -526,13 +611,13 @@ service cloud.firestore {
             request.resource.data.mediaPath.matches('chat_media/' + conversationId + '/' + request.auth.uid + '/[^/]+')));
         allow update: if parentHasParticipant() &&
           resource.data.senderId == request.auth.uid &&
-          resource.data.type in ['text','image','video'] &&
+          resource.data.type in ['text','image','video','post'] &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'type','text','mediaPath','deletedAt'
+            'type','text','mediaPath','sharedPostId','deletedAt'
           ]) &&
           request.resource.data.type == 'deleted' &&
           request.resource.data.text == 'ยกเลิกข้อความนี้' &&
-          !('mediaPath' in request.resource.data) &&
+          !('mediaPath' in request.resource.data) && !('sharedPostId' in request.resource.data) &&
           request.resource.data.deletedAt == request.time;
         allow delete: if false;
       }
@@ -822,7 +907,7 @@ service cloud.firestore {
         function validGroupPost(data) {
           return data.authorName is string && data.content is string && data.content.size() <= 1000 &&
             (!('tags' in data) || validPostTags(data.tags)) &&
-            (data.content.size() > 0 || data.mediaType != 'none') &&
+            (data.content.size() > 0 || data.mediaType != 'none' || data.get('sharedPostId', null) is string) &&
             data.mediaType in ['none', 'image', 'video'] &&
             ((data.mediaType == 'none' && !('mediaPath' in data) && !('thumbnailPath' in data)) ||
              (data.mediaType in ['image', 'video'] && data.mediaPath is string &&
@@ -832,7 +917,7 @@ service cloud.firestore {
                 data.thumbnailPath.matches('group_media/' + groupId + '/' + groupPostId + '/' + data.authorId + '/[^/]+')))));
         }
         allow read: if isGroupMember() || isGroupManager();
-        allow create: if isGroupMember() &&
+        allow create: if canPostInGroup(groupId) && validWriteTicket('groups/' + groupId + '/posts/' + groupPostId, groupPostId) && isGroupMember() &&
           get(groupPath()).data.get('isDeleting', false) != true &&
           request.resource.data.keys().hasAll([
             'authorId', 'authorName', 'content', 'createdAt', 'mediaType'
@@ -884,7 +969,7 @@ service cloud.firestore {
         // ความคิดเห็นอยู่ในกลุ่มเดียวกับโพสต์ และสืบทอดสิทธิ์สมาชิก/ผู้ดูแลของกลุ่ม
         match /comments/{commentId} {
           allow read: if isGroupMember() || isGroupManager();
-          allow create: if isGroupMember() && exists(postPath()) &&
+          allow create: if verifiedMember() && notBlocked(get(postPath()).data.authorId) && isGroupMember() && exists(postPath()) &&
             get(groupPath()).data.get('isDeleting', false) != true &&
             get(postPath()).data.get('isDeleting', false) != true &&
             request.resource.data.keys().hasAll(['authorId', 'authorName', 'content', 'createdAt']) &&
@@ -899,7 +984,7 @@ service cloud.firestore {
 
         match /reactions/{reactorUid} {
           allow read: if isGroupMember() || isGroupManager();
-          allow create, update: if isGroupMember() && request.auth.uid == reactorUid &&
+          allow create, update: if verifiedMember() && notBlocked(get(postPath()).data.authorId) && isGroupMember() && request.auth.uid == reactorUid &&
             get(groupPath()).data.get('isDeleting', false) != true &&
             exists(postPath()) && get(postPath()).data.get('isDeleting', false) != true &&
             request.resource.data.keys().hasOnly(['uid', 'reaction', 'updatedAt']) &&
