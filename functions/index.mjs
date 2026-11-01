@@ -310,12 +310,12 @@ export const sharePost = onCall(async request => {
   }
   return db.runTransaction(async tx => {
     const stateRef = db.doc(`account_state/${uid}`);
-    const refs = [db.doc(path), stateRef, db.doc(`rate_limits/${uid}_share`), db.doc(original.path), db.doc(`users/${original.ownerId}`)];
+    const refs = [db.doc(path), stateRef, db.doc(`rate_limits/${uid}_share`), db.doc(original.path)];
     if (destination === 'group') refs.push(db.doc(`group_account_state/${targetId}_${uid}`), db.doc(`groups/${targetId}`), db.doc(`groups/${targetId}/members/${uid}`));
     if (destination === 'chat') refs.push(db.doc(`conversations/${targetId}`));
-    const [exists, state, rate, fresh, originalProfile, groupState, group, membership] = await tx.getAll(...refs);
+    const [exists, state, rate, fresh, groupState, group, membership] = await tx.getAll(...refs);
     if (exists.exists) return { id: requestId };
-    if (!fresh.exists || fresh.data().visibility !== 'public' || fresh.data().isDeleting || originalProfile.data()?.isPrivate || typeof originalProfile.data()?.privacyTarget === 'boolean' && originalProfile.data().privacyTarget) fail('permission-denied', 'ต้นฉบับไม่พร้อมให้แชร์แล้ว');
+    if (!fresh.exists || fresh.data().visibility !== 'public' || fresh.data().isDeleting) fail('permission-denied', 'ต้นฉบับไม่พร้อมให้แชร์แล้ว');
     const now = Date.now();
     if (destination !== 'chat' && [state, groupState].some(value => value?.data()?.postingSuspendedUntil?.toMillis() > now)) fail('permission-denied', 'อยู่ระหว่างพักสิทธิ์โพสต์');
     if (destination === 'group' && (!membership?.exists || !group?.exists || group.data().isDeleting)) fail('permission-denied', 'กลุ่มไม่พร้อมรับโพสต์');
@@ -327,7 +327,7 @@ export const sharePost = onCall(async request => {
     if (!next) fail('resource-exhausted', 'แชร์เร็วไป รอสักครู่แล้วลองใหม่');
     tx.set(db.doc(`rate_limits/${uid}_share`), next);
     const common = { content: caption, sharedPostId: postId, createdAt: stamp(), mediaType: 'none', tags: [] };
-    if (destination === 'feed') tx.create(db.doc(path), { ...common, userId: uid, authorName: me?.displayName ?? 'สมาชิก', visibility: me?.isPrivate || me?.privacyTarget === true ? 'followers' : 'public', authorIsPrivate: me?.isPrivate || me?.privacyTarget === true });
+    if (destination === 'feed') tx.create(db.doc(path), { ...common, userId: uid, authorName: me?.displayName ?? 'สมาชิก', visibility: 'public', authorIsPrivate: me?.privacyTarget ?? me?.isPrivate ?? false });
     if (destination === 'group') tx.create(db.doc(path), { ...common, authorId: uid, authorName: me?.displayName ?? 'สมาชิก' });
     if (destination === 'chat') {
       tx.create(db.doc(path), { senderId: uid, type: 'post', text: caption, sharedPostId: postId, createdAt: stamp() });

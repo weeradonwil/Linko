@@ -266,56 +266,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
                   child: Column(
                     children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap:
-                            canOpenImages &&
-                                coverPath != null &&
-                                coverPath.isNotEmpty
-                            ? () => _openProfileImage(ProfileImageKind.cover)
-                            : null,
-                        child: ProfileCover(
-                          path: coverPath,
-                          ownerUid: _profileUid,
-                          isPrivate: isPrivate,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      InkResponse(
-                        customBorder: const CircleBorder(),
-                        onTap:
-                            canOpenImages &&
-                                avatarPath != null &&
-                                avatarPath.isNotEmpty
-                            ? () => _openProfileImage(ProfileImageKind.avatar)
-                            : null,
-                        child: FutureBuilder<String>(
-                          future: avatarPath == null || avatarPath.isEmpty
-                              ? null
-                              : FirebaseStorage.instance
-                                    .ref(avatarPath)
-                                    .getDownloadURL(),
-                          builder: (context, avatar) => CircleAvatar(
-                            radius: 40,
-                            backgroundColor: colors.primaryContainer,
-                            backgroundImage: avatar.data == null
-                                ? null
-                                : NetworkImage(avatar.data!),
-                            child: avatar.data == null
-                                ? Text(
-                                    (name.isEmpty ? '?' : name.characters.first)
-                                        .toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 32,
-                                      color: colors.onPrimaryContainer,
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final avatarRadius = (constraints.maxWidth * 0.12)
+                              .clamp(40.0, 144.0);
+                          return Column(
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  AspectRatio(
+                                    aspectRatio: 1.4,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(18),
+                                      onTap:
+                                          canOpenImages &&
+                                              coverPath != null &&
+                                              coverPath.isNotEmpty
+                                          ? () => _openProfileImage(
+                                              ProfileImageKind.cover,
+                                            )
+                                          : null,
+                                      child: ProfileCover(
+                                        path: coverPath,
+                                        ownerUid: _profileUid,
+                                        isPrivate: isPrivate,
+                                      ),
                                     ),
-                                  )
-                                : null,
-                          ),
-                        ),
+                                  ),
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: -avatarRadius,
+                                    child: Center(
+                                      child: InkResponse(
+                                        customBorder: const CircleBorder(),
+                                        onTap:
+                                            canOpenImages &&
+                                                avatarPath != null &&
+                                                avatarPath.isNotEmpty
+                                            ? () => _openProfileImage(
+                                                ProfileImageKind.avatar,
+                                              )
+                                            : null,
+                                        child: CircleAvatar(
+                                          radius: avatarRadius + 4,
+                                          backgroundColor: colors.surface,
+                                          child: FutureBuilder<String>(
+                                            future:
+                                                avatarPath == null ||
+                                                    avatarPath.isEmpty
+                                                ? null
+                                                : FirebaseStorage.instance
+                                                      .ref(avatarPath)
+                                                      .getDownloadURL(),
+                                            builder: (context, avatar) => CircleAvatar(
+                                              radius: avatarRadius,
+                                              backgroundColor:
+                                                  colors.primaryContainer,
+                                              backgroundImage:
+                                                  avatar.data == null
+                                                  ? null
+                                                  : NetworkImage(avatar.data!),
+                                              child: avatar.data == null
+                                                  ? Text(
+                                                      (name.isEmpty
+                                                              ? '?'
+                                                              : name
+                                                                    .characters
+                                                                    .first)
+                                                          .toUpperCase(),
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            avatarRadius * 0.8,
+                                                        color: colors
+                                                            .onPrimaryContainer,
+                                                      ),
+                                                    )
+                                                  : null,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: avatarRadius + 20),
+                              Text(
+                                name,
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                      const SizedBox(height: 12),
-                      Text(name, style: Theme.of(context).textTheme.titleLarge),
                       if (!_isOwnProfile) BlockUserButton(uid: _profileUid),
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 6),
@@ -394,9 +439,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           trailing: Switch.adaptive(
                             value: isPrivate,
-                            onChanged: _privacyBusy || privacyPending
-                                ? null
-                                : _togglePrivacy,
+                            onChanged: _privacyBusy ? null : _togglePrivacy,
                             // ให้ Material เลือกคู่สี thumb/track ตามธีม รวมสถานะปิดใช้งาน
                           ),
                         ),
@@ -549,7 +592,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               ContentVisibility(
                 authorId: _profileUid,
-                child: _buildProfilePosts(isPrivate),
+                child: _buildProfilePosts(),
               ),
             ],
           );
@@ -558,25 +601,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// ผู้ชมอื่นเห็นเฉพาะโพสต์ public; เจ้าของโปรไฟล์เห็นโพสต์ของตัวเองทั้งหมด
-  Widget _buildProfilePosts(bool isPrivate) {
-    if (_isOwnProfile) return _profilePostsList(isPrivate);
+  /// Public posts stay visible regardless of account privacy.
+  Widget _buildProfilePosts() {
+    if (_isOwnProfile) return _profilePostsList(includeFollowers: true);
     return StreamBuilder<bool>(
       stream: _followService.watchIsFollowing(_profileUid),
-      builder: (context, following) {
-        if (isPrivate && following.data != true) {
-          return const _ProfileMessage(
-            'บัญชีนี้เป็นส่วนตัว ส่งคำขอติดตามเพื่อดูโพสต์',
-          );
-        }
-        return _profilePostsList(isPrivate);
-      },
+      builder: (context, following) =>
+          _profilePostsList(includeFollowers: following.data == true),
     );
   }
 
-  Widget _profilePostsList(bool isPrivate) =>
+  Widget _profilePostsList({required bool includeFollowers}) =>
       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _postsStream(isPrivate),
+        stream: _postsStream(includeFollowers: includeFollowers),
         builder: (context, postsSnapshot) {
           if (postsSnapshot.hasError) {
             return const _ProfileMessage('โหลดโพสต์ไม่สำเร็จ');
@@ -627,15 +664,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
       );
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream(bool isPrivate) {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream({
+    required bool includeFollowers,
+  }) {
     Query<Map<String, dynamic>> query = _firestore
         .collection('posts')
         .where('userId', isEqualTo: _profileUid);
     if (!_isOwnProfile) {
-      query = query.where(
-        'visibility',
-        isEqualTo: isPrivate ? 'followers' : 'public',
-      );
+      query = includeFollowers
+          ? query.where('visibility', whereIn: ['public', 'followers'])
+          : query.where('visibility', isEqualTo: 'public');
     }
     return query
         .orderBy('createdAt', descending: true)

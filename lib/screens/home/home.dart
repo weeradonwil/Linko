@@ -4,6 +4,7 @@ import '../../core/widgets/share_post_sheet.dart';
 import '../../core/widgets/post_action_button.dart';
 import '../../core/widgets/reaction_people_sheet.dart';
 import '../../core/widgets/content_visibility.dart';
+import '../../core/widgets/member_avatar.dart';
 
 // หน้า Feed หลัก เชื่อมการโหลดโพสต์ การจัดการโพสต์ และทางลัดไปฟีเจอร์อื่น
 import 'dart:async';
@@ -289,64 +290,62 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         body: Column(
           children: [
-            // ซ่อนเฉพาะช่องสร้างโพสต์ตามการเลื่อน แถบ Linko ด้านบนอยู่ตามปกติ
-            ScrollHidingHeader(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Card(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => _openCreatePost(context),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .primary,
-                            foregroundColor: Theme.of(context)
-                                .colorScheme
-                                .onPrimary,
-                            child: Text(title.characters.first.toUpperCase()),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
+            // ให้ช่องสร้างโพสต์คงอยู่ด้านบนระหว่างเลื่อนฟีด
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Card(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _openCreatePost(context),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 25,
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .primary,
+                          foregroundColor: Theme.of(context)
+                              .colorScheme
+                              .onPrimary,
+                          child: Text(title.characters.first.toUpperCase()),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHigh,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
                                 color: Theme.of(context)
                                     .colorScheme
-                                    .surfaceContainerHigh,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outlineVariant,
-                                ),
-                              ),
-                              child: Text(
-                                'คุณกำลังคิดอะไรอยู่?',
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
+                                    .outlineVariant,
                               ),
                             ),
+                            child: Text(
+                              'คุณกำลังคิดอะไรอยู่?',
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.add_photo_alternate_outlined,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -574,10 +573,7 @@ class _PostCard extends StatelessWidget {
                 InkWell(
                   onTap: onAuthorTap,
                   borderRadius: BorderRadius.circular(22),
-                  child: CircleAvatar(
-                    radius: 20,
-                    child: Text(post.authorName.characters.first.toUpperCase()),
-                  ),
+                  child: MemberAvatar(uid: post.userId, radius: 20),
                 ),
                 const SizedBox(width: 10),
                 Expanded(

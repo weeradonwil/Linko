@@ -17,6 +17,7 @@ import '../../screens/comments/post_comments_screen.dart';
 import '../../screens/create_post/create_post.dart';
 import '../../screens/profile/profile.dart';
 import 'post_media.dart';
+import 'member_avatar.dart';
 import 'post_report_dialog.dart';
 import 'social_reaction_picker.dart';
 
@@ -151,6 +152,8 @@ class _GroupPostCardState extends State<GroupPostCard> {
             children: [
               Row(
                 children: [
+                  MemberAvatar(uid: post.authorId, radius: 20),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: InkWell(
                       onTap: () => Navigator.of(context).push(

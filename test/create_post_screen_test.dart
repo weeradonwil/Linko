@@ -226,12 +226,28 @@ void main() {
     await tester.enterText(find.byType(TextFormField).first, 'retry draft');
     await tester.tap(_save);
     await tester.pumpAndSettle();
-    expect(find.textContaining('ไม่มีสิทธิ์เข้าถึงข้อมูลนี้'), findsOneWidget);
+    expect(find.textContaining('Firebase Storage'), findsOneWidget);
     posts.failure = null;
     await tester.tap(_save);
     await tester.pumpAndSettle();
     expect(posts.calls, 2);
     expect(find.byType(CreatePostScreen), findsNothing);
+  });
+
+  testWidgets('Firestore permission error names the rules that rejected save', (
+    tester,
+  ) async {
+    final posts = _Posts()
+      ..failure = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+      );
+    await _open(tester, posts);
+    await tester.enterText(find.byType(TextFormField).first, 'draft');
+    await tester.tap(_save);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Firestore'), findsOneWidget);
+    expect(find.textContaining('Firestore Rules'), findsOneWidget);
   });
 
   testWidgets('rapid taps while saving do not create duplicate posts', (

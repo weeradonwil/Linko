@@ -8,12 +8,10 @@ class PostPolicy {
           : profile['isPrivate']) ==
       true;
 
-  static String audience(bool isPrivate, Object? visibility) =>
-      visibility == 'private'
-      ? 'private'
-      : isPrivate
-      ? 'followers'
-      : 'public';
+  /// Account privacy does not rewrite a post's chosen audience. The composer
+  /// only offers public/private, so legacy follower visibility returns to public.
+  static String audience(bool _, Object? visibility) =>
+      visibility == 'private' ? 'private' : 'public';
 
   static bool hasContent(String text, {required bool hasMedia}) =>
       text.trim().isNotEmpty || hasMedia;

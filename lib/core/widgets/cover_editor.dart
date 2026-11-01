@@ -1,13 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
-
-import '../services/follow_service.dart';
-
 import 'dart:typed_data';
 
-import '../utils/cover_crop.dart';
-
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../utils/cover_crop.dart';
 import 'post_media.dart';
 
 /// ใช้ภาพ 3:1 จริงทั้งตอน preview และตอนส่งออก จึงไม่ตัดรูปคนละตำแหน่งหลังบันทึก
@@ -100,19 +96,13 @@ class ProfileCover extends StatelessWidget {
                 child: Icon(Icons.landscape_outlined, size: 40),
               ),
             )
-          : PostMedia(path: path!, type: 'image'),
+          : PostMedia(path: path!, type: 'image', imageFit: BoxFit.cover),
     ),
   );
   @override
   Widget build(BuildContext context) {
-    if (!isPrivate ||
-        ownerUid == null ||
-        ownerUid == FirebaseAuth.instance.currentUser?.uid) {
-      return _image(context, true);
-    }
-    return StreamBuilder<bool>(
-      stream: FollowService().watchIsFollowing(ownerUid!),
-      builder: (context, snapshot) => _image(context, snapshot.data == true),
-    );
+    final isOwner = ownerUid != null &&
+        ownerUid == FirebaseAuth.instance.currentUser?.uid;
+    return _image(context, !isPrivate || isOwner);
   }
 }

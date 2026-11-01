@@ -159,48 +159,20 @@ class PostService {
     return controller.stream;
   }
 
-  /// A pending target makes new writes use the new audience. For a private
-  /// transition the visible profile flag changes only after every page is done.
-  /// Interrupted jobs retain their target and can be resumed after login.
+  /// Account privacy changes independently from post audiences.
   Future<void> updateProfilePrivacy(bool isPrivate) async {
     final userId = _currentUser.uid;
     final userRef = _firestore.collection('users').doc(userId);
-    final needed = await _firestore.runTransaction((transaction) async {
+    await _firestore.runTransaction((transaction) async {
       final profile =
           (await transaction.get(userRef)).data() ?? const <String, dynamic>{};
-      final pending = profile['privacyTarget'];
-      if (pending is bool && pending != isPrivate) {
-        throw const PostServiceException(
-          'กรุณาดำเนินการเปลี่ยนความเป็นส่วนตัวที่ค้างอยู่ให้เสร็จก่อน',
-        );
-      }
-      if (pending is! bool && (profile['isPrivate'] == true) == isPrivate) {
-        return false;
-      }
-      if (pending is! bool) {
-        transaction.update(userRef, {
-          'privacyTarget': isPrivate,
-          // Broaden the profile before broadening posts, never the reverse.
-          if (!isPrivate) 'isPrivate': false,
-        });
-      }
-      return true;
-    });
-    if (!needed) return;
-    await _migratePostAudiences(userId, isPrivate);
-    await _firestore.runTransaction((transaction) async {
-      final data = (await transaction.get(userRef)).data();
-      // Another device may already have completed the same resumable job.
-      if (data?['privacyTarget'] == null && data?['isPrivate'] == isPrivate) {
+      if ((profile['isPrivate'] == true) == isPrivate &&
+          profile['privacyTarget'] is! bool) {
         return;
-      }
-      if (data?['privacyTarget'] != isPrivate) {
-        throw const PostServiceException(
-          'สถานะความเป็นส่วนตัวเปลี่ยนระหว่างดำเนินการ กรุณาลองอีกครั้ง',
-        );
       }
       transaction.update(userRef, {
         'isPrivate': isPrivate,
+        // Clear targets left behind by older versions that migrated every post.
         'privacyTarget': FieldValue.delete(),
       });
     });
@@ -214,12 +186,11 @@ class PostService {
     final pending = userSnapshot.data()?['privacyTarget'];
     if (pending is bool) {
       await updateProfilePrivacy(pending);
-    } else {
-      await _migratePostAudiences(
-        userId,
-        userSnapshot.data()?['isPrivate'] == true,
-      );
     }
+    await _migratePostAudiences(
+      userId,
+      pending is bool ? pending : userSnapshot.data()?['isPrivate'] == true,
+    );
   }
 
   Future<void> _migratePostAudiences(String userId, bool isPrivate) async {
@@ -297,9 +268,7 @@ class PostService {
     final isPrivateProfile = PostPolicy.profileIsPrivate(
       ownerProfile.data() ?? const {},
     );
-    final effectiveVisibility = isPrivateProfile && visibility == 'public'
-        ? 'followers'
-        : _cleanVisibility(visibility);
+    final effectiveVisibility = _cleanVisibility(visibility);
     final cleanContent = content.trim();
     if (cleanContent.length > 1000) {
       throw const PostServiceException('โพสต์ต้องไม่เกิน 1,000 ตัวอักษร');
@@ -363,9 +332,7 @@ class PostService {
     final isPrivateProfile = PostPolicy.profileIsPrivate(
       ownerProfile.data() ?? const {},
     );
-    final effectiveVisibility = isPrivateProfile && visibility == 'public'
-        ? 'followers'
-        : _cleanVisibility(visibility);
+    final effectiveVisibility = _cleanVisibility(visibility);
     final cleanContent = content.trim();
     if (cleanContent.length > 1000 || (removeMedia && newAttachment != null)) {
       throw const PostServiceException('กรุณาตรวจความยาวข้อความและไฟล์แนบ');

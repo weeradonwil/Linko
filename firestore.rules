@@ -99,13 +99,8 @@ service cloud.firestore {
     }
 
     function validPostVisibility(postData) {
-      let ownerPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let owner = getAfter(ownerPath).data;
-      let privateProfile = owner.get('privacyTarget', owner.get('isPrivate', false)) == true;
-      return postData.visibility in ['public', 'private', 'followers'] &&
-        postData.get('authorIsPrivate', false) == privateProfile &&
-        ((privateProfile && postData.visibility in ['private', 'followers']) ||
-         (!privateProfile && postData.visibility in ['private', 'public']));
+      // Post visibility is selected per post and is independent from account privacy.
+      return postData.visibility in ['public', 'private', 'followers'];
     }
 
     function validPostTags(tags) {

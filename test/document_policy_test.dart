@@ -38,7 +38,7 @@ void main() {
     expect(PostPolicy.hasContent('Caption', hasMedia: false), isTrue);
   });
   test(
-    'privacy jobs apply the pending target and preserve explicit private posts',
+    'account privacy does not change a post selected public or private',
     () {
       expect(
         PostPolicy.profileIsPrivate({
@@ -54,8 +54,10 @@ void main() {
         }),
         isFalse,
       );
-      expect(PostPolicy.audience(true, 'public'), 'followers');
+      expect(PostPolicy.audience(true, 'public'), 'public');
+      expect(PostPolicy.audience(false, 'public'), 'public');
       expect(PostPolicy.audience(false, 'followers'), 'public');
+      expect(PostPolicy.audience(true, 'followers'), 'public');
       expect(PostPolicy.audience(true, 'private'), 'private');
       expect(PostPolicy.audience(false, 'private'), 'private');
     },

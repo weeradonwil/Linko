@@ -24,25 +24,28 @@ class PostMedia extends StatelessWidget {
     required this.path,
     required this.type,
     this.thumbnailPath,
+    this.imageFit = BoxFit.contain,
     super.key,
   });
 
   final String path;
   final String type;
   final String? thumbnailPath;
+  final BoxFit imageFit;
 
   @override
   Widget build(BuildContext context) {
     return type == 'video'
         ? _StorageVideo(path: path, thumbnailPath: thumbnailPath)
-        : _StorageImage(path: path);
+        : _StorageImage(path: path, fit: imageFit);
   }
 }
 
 class _StorageImage extends StatefulWidget {
-  const _StorageImage({required this.path});
+  const _StorageImage({required this.path, this.fit = BoxFit.contain});
 
   final String path;
+  final BoxFit fit;
 
   @override
   State<_StorageImage> createState() => _StorageImageState();
@@ -121,14 +124,16 @@ class _StorageImageState extends State<_StorageImage> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _MediaLoading();
         }
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.memory(
-            snapshot.data!,
-            width: double.infinity,
-            cacheWidth: 780,
-            cacheHeight: 570,
-            fit: BoxFit.cover,
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 480),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              snapshot.data!,
+              width: double.infinity,
+              cacheWidth: 780,
+              fit: widget.fit,
+            ),
           ),
         );
       },

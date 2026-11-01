@@ -25,10 +25,8 @@ service firebase.storage {
         (request.auth.uid == ownerUid ||
          (firestore.exists(postDocument()) &&
           firestore.get(postDocument()).data.userId == ownerUid &&
-          ((firestore.get(postDocument()).data.visibility == 'public' &&
-            firestore.get(postDocument()).data.get('authorIsPrivate', false) != true) ||
+          (firestore.get(postDocument()).data.visibility == 'public' ||
            (firestore.get(postDocument()).data.visibility == 'followers' &&
-            firestore.get(postDocument()).data.get('authorIsPrivate', false) == true &&
             firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid))))));
 
       // เจ้าของลบไฟล์ได้; การอัปโหลดต้องผ่าน MIME type และขนาดใน isValidMediaUpload()
@@ -48,12 +46,12 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Profile covers are readable by their owner, or signed-in users while public.
     match /profile_covers/{ownerUid}/{fileName} {
       function profile() { return /databases/(default)/documents/users/$(ownerUid); }
       allow read: if request.auth != null && firestore.exists(profile()) &&
         (request.auth.uid == ownerUid ||
-         firestore.get(profile()).data.get('privacyTarget', firestore.get(profile()).data.get('isPrivate', false)) != true ||
-         firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid)));
+         firestore.get(profile()).data.get('privacyTarget', firestore.get(profile()).data.get('isPrivate', false)) != true);
       allow write: if request.auth != null && request.auth.uid == ownerUid &&
         (request.resource == null || (request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType == 'image/png'));
     }

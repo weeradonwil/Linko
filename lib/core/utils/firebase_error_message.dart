@@ -19,6 +19,12 @@ String firebaseErrorMessage(Object? error, {required String action}) {
     switch (error.code) {
       case 'permission-denied':
       case 'unauthorized':
+        if (error.plugin == 'firebase_storage') {
+          return '$actionไม่สำเร็จ: Firebase Storage ปฏิเสธการอัปโหลดไฟล์ (ตรวจ Storage Rules, ชนิดไฟล์ และขนาดไฟล์)';
+        }
+        if (error.plugin == 'cloud_firestore') {
+          return '$actionไม่สำเร็จ: Firestore ปฏิเสธการบันทึก (permission-denied; ตรวจ Firestore Rules ที่ deploy ไว้)';
+        }
         // Firestore และ Storage ใช้รหัสสิทธิ์ต่างกัน; รหัสนี้ยังบอกไม่ได้ว่า deploy ขาด
         return '$actionไม่สำเร็จ: ไม่มีสิทธิ์เข้าถึงข้อมูลนี้';
       case 'failed-precondition':
