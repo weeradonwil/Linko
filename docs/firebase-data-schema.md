@@ -97,7 +97,7 @@
 
 ### โปรไฟล์และการบล็อก
 
-- `users/{uid}.coverPath` ชี้ PNG ที่ `profile_covers/{uid}/{fileName}` ขนาดไม่เกิน 5 MiB เจ้าของหรือผู้มีสิทธิ์ติดตามบัญชีส่วนตัวอ่านได้
+- `users/{uid}.coverPath` ชี้ PNG ที่ `profile_covers/{uid}/{fileName}` ขนาดไม่เกิน 5 MiB สมาชิกที่เข้าสู่ระบบอ่านรูปปกปัจจุบันได้ แม้ยังไม่ได้ติดตามบัญชีส่วนตัว
 - `users/{uid}/blocks/{peerUid}`: `uid` ของเป้าหมาย, `createdAt`; เจ้าของอ่าน/สร้าง/ลบได้
 - `block_edges/{actorUid}_{targetUid}`: `actorId`, `targetId`, `participants`, `createdAt`; อ่านได้เฉพาะคู่ที่เกี่ยวข้อง สร้าง/ลบพร้อมเอกสาร blocks แบบ atomic เพื่อให้ UI ซ่อนทั้งสองทิศทาง
 - `users/{uid}/hidden_posts/{postKey}`: `createdAt`; ใช้ postId สำหรับ Feed และ `group_{groupId}_{postId}` สำหรับกลุ่ม ซ่อนเฉพาะเจ้าของรายการ

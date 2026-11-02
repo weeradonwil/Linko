@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/cover_crop.dart';
@@ -76,20 +75,14 @@ class _CoverEditorState extends State<CoverEditor> {
 }
 
 class ProfileCover extends StatelessWidget {
-  const ProfileCover({
-    super.key,
-    required this.path,
-    this.ownerUid,
-    this.isPrivate = false,
-  });
+  const ProfileCover({super.key, required this.path});
   final String? path;
-  final String? ownerUid;
-  final bool isPrivate;
-  Widget _image(BuildContext context, bool allowed) => AspectRatio(
+  @override
+  Widget build(BuildContext context) => AspectRatio(
     aspectRatio: 3,
     child: ClipRRect(
       borderRadius: BorderRadius.circular(18),
-      child: path == null || !allowed
+      child: path == null
           ? ColoredBox(
               color: Theme.of(context).colorScheme.primaryContainer,
               child: const Center(
@@ -99,10 +92,4 @@ class ProfileCover extends StatelessWidget {
           : PostMedia(path: path!, type: 'image', imageFit: BoxFit.cover),
     ),
   );
-  @override
-  Widget build(BuildContext context) {
-    final isOwner = ownerUid != null &&
-        ownerUid == FirebaseAuth.instance.currentUser?.uid;
-    return _image(context, !isPrivate || isOwner);
-  }
 }

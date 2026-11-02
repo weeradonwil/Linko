@@ -32,7 +32,7 @@
 
 โค้ดทดสอบและรายงานเป็นไฟล์ที่เพิ่มใน workspace หลังโค้ดฐานข้างต้น ส่วนโค้ดแอปใน `lib/` ไม่ได้แก้ไขในงานนี้
 
-ครั้งนี้รัน Flutter tool ผ่าน Dart และ `flutter_tools.snapshot` ของ SDK ที่ติดตั้งอยู่ โดยใช้คำสั่ง `test --no-pub --reporter expanded test/unit/linko_unit_test.dart` รายการ argument จริงบันทึกใน [unit_test_run.json](unit_test_run.json) สามารถรันซ้ำผ่านคำสั่ง `flutter test` ตามขั้นตอนด้านล่างได้
+ครั้งนี้รัน Flutter tool ผ่าน Dart และ `flutter_tools.snapshot` ของ SDK ที่ติดตั้งอยู่ โดยใช้คำสั่ง `test --no-pub --reporter expanded test/unit/linko_unit_test.dart` รายการ argument จริงบันทึกใน [unit_test_run.json](../test_reports/unit_test_run.json) สามารถรันซ้ำผ่านคำสั่ง `flutter test` ตามขั้นตอนด้านล่างได้
 
 ## 3. สรุป Test Cases
 
@@ -326,7 +326,7 @@ void main() {
 
 ## 7. Output จากการรันจริง
 
-คัดลอกจาก [unit_test_output.txt](unit_test_output.txt) ซึ่งบันทึกจาก process ที่รันจริง ไม่มีการสร้างผลทดสอบจำลอง:
+คัดลอกจาก [unit_test_output.txt](../test_reports/unit_test_output.txt) ซึ่งบันทึกจาก process ที่รันจริง ไม่มีการสร้างผลทดสอบจำลอง:
 
 ```text
 00:00 +0: loading C:/flutter/social_app/test/unit/linko_unit_test.dart
@@ -357,7 +357,7 @@ void main() {
 
 ## 9. ไฟล์สำหรับส่งงาน
 
-- **รายงาน:** ไฟล์นี้ (`test_reports/UNIT_TEST_REPORT.md`) สามารถคัดลอกเนื้อหาไปจัดหน้าใน Word ตามรูปแบบรายวิชา
+- **รายงาน:** ไฟล์นี้ (`docs/unit-test-report-and-guide.md`) สามารถคัดลอกเนื้อหาไปจัดหน้าใน Word ตามรูปแบบรายวิชา
 - **โค้ด:** `test/unit/linko_unit_test.dart`
 - **ผลการรันจริง:** `test_reports/unit_test_output.txt`
 - **ข้อมูลรอบทดสอบ:** `test_reports/unit_test_run.json`

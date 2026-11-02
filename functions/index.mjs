@@ -315,6 +315,7 @@ export const sharePost = onCall(async request => {
     if (destination === 'chat') refs.push(db.doc(`conversations/${targetId}`));
     const [exists, state, rate, fresh, groupState, group, membership] = await tx.getAll(...refs);
     if (exists.exists) return { id: requestId };
+    // สิทธิ์แชร์ยึด visibility ของโพสต์ บัญชีส่วนตัวก็เลือกให้บางโพสต์เป็นสาธารณะได้
     if (!fresh.exists || fresh.data().visibility !== 'public' || fresh.data().isDeleting) fail('permission-denied', 'ต้นฉบับไม่พร้อมให้แชร์แล้ว');
     const now = Date.now();
     if (destination !== 'chat' && [state, groupState].some(value => value?.data()?.postingSuspendedUntil?.toMillis() > now)) fail('permission-denied', 'อยู่ระหว่างพักสิทธิ์โพสต์');

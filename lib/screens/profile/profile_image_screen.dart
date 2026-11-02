@@ -10,7 +10,7 @@ import '../../core/utils/document_values.dart';
 
 enum ProfileImageKind { avatar, cover }
 
-/// เปิดรูปจากโปรไฟล์จริง และหยุดให้คนอื่นดูเมื่อเจ้าของเปลี่ยนเป็นบัญชีส่วนตัว
+/// เปิดรูปจากโปรไฟล์จริง รูปปกอ่านได้เมื่อเข้าสู่ระบบ ส่วนรูปโปรไฟล์ขนาดใหญ่ยังดูตามสถานะบัญชี
 class ProfileImageScreen extends StatefulWidget {
   const ProfileImageScreen({
     super.key,
@@ -71,10 +71,11 @@ class _ProfileImageScreenState extends State<ProfileImageScreen> {
         final viewerUid = widget.readViewerUid != null
             ? widget.readViewerUid!()
             : FirebaseAuth.instance.currentUser?.uid;
-        // เจ้าของดูรูปตัวเองได้ คนอื่นต้องเป็นบัญชีสาธารณะ แม้ติดตามกันแล้วก็ตาม
+        // รูปปกแสดงให้สมาชิกที่เข้าสู่ระบบเห็นได้ แม้ยังไม่ได้ติดตามบัญชีส่วนตัว
         final allowed =
             viewerUid != null &&
-            (viewerUid == widget.ownerUid ||
+            (widget.kind == ProfileImageKind.cover ||
+                viewerUid == widget.ownerUid ||
                 !PostPolicy.profileIsPrivate(data));
         if (!allowed) {
           return const _ImageNotice(

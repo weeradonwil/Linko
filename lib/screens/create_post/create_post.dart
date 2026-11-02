@@ -12,6 +12,7 @@ import '../../core/services/post_service.dart';
 import '../../core/services/group_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/member_avatar.dart';
 
 /// หน้าสร้างและแก้ไขโพสต์ข้อความ พร้อมแท็ก ระดับการมองเห็น และสื่อหนึ่งไฟล์
 class CreatePostScreen extends StatefulWidget {
@@ -231,7 +232,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(child: Text(authorName.characters.first)),
+                  MemberAvatar(uid: widget.user.uid, radius: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -285,7 +286,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: const InputDecoration(
                   labelText: 'แท็ก',
                   hintText: '#ท่องเที่ยว, #อาหาร',
-                  helperText: 'ใส่แท็กได้สูงสุด 5 รายการ คั่นด้วยจุลภาค',
                   prefixIcon: Icon(Icons.tag),
                   border: OutlineInputBorder(),
                 ),
@@ -318,11 +318,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     label: const Text('เพิ่มวิดีโอ'),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'แนบได้ครั้งละ 1 ไฟล์: ภาพไม่เกิน 10 MB หรือวิดีโอไม่เกิน 50 MB',
-                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 20),
               FilledButton.icon(

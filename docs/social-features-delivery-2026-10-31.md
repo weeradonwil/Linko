@@ -111,7 +111,7 @@ APK ในเครื่อง: `build/app/outputs/flutter-apk/Linko-1.1.0-debu
 - ให้สิทธิ์ผ่อนผันบัญชีเดิม 10 บัญชีสำเร็จ เริ่ม 31 ตุลาคม 2026 เวลา 18:22:36 น. ถึง **14 พฤศจิกายน 2026 เวลา 18:22:36 น. (Asia/Bangkok)** ไม่เขียนทับโทษพักโพสต์เดิม
 - endpoint ทั้ง 5 ปฏิเสธคำขอที่ไม่ล็อกอินด้วย HTTP 401/UNAUTHENTICATED และ CORS preflight ผ่าน HTTP 204
 - worker ทั้ง 3 รันจริงหลัง activation และเขียน protected cursor ได้ ตรวจด้วย API แบบอ่านอย่างเดียว
-- ผลจริงอยู่ที่ [production-verification.json](test_reports/social_2026-10-31/production-verification.json)
+- ผลจริงอยู่ที่ [production-verification.json](../test_reports/social_2026-10-31/production-verification.json)
 
 ไม่สร้างโพสต์/แชท/รายงานทดสอบบน production ผลทดสอบหลายบัญชีและการจำลองครบกำหนดโทษอยู่บน emulators การลองใช้งานหลายบัญชีบนโทรศัพท์จริงยังต้องตรวจบนเครื่องเป้าหมาย
 

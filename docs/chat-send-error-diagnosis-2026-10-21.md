@@ -2,7 +2,7 @@
 
 > ประวัติจาก commit `1c60028`: ตาราง/เวลา deploy ด้านล่างเป็นผลของรุ่นวันที่ 21 ต.ค. ไม่ใช่หลักฐานว่า Rules หลังรวม audit วันที่ 22 ต.ค. ถูก deploy แล้ว สคริปต์เดิมเปลี่ยนชื่อเป็น `tool/chat_rules_diagnosis.mjs` และปรับ fixtures ให้ตรง schema/follow gate ปัจจุบัน ส่วนชุด regression audit อยู่ที่ `tool/chat_rules_emulator_test.mjs`
 
-หลัง merge วันที่ 22 ต.ค. รันทดสอบใหม่แล้ว: ชุดวินิจฉัย Rules ปัจจุบัน 25/25 และ ChatService จริงกับ Chrome/Emulator 6/6 ผ่าน รายละเอียดรวมใน `CHANGELOG_TESTING.md` ไม่มีการ deploy production ในรอบ merge
+หลัง merge วันที่ 22 ต.ค. รันทดสอบใหม่แล้ว: ชุดวินิจฉัย Rules ปัจจุบัน 25/25 และ ChatService จริงกับ Chrome/Emulator 6/6 ผ่าน รายละเอียดรวมใน `changes-and-test-results.md` ไม่มีการ deploy production ในรอบ merge
 
 ## สถานะหลังแก้และเผยแพร่
 

@@ -1,4 +1,5 @@
 import 'post_action_button.dart';
+import 'post_comment_count_button.dart';
 import 'content_visibility.dart';
 import 'shared_post_card.dart';
 import 'reaction_people_sheet.dart';
@@ -115,15 +116,17 @@ class _GroupPostCardState extends State<GroupPostCard> {
     });
   }
 
-  void _comments() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => PostCommentsScreen(
-        user: widget.user,
-        post: widget.post.asPost(),
-        groupId: widget.groupId,
+  Future<void> _comments() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PostCommentsScreen(
+          user: widget.user,
+          post: widget.post.asPost(),
+          groupId: widget.groupId,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +155,18 @@ class _GroupPostCardState extends State<GroupPostCard> {
             children: [
               Row(
                 children: [
-                  MemberAvatar(uid: post.authorId, radius: 20),
+                  InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ProfileScreen(
+                          user: widget.user,
+                          profileUid: post.authorId,
+                        ),
+                      ),
+                    ),
+                    customBorder: const CircleBorder(),
+                    child: MemberAvatar(uid: post.authorId, radius: 20),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: InkWell(
@@ -325,9 +339,9 @@ class _GroupPostCardState extends State<GroupPostCard> {
                             ),
                           ),
                           Expanded(
-                            child: PostActionButton(
-                              icon: Icons.mode_comment_outlined,
-                              label: 'ความคิดเห็น',
+                            child: PostCommentCountButton(
+                              postId: post.id,
+                              groupId: widget.groupId,
                               onPressed: _comments,
                             ),
                           ),

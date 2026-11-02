@@ -2,7 +2,7 @@
 
 ## สถานะ
 
-ตั้ง CORS จาก `storage.cors.json` บน bucket จริงแล้ว หลังผู้ใช้อนุมัติเมื่อ 21 ตุลาคม 2026 เวลา **13:33:29 น. (Asia/Bangkok)** และทดสอบรูปเดิมด้วย Chrome ผ่านแล้ว
+ตั้ง CORS จาก `config/storage.cors.json` บน bucket จริงแล้ว หลังผู้ใช้อนุมัติเมื่อ 21 ตุลาคม 2026 เวลา **13:33:29 น. (Asia/Bangkok)** และทดสอบรูปเดิมด้วย Chrome ผ่านแล้ว
 
 ภาพในโพสต์ตามที่ผู้ใช้ส่งมามีไฟล์อยู่จริง ขนาด 3,302,621 ไบต์ เป็น JPEG ที่ถอดรหัสได้ขนาด 7680 × 4324 พิกเซล ข้อมูลโพสต์ระบุ `mediaType: image`, `visibility: public` และ `authorIsPrivate: false` ถูกต้อง
 
@@ -10,7 +10,7 @@
 
 | การตรวจ | ผล |
 |---|---|
-| อ่านค่า CORS กลับจาก bucket จริง | ตรงกับ `storage.cors.json`; metageneration จาก 4 เป็น 5 |
+| อ่านค่า CORS กลับจาก bucket จริง | ตรงกับ `config/storage.cors.json`; metageneration จาก 4 เป็น 5 |
 | ดาวน์โหลดรูปเดิมจาก Firebase พร้อม Origin ของ localhost | HTTP 200 และ `Access-Control-Allow-Origin: *` |
 | ตรวจไบต์ไฟล์ | ครบ 3,302,621 ไบต์ และ MD5 ตรงกับ metadata ของไฟล์ |
 | Chrome: `fetch()` อ่านไบต์จาก URL รูปจริง | ผ่าน HTTP 200 ได้ครบ 3,302,621 ไบต์ |
@@ -50,7 +50,7 @@ Firebase ระบุว่าการดาวน์โหลดข้อม�
 
 ## การตั้งค่าที่ใช้แก้
 
-ใช้ [`storage.cors.json`](../storage.cors.json) ตั้ง CORS ของ bucket เป้าหมาย:
+ใช้ [`config/storage.cors.json`](../config/storage.cors.json) ตั้ง CORS ของ bucket เป้าหมาย:
 
 - `origin: ["*"]`: รองรับ origin ของเว็บ รวม localhost ที่ Flutter เปลี่ยน port ในแต่ละครั้ง ตามตัวอย่างการตั้งค่าในเอกสาร Firebase
 - `method: ["GET", "HEAD"]`: อนุญาตเฉพาะการอ่านข้าม origin สำหรับสื่อ ไม่เพิ่มวิธีเขียนหรือลบไฟล์
@@ -62,7 +62,7 @@ CORS กำหนดการอ่านข้าม origin ของเบร�
 หากติดตั้ง Google Cloud CLI ไว้แล้ว ใช้คำสั่งจากโฟลเดอร์โปรเจกต์:
 
 ```powershell
-gcloud storage buckets update gs://social-network-app-c22eb.firebasestorage.app --cors-file=storage.cors.json
+gcloud storage buckets update gs://social-network-app-c22eb.firebasestorage.app --cors-file=config/storage.cors.json
 ```
 
 อีกทางหนึ่งคือ Cloud Console → Storage → bucket นี้ → Configuration → Cross-origin resource sharing โดยใส่ค่าเดียวกับไฟล์ ต้องบันทึกทั้ง configuration และหน้าตั้งค่าให้เสร็จ

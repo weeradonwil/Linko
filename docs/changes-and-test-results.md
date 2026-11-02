@@ -17,7 +17,7 @@
 - เพิ่มหน้าดูรูปโปรไฟล์/ภาพปกพร้อมซูมและตรวจ privacy ซ้ำ บัญชีส่วนตัวเปิดให้เจ้าของดูได้เท่านั้น; แก้ปุ่มลองโหลดรูปใหม่
 - Analyzer ผ่าน; Flutter 101/101, local plugin 2/2, backend 14/14, Chrome chat 6/6, social 10/10, Rules 7 suites, feature integration 25/25 และ Android native 5/5 ผ่าน
 - Android debug build ผ่านและติดตั้งคืนเป็น Linko 1.1.0+4 พร้อมข้อมูลบัญชีเดิม ทดสอบการเขียนด้วย demo emulators ไม่สร้างโพสต์/รายงานทดสอบบน production
-- รายงาน ขอบเขต coverage และงานพัฒนาต่ออยู่ใน [SYSTEM_TEST_REPORT_2026-10-31.md](SYSTEM_TEST_REPORT_2026-10-31.md); ผลจริงอยู่ใน [test_reports/system_2026-10-31/summary.json](test_reports/system_2026-10-31/summary.json)
+- รายงาน ขอบเขต coverage และงานพัฒนาต่ออยู่ใน [system-test-and-post-creation-fix-2026-10-31.md](system-test-and-post-creation-fix-2026-10-31.md); ผลจริงอยู่ใน [test_reports/system_2026-10-31/summary.json](../test_reports/system_2026-10-31/summary.json)
 
 
 ## 2026-10-31 — Linko 1.1.0+4: Email, Block, Report, Reaction, Share และภาพปก
@@ -30,7 +30,7 @@
 - แชร์ต้นฉบับสาธารณะลง Feed/กลุ่ม/แชท พร้อมตรวจสิทธิ์ต้นฉบับปัจจุบัน เลือกคนที่ติดตามได้ โหลดรายชื่อเพิ่มเป็นหน้าๆ
 - Analyzer ไม่พบปัญหา; Flutter 73/73, policy 14/14, Chrome chat 6/6 และ social 9/9 ผ่าน; Rules เดิม 7 ชุดและ integration ใหม่ 25 เคสผ่านบน emulators
 - Android debug build ผ่าน ตรวจ APK จริงได้ชื่อ Linko และ version 1.1.0+4; ยังมี warning dependency Kotlin/Java สำหรับการอัปเกรด toolchain ครั้งหน้า
-- รายละเอียดและข้อจำกัด: [SOCIAL_FEATURES_DELIVERY.md](SOCIAL_FEATURES_DELIVERY.md); ผลจริง: [test_reports/social_2026-10-31/summary.json](test_reports/social_2026-10-31/summary.json)
+- รายละเอียดและข้อจำกัด: [social-features-delivery-2026-10-31.md](social-features-delivery-2026-10-31.md); ผลจริง: [test_reports/social_2026-10-31/summary.json](../test_reports/social_2026-10-31/summary.json)
 - หลังผู้ใช้ยืนยัน production เผยแพร่ Rules/indexes และ Functions 9 ตัวสำเร็จ เปิด flags กับกติกา 2/24/72 แล้ว บัญชีเดิม 10 บัญชีผ่อนผันถึง 14 พ.ย. 2026 เวลา 18:22 น. (Asia/Bangkok)
 - ฐานข้อมูล Bangkok ทำให้ Functions API ปฏิเสธ Firestore trigger ทั้งสอง generation จึงใช้ worker แบบ checkpoint/lease ทุกนาทีแทน พร้อมคัดลอกหลักฐานก่อนตอบรายงาน; ทดสอบ paging, overlap และ interruption เพิ่ม
 - ตรวจ production Rules ตรง source, indexes 15 READY, Functions 9 ACTIVE, Scheduler 4 ENABLED, unauthenticated callable 401 และ CORS 204 ผ่าน; worker ทั้ง 3 รันและเขียน cursor จริงหลัง activation
@@ -38,7 +38,7 @@
 
 บันทึกการเปลี่ยนแปลงและผลตรวจของ Profile, Like/Reaction, Follow, Groups และ Comment Notification
 
-> แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลก่อนหน้าวันที่ 2026-10-24 อยู่ใน [DELIVERY_REPORT.md](DELIVERY_REPORT.md); ผลล่าสุดวันที่ 2026-10-31 ดู [SOCIAL_FEATURES_DELIVERY.md](SOCIAL_FEATURES_DELIVERY.md)
+> แต่ละหัวข้อเป็นสถานะ ณ วันที่ทำรายการนั้น; ผลก่อนหน้าวันที่ 2026-10-24 อยู่ใน [delivery-and-acceptance-report-2026-10-24.md](delivery-and-acceptance-report-2026-10-24.md); ผลล่าสุดวันที่ 2026-10-31 ดู [social-features-delivery-2026-10-31.md](social-features-delivery-2026-10-31.md)
 
 ## 2026-10-27 — ไอคอน Linko เต็มพื้นที่แบบ Settings
 
@@ -69,7 +69,7 @@
 - Push โค้ดที่ทดสอบขึ้น `main` ใน commit `9d2115b` แล้วเผยแพร่ Firestore Rules, Storage Rules และ indexes ไป `social-network-app-c22eb` สำเร็จเวลา 16:16:59 น. (Asia/Bangkok)
 - สำรอง Rules และ metadata ก่อน deploy; Firebase compile Rules ทั้งสองไฟล์ผ่าน และคำสั่ง deploy จบด้วย exit code 0
 - อ่าน Rules ที่เผยแพร่กลับจาก API แล้วเทียบเนื้อหาและ SHA-256 ตรงกับโค้ดที่ทดสอบ; indexes ที่ต้องใช้ทั้ง 11 รายการเป็น `READY`
-- หลักฐานในเครื่อง: `build/deploy-2026-10-24/`; รายละเอียด Ruleset และขอบเขตอยู่ใน [รายงานตรวจรับ](DELIVERY_REPORT.md)
+- หลักฐานในเครื่อง: `build/deploy-2026-10-24/`; รายละเอียด Ruleset และขอบเขตอยู่ใน [รายงานตรวจรับ](delivery-and-acceptance-report-2026-10-24.md)
 - การตรวจครั้งนี้ยืนยัน deployment และความพร้อมของ indexes; ผลทดสอบผ่านแอปบน production หลายบัญชีและโทรศัพท์จริงยังต้องตรวจแยก
 
 ## 2026-10-14 — เพิ่มฟีเจอร์สังคม
@@ -88,7 +88,7 @@
 - เพิ่ม Reaction ต่อโพสต์แบบหนึ่ง reaction ต่อบัญชี: Like, Love, Haha, Wow, Sad และ Angry
 - เพิ่ม Groups: สร้าง/แก้ไข/ลบกลุ่มสาธารณะ, เข้าร่วม/ออกจากกลุ่ม และโพสต์ข้อความใน Group Feed
 - เปลี่ยน Comment Notification ให้ส่งเฉพาะผู้ติดตามเจ้าของโพสต์ และเฉพาะโพสต์สาธารณะ; การส่ง notification ล้มเหลวจะไม่ทำให้ผู้ใช้ส่ง Comment ซ้ำ
-- เพิ่ม Firestore Rules และ index โปรไฟล์ที่ใช้; เพิ่มอธิบาย schema ใน `SCHEMA.md`
+- เพิ่ม Firestore Rules และ index โปรไฟล์ที่ใช้; เพิ่มอธิบาย schema ใน `firebase-data-schema.md`
 
 ### ผลการทดสอบในเครื่อง
 
@@ -230,7 +230,7 @@
 
 ## 2026-10-22 — แก้ผลตรวจระบบตามลำดับ
 
-วางแผนก่อนแก้ใน `AUDIT_FIX_PLAN.md` แล้วทำขั้น 1–5 จาก working tree ปัจจุบัน เก็บงาน emoji และงานแชทเดิมไว้ การทดสอบ Firebase ใช้เฉพาะ Auth/Firestore/Storage Emulator โปรเจกต์ `demo-linko` บน loopback
+วางแผนก่อนแก้ใน `system-audit-fix-plan-2026-10-22.md` แล้วทำขั้น 1–5 จาก working tree ปัจจุบัน เก็บงาน emoji และงานแชทเดิมไว้ การทดสอบ Firebase ใช้เฉพาะ Auth/Firestore/Storage Emulator โปรเจกต์ `demo-linko` บน loopback
 
 ### 1. แชทและ Rules
 
@@ -290,7 +290,7 @@
 | Native/config | Android Gradle/key example, `.gitignore`, iOS plist, macOS entitlements, local `packages/video_thumbnail` Java/Dart/tests |
 | Tests | `test/auth_session_boundary_test.dart`, `dialog_lifecycle_test.dart`, `document_policy_test.dart`, `latest_request_test.dart`, `platform_media_test.dart`, `social_features_test.dart`, `social_reaction_picker_test.dart`; auth form tests เดิมยังผ่าน |
 | Emulator tools | `emulator_test_support.mjs`, `run_emulator_tests.mjs`, `chat_rules_emulator_test.mjs`, `group_rules_emulator_test.mjs`, `audit_rules_emulator_test.mjs`, `privacy_rules_emulator_test.mjs`, `feed_query_emulator_test.mjs` |
-| เอกสาร | `AUDIT_FIX_PLAN.md`, `README.md`, `SCHEMA.md`, `CHANGELOG_TESTING.md` |
+| เอกสาร | `system-audit-fix-plan-2026-10-22.md`, `README.md`, `firebase-data-schema.md`, `changes-and-test-results.md` |
 
 ### ผลทดสอบจริง
 
@@ -342,7 +342,7 @@
 | Deploy | สำเร็จ เฉพาะ `firestore:rules` ไป `social-network-app-c22eb` |
 | ตรวจ Rules หลัง deploy | เนื้อหาตรงกับไฟล์ที่ทดสอบทุกประการ |
 
-Rules เดิมบน Firebase ตรงกับรุ่นที่มี bug จึงไม่ใช่ปัญหา deploy ไม่สำเร็จ Rules ใหม่เผยแพร่เวลา 11:40:31 น. (Asia/Bangkok) วันที่ 21 ต.ค. 2026 รายละเอียดและ hash อยู่ใน [รายงานแชท](tool/CHAT_DIAGNOSIS.md) ยังไม่ได้ทดสอบไฟล์แนบจริงหรือเผยแพร่ Storage Rules/indexes ในงานนี้
+Rules เดิมบน Firebase ตรงกับรุ่นที่มี bug จึงไม่ใช่ปัญหา deploy ไม่สำเร็จ Rules ใหม่เผยแพร่เวลา 11:40:31 น. (Asia/Bangkok) วันที่ 21 ต.ค. 2026 รายละเอียดและ hash อยู่ใน [รายงานแชท](chat-send-error-diagnosis-2026-10-21.md) ยังไม่ได้ทดสอบไฟล์แนบจริงหรือเผยแพร่ Storage Rules/indexes ในงานนี้
 
 ## 2026-10-21 — อธิบายโค้ดและอัปเดต README
 
@@ -357,11 +357,11 @@ Rules เดิมบน Firebase ตรงกับรุ่นที่มี 
 - พบไฟล์รูปตามโพสต์ในภาพจริง เป็น JPEG ขนาด 3,302,621 ไบต์ ดาวน์โหลดได้ครบ แต่ response ไม่มี CORS header และ bucket มี `cors: []`
 - Chrome อ่านไบต์ผ่าน `fetch()` ไม่ได้ แต่ถอดรหัส URL เดียวกันเป็น HTML image ได้ และอ่านไบต์เดียวกันผ่าน local server ที่มี CORS ได้ ยืนยันสาเหตุการบล็อกข้าม origin ของเส้นทางที่ `PostMedia.getData()` ใช้
 - ตรวจ Storage Rules และ IAM แบบอ่านอย่างเดียว; เงื่อนไขสื่อโพสต์ตรงกับในเครื่อง และ service agent มีสิทธิ์อ่าน Firestore แล้ว
-- เพิ่ม `storage.cors.json` และ [รายงานผลตรวจรูปฟีด](tool/FEED_MEDIA_DIAGNOSIS.md) พร้อมอัปเดตสถานะ README; ยังไม่ได้เปลี่ยน bucket จริงหรือทดสอบหลังเปลี่ยนค่า
+- เพิ่ม `config/storage.cors.json` และ [รายงานผลตรวจรูปฟีด](feed-image-diagnosis-2026-10-21.md) พร้อมอัปเดตสถานะ README; ยังไม่ได้เปลี่ยน bucket จริงหรือทดสอบหลังเปลี่ยนค่า
 
 ## 2026-10-21 — ตั้ง CORS และยืนยันรูปฟีดหลังแก้
 
-- หลังผู้ใช้อนุมัติ ตั้งค่า CORS ตาม `storage.cors.json` บน `social-network-app-c22eb.firebasestorage.app` สำเร็จเวลา 13:33:29 น. (Asia/Bangkok) เฉพาะ origin/method/header/cache ของการอ่านข้าม origin
+- หลังผู้ใช้อนุมัติ ตั้งค่า CORS ตาม `config/storage.cors.json` บน `social-network-app-c22eb.firebasestorage.app` สำเร็จเวลา 13:33:29 น. (Asia/Bangkok) เฉพาะ origin/method/header/cache ของการอ่านข้าม origin
 - สำรองค่าเดิม ตรวจ metageneration ก่อนเขียน และอ่านค่าหลังแก้กลับมาตรงกับไฟล์; ตรวจ Storage Rules, IAM configuration และ ACL ว่าเหมือนเดิม
 - รูปเดิมดาวน์โหลดได้ HTTP 200 พร้อม `Access-Control-Allow-Origin: *`, ไบต์ครบ 3,302,621 และ checksum ตรง
 - Chrome ทดสอบหลังแก้ผ่านทั้งการอ่านไบต์จาก URL รูปจริงและถอดรหัสภาพขนาด 7680 × 4324; ปิดเบราว์เซอร์ทดสอบและลบโปรไฟล์ชั่วคราวแล้ว
@@ -373,7 +373,7 @@ Rules เดิมบน Firebase ตรงกับรุ่นที่มี 
 - เพิ่ม `AppearanceController`/`AppearanceScope` เหนือ Navigator ใช้ key โหมดเดิมและบันทึกสีสองโหมดแยกกัน รองรับการเลือกเร็ว ๆ การโหลดช้า และบันทึกค่าที่เคยล้มเหลวเมื่อ storage กลับมาใช้ได้
 - รวมสีใน `AppTheme` และแทนสีตายตัวในโปรไฟล์ กลุ่ม ปุ่ม ตัวนับอ่าน แชท และวิดีโอ เลือกคู่สีข้อความให้เหมาะกับพื้นสีเหลือง/ขาว รวมเฉดที่มองเห็นบนพื้นวิดีโอสีดำ
 - นำ callback/สถานะธีมที่ส่งผ่านแต่ละ route ออก เมนูและหน้าที่เปิดค้างรับค่าปัจจุบันจากส่วนกลาง
-- เพิ่มคอมเมนต์ภาษาไทยในโค้ดสำคัญ อัปเดต README และ [คู่มือการแสดงผล](tool/APPEARANCE.md)
+- เพิ่มคอมเมนต์ภาษาไทยในโค้ดสำคัญ อัปเดต README และ [คู่มือการแสดงผล](appearance-settings-guide.md)
 - ชุดทดสอบ Flutter ผ่าน 34/34 รวมชุดเดิม; Chrome จริงผ่าน 17/17 ทั้งสี 16 ชุดและการอ่านค่าที่บันทึก พร้อมตรวจภาพเมนู
 - Analyzer โค้ดธีม/การทดสอบใหม่ไม่พบปัญหา; ตรวจทั้ง `lib` ไม่พบ error/warning มี 51 info lints เดิม
 - Android Emulator ตรวจธีมและ storage จริงผ่าน 17/17 หลัง build APK ด้วย heap 1.5 GB/worker 2 ตัวเฉพาะคำสั่งทดสอบ; ไม่มีการแก้ Gradle memory config ถาวร
@@ -407,7 +407,7 @@ Rules เดิมบน Firebase ตรงกับรุ่นที่มี 
 
 รวม commit `1250133` (audit fixes) กับ `1c60028` (วินิจฉัย/แก้ regression แชท) โดยเก็บประวัติและงานทั้งสองฝั่ง ไม่เลือกทับทั้งไฟล์ฝ่ายเดียว
 
-- แก้ conflict ใน `README.md`, `CHANGELOG_TESTING.md`, `firestore.rules`, `lib/screens/chat/chat_room.dart` และ `tool/chat_rules_emulator_test.mjs`
+- แก้ conflict ใน `README.md`, `changes-and-test-results.md`, `firestore.rules`, `lib/screens/chat/chat_room.dart` และ `tool/chat_rules_emulator_test.mjs`
 - ใช้ Rules จาก audit ซึ่งครอบคลุมข้อความซ้ำ/เปิดห้องซ้ำ/ยกเลิก โดยเก็บ follow gate, schema, deletion barrier และ privacy jobs
 - หน้า ChatRoom เก็บ pagination และ media-picker error handling พร้อมใช้ debug error handler จาก GitHub; ข้อความสิทธิ์ไม่สรุปว่าเกิดจากยังไม่ deploy เสมอ
 - เก็บชุด regression ปัจจุบันชื่อเดิม และแยกชุดวินิจฉัยจาก GitHub เป็น `tool/chat_rules_diagnosis.mjs`; runner รวมเป็น 6 suites

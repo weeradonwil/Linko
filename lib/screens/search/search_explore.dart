@@ -10,6 +10,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/utils/latest_request.dart';
 import '../../core/services/search_service.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../chat/chat_list.dart';
 import '../notifications/notifications_screen.dart';
@@ -310,27 +311,29 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                 ),
               ),
             ),
-            SizedBox(
-              height: 42,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _filters.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, i) => ChoiceChip(
-                  label: Text(_filters[i]),
-                  selected: _filter == i,
-                  onSelected: (_) => _selectFilter(i),
-                  avatar: Icon(
-                    [
-                      Icons.people_outline,
-                      Icons.person_outline,
-                      Icons.tag,
-                      Icons.article_outlined,
-                    ][i],
-                    size: 18,
-                  ),
-                ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Row(
+                children: [
+                  for (var i = 0; i < _filters.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text(_filters[i]),
+                      selected: _filter == i,
+                      onSelected: (_) => _selectFilter(i),
+                      avatar: Icon(
+                        [
+                          Icons.people_outline,
+                          Icons.person_outline,
+                          Icons.tag,
+                          Icons.article_outlined,
+                        ][i],
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (_error != null)
@@ -438,6 +441,10 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
               _loadingMoreUsers ? 'กำลังค้นสมาชิก' : 'ค้นต่อในสมาชิกทั้งหมด',
             ),
           ),
+        if ((_filter == 0 || _filter == 1) &&
+            _users.isNotEmpty &&
+            _posts.isNotEmpty)
+          const SizedBox(height: 14),
         if ((_filter == 0 || _filter == 2 || _filter == 3) &&
             _posts.isNotEmpty) ...[
           _sectionTitle(
@@ -465,19 +472,23 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 9),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
       );
   Widget _personCard(BuildContext context, Map<String, dynamic> person) {
-    final c = Theme.of(context).colorScheme;
-    final name = person['displayName'] as String? ?? 'สมาชิก';
+    final rawName = person['displayName'] as String?;
+    final name = rawName == null || rawName.trim().isEmpty ? 'สมาชิก' : rawName;
     return SizedBox(
       width: 122,
       child: Card(
@@ -486,13 +497,10 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: c.primary.withValues(alpha: .16),
-                child: Text(
-                  name.characters.first.toUpperCase(),
-                  style: TextStyle(color: c.primary, fontSize: 21),
-                ),
+              InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => _openPerson(person),
+                child: MemberAvatar(uid: person['uid'] as String, radius: 28),
               ),
               const SizedBox(height: 7),
               Text(
@@ -523,104 +531,99 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   }
 
   Widget _personRow(BuildContext context, Map<String, dynamic> person) {
-    final name = person['displayName'] as String? ?? 'สมาชิก';
-    final c = Theme.of(context).colorScheme;
+    final rawName = person['displayName'] as String?;
+    final name = rawName == null || rawName.trim().isEmpty ? 'สมาชิก' : rawName;
     return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: c.primary.withValues(alpha: .16),
-          child: Text(
-            name.characters.first.toUpperCase(),
-            style: TextStyle(color: c.primary),
-          ),
-        ),
-        title: Text(name),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: MemberAvatar(uid: person['uid'] as String, radius: 20),
+        title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           person['isPrivate'] == true ? 'โปรไฟล์ส่วนตัว' : 'สมาชิก Linko',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        trailing: IconButton(
-          tooltip: 'ดูโปรไฟล์และติดตาม',
-          onPressed: () => _openPerson(person),
-          icon: const Icon(Icons.person_outline_rounded),
-        ),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ProfileScreen(
-              user: widget.user,
-              profileUid: person['uid'] as String? ?? '',
-            ),
-          ),
-        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => _openPerson(person),
       ),
     );
   }
 
   Widget _postCard(BuildContext context, Post post) {
-    final c = Theme.of(context).colorScheme;
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // วางเจ้าของโพสต์ไว้ด้านบน เพื่อให้ระบุตัวผู้เขียนได้ก่อนดูเนื้อหา
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Row(
+              children: [
+                InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => _openPerson({'uid': post.userId}),
+                  child: MemberAvatar(uid: post.userId, radius: 17),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _openPerson({'uid': post.userId}),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        post.authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  post.editedAt == null
+                      ? _date(post.createdAt)
+                      : '${_date(post.createdAt)} · แก้ไขแล้ว',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (post.mediaPath != null)
-            SizedBox(
-              height: 190,
+            AspectRatio(
+              aspectRatio: 16 / 9,
               child: PostMedia(
                 path: post.mediaPath!,
                 type: post.mediaType,
                 thumbnailPath: post.thumbnailPath,
+                // Search ใช้รูปเป็นภาพตัวอย่าง จึงให้เต็มกรอบเดียวกันทุกโพสต์
+                imageFit: BoxFit.cover,
+                thumbnailFit: BoxFit.cover,
               ),
             ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 17,
-                      backgroundColor: c.primary.withValues(alpha: .16),
-                      child: Text(
-                        (post.authorName.isEmpty
-                                ? '?'
-                                : post.authorName.characters.first)
-                            .toUpperCase(),
-                        style: TextStyle(color: c.primary),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        post.authorName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Text(
-                      post.editedAt == null
-                          ? _date(post.createdAt)
-                          : '${_date(post.createdAt)} · แก้ไขแล้ว',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
                 if (post.content.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 9),
-                    child: Text(
-                      post.content,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  Text(
+                    post.content,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 if (post.tags.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: EdgeInsets.only(top: post.content.isEmpty ? 0 : 6),
                     child: Wrap(
                       spacing: 5,
                       children: post.tags

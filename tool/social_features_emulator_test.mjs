@@ -123,6 +123,20 @@ await rpc(first,'sharePost',{postId:original,destination:'group',targetId:groupI
 await rpc(outsider,'sharePost',{postId:original,destination:'group',targetId:groupId,requestId:`share_denied_${suffix}`,caption:''},false);
 assert((await db.doc(`groups/${groupId}/posts/share_group_${suffix}`).get()).data().sharedPostId===original,'group share missing');
 pass('group share requires real membership');
+// บัญชีส่วนตัวตั้งบางโพสต์เป็นสาธารณะได้ ฟีดและกลุ่มต้องแชร์โพสต์นั้นได้เหมือนกัน
+await db.doc(`users/${author.uid}`).update({isPrivate:true});
+await db.doc(`posts/${original}`).update({authorIsPrivate:true});
+await db.doc(`users/${second.uid}`).update({isPrivate:true});
+allowed(await get(outsider.token,`posts/${original}`),'public post from private account remains readable');
+await rpc(second,'sharePost',{postId:original,destination:'feed',requestId:`share_private_owner_feed_${suffix}`,caption:'Public share'});
+const privateOwnerFeed = (await db.doc(`posts/share_private_owner_feed_${suffix}`).get()).data();
+assert(privateOwnerFeed.sharedPostId===original && privateOwnerFeed.visibility==='public','private-account public post was not shared to feed');
+allowed(await get(outsider.token,`posts/share_private_owner_feed_${suffix}`),'public share by private account remains readable');
+await rpc(second,'sharePost',{postId:original,destination:'group',targetId:groupId,requestId:`share_private_owner_group_${suffix}`,caption:''});
+assert((await db.doc(`groups/${groupId}/posts/share_private_owner_group_${suffix}`).get()).data().sharedPostId===original,'private-account public post was not shared to group');
+await db.doc(`users/${author.uid}`).update({isPrivate:false});
+await db.doc(`users/${second.uid}`).update({isPrivate:false});
+pass('public post from private account can be shared to feed and group');
 allowed(await commit(first.token,[write(`posts/share_feed_${suffix}`,{content:s('edited caption')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'edit shared feed caption');
 allowed(await commit(first.token,[write(`posts/share_feed_${suffix}`,{content:s('')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'clear shared feed caption');
 allowed(await commit(first.token,[write(`groups/${groupId}/posts/share_group_${suffix}`,{content:s('')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'empty shared group caption');
@@ -164,9 +178,9 @@ allowed(await storage(owner.token,cover,{method:'POST',bytes:png,contentType:'im
 allowed(await commit(owner.token,[write(`users/${owner.uid}`,{coverPath:s(cover)},{mask:['coverPath']})]),'save cover path');
 denied(await storage(outsider.token,cover,{method:'POST',bytes:png,contentType:'image/png'}),'outsider uploads cover');
 await db.doc(`users/${owner.uid}`).update({isPrivate:true});
-denied(await storage(outsider.token,cover),'private cover readable by outsider');
+allowed(await storage(outsider.token,cover),'signed-in non-follower reads current private cover');
 allowed(await storage(owner.token,cover),'owner reads private cover');
-pass('cover uploads and reads respect ownership and profile privacy');
+pass('current cover is visible to signed-in users; only owner can upload');
 // หลักฐานต้องเป็นคนละไฟล์ และคนที่ไม่เกี่ยวข้องอ่าน/เขียนไม่ได้
 const photoId = `photo_${suffix}`;
 const photoPath = `post_media/${author.uid}/${photoId}/photo.png`;

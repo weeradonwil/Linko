@@ -10,6 +10,7 @@ import '../../core/services/comment_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/social_navigation.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../chat/chat_list.dart';
 import '../comments/post_comments_screen.dart';
 import '../search/search_explore.dart';
@@ -247,19 +248,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             padding: const EdgeInsets.all(14),
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  radius: 26,
-                                  backgroundColor: colors.primary.withValues(
-                                    alpha: .18,
-                                  ),
-                                  child: Text(
-                                    n.actorName.characters.first.toUpperCase(),
-                                    style: TextStyle(
-                                      color: colors.primary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
+                                MemberAvatar(uid: n.actorId, radius: 26),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(

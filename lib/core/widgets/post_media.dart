@@ -25,6 +25,7 @@ class PostMedia extends StatelessWidget {
     required this.type,
     this.thumbnailPath,
     this.imageFit = BoxFit.contain,
+    this.thumbnailFit = BoxFit.contain,
     super.key,
   });
 
@@ -32,11 +33,16 @@ class PostMedia extends StatelessWidget {
   final String type;
   final String? thumbnailPath;
   final BoxFit imageFit;
+  final BoxFit thumbnailFit;
 
   @override
   Widget build(BuildContext context) {
     return type == 'video'
-        ? _StorageVideo(path: path, thumbnailPath: thumbnailPath)
+        ? _StorageVideo(
+            path: path,
+            thumbnailPath: thumbnailPath,
+            thumbnailFit: thumbnailFit,
+          )
         : _StorageImage(path: path, fit: imageFit);
   }
 }
@@ -142,10 +148,15 @@ class _StorageImageState extends State<_StorageImage> {
 }
 
 class _StorageVideo extends StatefulWidget {
-  const _StorageVideo({required this.path, this.thumbnailPath});
+  const _StorageVideo({
+    required this.path,
+    this.thumbnailPath,
+    this.thumbnailFit = BoxFit.contain,
+  });
 
   final String path;
   final String? thumbnailPath;
+  final BoxFit thumbnailFit;
 
   @override
   State<_StorageVideo> createState() => _StorageVideoState();
@@ -320,7 +331,10 @@ class _StorageVideoState extends State<_StorageVideo> {
           children: [
             ColoredBox(color: colors.surfaceContainerHighest),
             if (widget.thumbnailPath != null)
-              _StorageImage(path: widget.thumbnailPath!),
+              _StorageImage(
+                path: widget.thumbnailPath!,
+                fit: widget.thumbnailFit,
+              ),
             const ColoredBox(color: Color(0x26000000)),
             Center(
               child: IconButton.filledTonal(

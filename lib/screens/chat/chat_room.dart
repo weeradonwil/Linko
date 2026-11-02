@@ -13,6 +13,7 @@ import '../../core/models/chat_models.dart';
 import '../../core/services/chat_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/member_avatar.dart';
 
 class ChatRoomScreen extends StatefulWidget {
   const ChatRoomScreen({
@@ -287,13 +288,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: colors.primary.withValues(alpha: .2),
-              child: Text(
-                widget.peerName.characters.first.toUpperCase(),
-                style: TextStyle(color: colors.primary),
-              ),
-            ),
+            MemberAvatar(uid: widget.peerId, radius: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -372,11 +367,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       key: ValueKey(message.id),
                       message: message,
                       isMine: message.senderId == widget.user.uid,
-                      peerInitial:
-                          (widget.peerName.isEmpty
-                                  ? '?'
-                                  : widget.peerName.characters.first)
-                              .toUpperCase(),
+                      peerId: widget.peerId,
                       onUnsend: () => _unsendMessage(message),
                     );
                   },
@@ -476,12 +467,12 @@ class _MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.isMine,
-    required this.peerInitial,
+    required this.peerId,
     required this.onUnsend,
   });
   final ChatMessage message;
   final bool isMine;
-  final String peerInitial;
+  final String peerId;
   final VoidCallback onUnsend;
   String _time(DateTime? d) => d == null
       ? ''
@@ -501,14 +492,7 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isMine) ...[
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: colors.primary.withValues(alpha: .2),
-                  child: Text(
-                    peerInitial,
-                    style: TextStyle(color: colors.primary, fontSize: 12),
-                  ),
-                ),
+                MemberAvatar(uid: peerId, radius: 16),
                 const SizedBox(width: 7),
               ],
               Flexible(

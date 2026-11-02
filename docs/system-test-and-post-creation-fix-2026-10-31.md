@@ -66,7 +66,7 @@ APK ที่ติดตั้งใน Android Emulator เป็น `1.0.2+3`
 | Android debug build | ผ่าน; ติดตั้งคืนเป็น Linko 1.1.0+4 |
 | Production readiness | ตรวจอ่านอย่างเดียวผ่าน ไม่มี test writes/deploy |
 
-หลักฐานอยู่ใน [test_reports/system_2026-10-31/summary.json](test_reports/system_2026-10-31/summary.json) และ output แต่ละชุดในโฟลเดอร์เดียวกัน ไม่แนบ raw Firebase debug log, token, อีเมลผู้ใช้ หรือ APK เข้า Git
+หลักฐานอยู่ใน [test_reports/system_2026-10-31/summary.json](../test_reports/system_2026-10-31/summary.json) และ output แต่ละชุดในโฟลเดอร์เดียวกัน ไม่แนบ raw Firebase debug log, token, อีเมลผู้ใช้ หรือ APK เข้า Git
 
 APK ในเครื่อง: `build/app/outputs/flutter-apk/Linko-1.1.0-debug.apk` มี Functions native plugin แล้ว SHA-256: `78cdc0ef880bb8020e2033d76547b2444456bdec55e89d33e62755f7e679c779`
 

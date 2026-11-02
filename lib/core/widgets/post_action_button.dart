@@ -10,6 +10,7 @@ class PostActionButton extends StatelessWidget {
     this.color,
     this.emoji,
     this.onLongPress,
+    this.badgeCount,
   });
 
   final IconData icon;
@@ -18,13 +19,16 @@ class PostActionButton extends StatelessWidget {
   final Color? color;
   final String? emoji;
   final ValueChanged<BuildContext>? onLongPress;
+  final int? badgeCount;
 
   @override
   Widget build(BuildContext context) => Builder(
     builder: (buttonContext) => Semantics(
       selected: color == null ? null : true,
       child: Tooltip(
-        message: label,
+        message: badgeCount != null && badgeCount! > 0
+            ? '$label ${badgeCount!}'
+            : label,
         // ปุ่มถูกใจใช้กดค้างเปิดอิโมจิ จึงไม่ให้ Tooltip แย่ง gesture นี้
         triggerMode: onLongPress == null
             ? TooltipTriggerMode.longPress
@@ -43,9 +47,16 @@ class PostActionButton extends StatelessWidget {
             ),
           ),
           child: ExcludeSemantics(
-            child: emoji == null
-                ? Icon(icon, size: 22)
-                : Text(emoji!, style: const TextStyle(fontSize: 22, height: 1)),
+            child: Badge(
+              isLabelVisible: badgeCount != null && badgeCount! > 0,
+              label: badgeCount == null ? null : Text('$badgeCount'),
+              child: emoji == null
+                  ? Icon(icon, size: 22)
+                  : Text(
+                      emoji!,
+                      style: const TextStyle(fontSize: 22, height: 1),
+                    ),
+            ),
           ),
         ),
       ),

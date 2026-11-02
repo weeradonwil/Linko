@@ -40,9 +40,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('private $kind denies other users before reading the file', (
-      tester,
-    ) async {
+    testWidgets('private $kind applies its image visibility', (tester) async {
       var reads = 0;
       await tester.pumpWidget(
         MaterialApp(
@@ -62,9 +60,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(reads, 0);
-      expect(find.text('บัญชีส่วนตัว เปิดดูรูปใหญ่ไม่ได้'), findsOneWidget);
-      expect(find.byType(Image), findsNothing);
+      if (kind == ProfileImageKind.cover) {
+        expect(reads, 1);
+        expect(find.byType(Image), findsOneWidget);
+      } else {
+        expect(reads, 0);
+        expect(find.text('บัญชีส่วนตัว เปิดดูรูปใหญ่ไม่ได้'), findsOneWidget);
+        expect(find.byType(Image), findsNothing);
+      }
     });
 
     testWidgets('owner can open their own private $kind', (tester) async {
@@ -88,7 +91,7 @@ void main() {
     });
   }
 
-  testWidgets('changing to private removes an already open image', (
+  testWidgets('changing to private removes an already open avatar', (
     tester,
   ) async {
     final profiles = StreamController<Map<String, dynamic>?>();
@@ -97,20 +100,20 @@ void main() {
       MaterialApp(
         home: ProfileImageScreen(
           ownerUid: 'owner',
-          kind: ProfileImageKind.cover,
+          kind: ProfileImageKind.avatar,
           readViewerUid: () => 'reader',
           profileStream: profiles.stream,
           loadImage: (_) async => _pixel,
         ),
       ),
     );
-    profiles.add({'isPrivate': false, 'coverPath': 'real/cover.png'});
+    profiles.add({'isPrivate': false, 'avatarPath': 'real/avatar.png'});
     await tester.pumpAndSettle();
     expect(find.byType(Image), findsOneWidget);
     profiles.add({
       'isPrivate': false,
       'privacyTarget': true,
-      'coverPath': 'real/cover.png',
+      'avatarPath': 'real/avatar.png',
     });
     await tester.pumpAndSettle();
     expect(find.byType(Image), findsNothing);

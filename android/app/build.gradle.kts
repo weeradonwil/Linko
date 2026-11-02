@@ -63,7 +63,7 @@ val validateReleaseKey by tasks.registering {
     doLast {
         check(releaseKeyReady) {
             "Release signing is not configured. Copy android/key.properties.example to " +
-                "android/key.properties and supply your own keystore. See AUDIT_FIX_PLAN.md."
+                "android/key.properties and supply your own keystore. See docs/system-audit-fix-plan-2026-10-22.md."
         }
     }
 }

@@ -7,6 +7,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/services/chat_service.dart';
 import '../../core/widgets/social_navigation.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../notifications/notifications_screen.dart';
 import '../search/search_explore.dart';
 import '../profile/profile.dart';
@@ -134,19 +135,9 @@ class ChatListScreen extends StatelessWidget {
                             horizontal: 16,
                             vertical: 8,
                           ),
-                          leading: CircleAvatar(
+                          leading: MemberAvatar(
+                            uid: conversation.peerId(user.uid),
                             radius: 27,
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: .18),
-                            child: Text(
-                              name.characters.first.toUpperCase(),
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
                           ),
                           title: Text(
                             name,

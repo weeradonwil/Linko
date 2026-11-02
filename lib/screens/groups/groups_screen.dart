@@ -14,6 +14,7 @@ import '../../core/utils/document_values.dart';
 import '../../core/services/group_service.dart';
 import '../../core/widgets/group_editor_dialog.dart';
 import '../../core/widgets/group_post_card.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../create_post/create_post.dart';
 import '../profile/profile.dart';
 
@@ -1117,9 +1118,7 @@ class _GroupMembersSheet extends StatelessWidget {
                     final data = members[index].data();
                     final name = readName(data['displayName']);
                     return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(name.characters.first.toUpperCase()),
-                      ),
+                      leading: MemberAvatar(uid: members[index].id, radius: 22),
                       title: Text(name),
                       trailing: members[index].id == ownerId
                           ? const Chip(label: Text('เจ้าของ'))
@@ -1204,11 +1203,7 @@ class _GroupJoinRequestsSheet extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final request = requests[index];
                     return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(
-                          request.displayName.characters.first.toUpperCase(),
-                        ),
-                      ),
+                      leading: MemberAvatar(uid: request.uid, radius: 22),
                       title: Text(
                         request.displayName,
                         maxLines: 1,
@@ -1297,10 +1292,21 @@ class _GroupCardState extends State<_GroupCard> {
       );
     }
     if (isMember) {
-      return TextButton.icon(
-        onPressed: widget.onTap,
-        icon: const Icon(Icons.login_rounded, size: 18),
-        label: const Text('เข้ากลุ่ม'),
+      // แตะการ์ดหรือลูกศรเพื่อเปิดกลุ่มอยู่แล้ว ไม่ต้องชวนสมาชิกเข้าร่วมซ้ำ
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle_outline_rounded,
+              size: 16,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 5),
+            Text('สมาชิกแล้ว', style: Theme.of(context).textTheme.labelMedium),
+          ],
+        ),
       );
     }
     if (hasRequest) {

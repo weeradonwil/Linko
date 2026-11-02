@@ -2,6 +2,7 @@ import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/shared_post_card.dart';
 import '../../core/widgets/share_post_sheet.dart';
 import '../../core/widgets/post_action_button.dart';
+import '../../core/widgets/post_comment_count_button.dart';
 import '../../core/widgets/reaction_people_sheet.dart';
 import '../../core/widgets/content_visibility.dart';
 import '../../core/widgets/member_avatar.dart';
@@ -135,8 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Opens the live comment thread for the selected post.
-  void _openComments(BuildContext context, Post post) {
-    Navigator.of(context).push(
+  Future<void> _openComments(BuildContext context, Post post) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PostCommentsScreen(user: widget.user, post: post),
       ),
@@ -199,9 +200,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ใช้ชื่อจาก Firebase Auth ถ้าไม่มีชื่อให้แสดงคำว่า "สมาชิก"
-    final name = widget.user.displayName?.trim();
-    final title = (name == null || name.isEmpty) ? 'สมาชิก' : name;
     final postService = PostService();
 
     // ค่อย ๆ เติม fields ใหม่ให้โพสต์เก่าของเจ้าของ โดยไม่เปลี่ยนข้อมูลในโพสต์ใหม่
@@ -301,16 +299,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.all(10),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .primary,
-                          foregroundColor: Theme.of(context)
-                              .colorScheme
-                              .onPrimary,
-                          child: Text(title.characters.first.toUpperCase()),
-                        ),
+                        // ช่องสร้างโพสต์อ่านรูปเดียวกับการ์ดโพสต์ และอัปเดตเมื่อโปรไฟล์เปลี่ยน
+                        MemberAvatar(uid: widget.user.uid, radius: 20),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Container(
@@ -555,7 +545,7 @@ class _PostCard extends StatelessWidget {
   final ReactionService reactionService;
   final ValueChanged<String> onReaction;
   final VoidCallback onAuthorTap;
-  final VoidCallback onComment;
+  final Future<void> Function() onComment;
 
   @override
   Widget build(BuildContext context) {
@@ -688,21 +678,6 @@ class _PostCard extends StatelessWidget {
               SelectableText(post.content, style: theme.textTheme.bodyLarge),
             if (post.sharedPostId != null)
               SharedPostCard(postId: post.sharedPostId!),
-            if (post.tags.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: post.tags
-                    .map(
-                      (tag) => Chip(
-                        label: Text('#$tag'),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
             if (post.mediaPath != null && post.mediaType == 'image') ...[
               const SizedBox(height: 10),
               PostMedia(
@@ -717,6 +692,21 @@ class _PostCard extends StatelessWidget {
                 path: post.mediaPath!,
                 type: post.mediaType,
                 thumbnailPath: post.thumbnailPath,
+              ),
+            ],
+            if (post.tags.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: post.tags
+                    .map(
+                      (tag) => Chip(
+                        label: Text('#$tag'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                    .toList(),
               ),
             ],
             const SizedBox(height: 14),
@@ -804,9 +794,8 @@ class _PostCard extends StatelessWidget {
                           ),
                         ),
                         Expanded(
-                          child: PostActionButton(
-                            icon: Icons.mode_comment_outlined,
-                            label: 'ความคิดเห็น',
+                          child: PostCommentCountButton(
+                            postId: post.id,
                             onPressed: onComment,
                           ),
                         ),

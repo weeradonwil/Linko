@@ -4,7 +4,7 @@
 
 ## ชื่อและไอคอน Linko — รุ่น 1.0.1+2
 
-เปลี่ยนชื่อที่ผู้ใช้เห็นเป็น **Linko** และใช้ไอคอนห่วงสีขาวเชื่อมเป็นรูปทรงคล้ายตัว L บนพื้นสีแดงราสป์เบอร์รี เก็บต้นฉบับจากเครื่องมือ imagegen แบบ built-in, prompt และวิธีส่งออกแต่ละขนาดใน [`assets/branding/README.md`](assets/branding/README.md)
+เปลี่ยนชื่อที่ผู้ใช้เห็นเป็น **Linko** และใช้ไอคอนห่วงสีขาวเชื่อมเป็นรูปทรงคล้ายตัว L บนพื้นสีแดงราสป์เบอร์รี เก็บต้นฉบับจากเครื่องมือ imagegen แบบ built-in, prompt และวิธีส่งออกแต่ละขนาดใน [`assets/branding/README.md`](../assets/branding/README.md)
 
 Analyzer ผ่านโดยไม่มี findings, Flutter tests ผ่าน **54/54** และ Android Debug build ผ่าน ตรวจ APK ที่ build จริงแล้วยืนยันชื่อ Linko, เวอร์ชัน `1.0.1`, build number `2` รหัสแอป `com.example.social_app` และลายเซ็นตรงกับ APK ก่อนแก้ ไอคอนใน APK ทั้ง 5 density ตรงกับไฟล์ต้นทางทุกพิกเซล
 

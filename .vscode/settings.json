@@ -1,0 +1,9 @@
+{
+  "files.exclude": {
+    "firebase-debug.log": true,
+    "firestore-debug.log": true,
+    ".flutter-plugins-dependencies": true,
+    ".metadata": true,
+    "*.iml": true
+  }
+}

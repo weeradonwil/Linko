@@ -17,8 +17,10 @@ import '../../core/services/chat_service.dart';
 import '../../core/services/follow_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/widgets/post_media.dart';
+import '../../core/widgets/member_avatar.dart';
 import '../admin/admin_reports_screen.dart';
 import '../chat/chat_room.dart';
+import '../create_post/create_post.dart';
 import 'edit_profile_screen.dart';
 import 'profile_image_screen.dart';
 
@@ -252,8 +254,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final privacyPending = data['privacyTarget'] is bool;
           final avatarPath = readOptionalString(data['avatarPath']);
           final coverPath = readOptionalString(data['coverPath']);
-          // คนอื่นเปิดรูปใหญ่ได้เฉพาะบัญชีสาธารณะ เจ้าของดูรูปตัวเองได้เสมอ
-          final canOpenImages = _isOwnProfile || !isPrivate;
+          // รูปปกเป็นข้อมูลที่แสดงบนโปรไฟล์ ส่วนรูปโปรไฟล์ขนาดใหญ่ยังจำกัดเมื่อเป็นบัญชีส่วนตัว
+          final canOpenAvatar = _isOwnProfile || !isPrivate;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
@@ -280,18 +282,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(18),
                                       onTap:
-                                          canOpenImages &&
-                                              coverPath != null &&
+                                          coverPath != null &&
                                               coverPath.isNotEmpty
                                           ? () => _openProfileImage(
                                               ProfileImageKind.cover,
                                             )
                                           : null,
-                                      child: ProfileCover(
-                                        path: coverPath,
-                                        ownerUid: _profileUid,
-                                        isPrivate: isPrivate,
-                                      ),
+                                      child: ProfileCover(path: coverPath),
                                     ),
                                   ),
                                   Positioned(
@@ -302,7 +299,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       child: InkResponse(
                                         customBorder: const CircleBorder(),
                                         onTap:
-                                            canOpenImages &&
+                                            canOpenAvatar &&
                                                 avatarPath != null &&
                                                 avatarPath.isNotEmpty
                                             ? () => _openProfileImage(
@@ -611,58 +608,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _profilePostsList({required bool includeFollowers}) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _postsStream(includeFollowers: includeFollowers),
-        builder: (context, postsSnapshot) {
-          if (postsSnapshot.hasError) {
-            return const _ProfileMessage('โหลดโพสต์ไม่สำเร็จ');
-          }
-          if (!postsSnapshot.hasData) {
-            return const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final posts = postsSnapshot.data!.docs
-              .map(Post.fromSnapshot)
-              .where((p) => !p.isDeleting || _isOwnProfile)
-              .toList();
-          if (posts.isEmpty) return const _ProfileMessage('ยังไม่มีโพสต์');
-          return Column(
-            children: [
-              for (final post in posts)
-                if (post.isDeleting)
-                  Card(
-                    child: ListTile(
-                      title: const Text('กำลังลบโพสต์'),
-                      trailing: TextButton(
-                        onPressed: () async {
-                          try {
-                            await _postService.deletePost(post);
-                          } catch (error) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(
-                                context,
-                              ).showSnackBar(SnackBar(content: Text('$error')));
-                            }
-                          }
-                        },
-                        child: const Text('ลบต่อ'),
-                      ),
-                    ),
-                  )
-                else
-                  _ProfilePost(post: post),
-              if (postsSnapshot.data!.docs.length >= _postsLimit)
-                TextButton(
-                  onPressed: () => setState(() => _postsLimit += 30),
-                  child: const Text('โหลดโพสต์เก่าเพิ่มเติม'),
+  Widget _profilePostsList({
+    required bool includeFollowers,
+  }) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    stream: _postsStream(includeFollowers: includeFollowers),
+    builder: (context, postsSnapshot) {
+      if (postsSnapshot.hasError) {
+        return const _ProfileMessage('โหลดโพสต์ไม่สำเร็จ');
+      }
+      if (!postsSnapshot.hasData) {
+        return const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+      final posts = postsSnapshot.data!.docs
+          .map(Post.fromSnapshot)
+          .where((p) => !p.isDeleting || _isOwnProfile)
+          .toList();
+      if (posts.isEmpty) return const _ProfileMessage('ยังไม่มีโพสต์');
+      return Column(
+        children: [
+          for (final post in posts)
+            if (post.isDeleting)
+              Card(
+                child: ListTile(
+                  title: const Text('กำลังลบโพสต์'),
+                  trailing: TextButton(
+                    onPressed: () async {
+                      try {
+                        await _postService.deletePost(post);
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context)
+                              .showSnackBar(SnackBar(content: Text('$error')));
+                        }
+                      }
+                    },
+                    child: const Text('ลบต่อ'),
+                  ),
                 ),
-            ],
-          );
-        },
+              )
+            else
+              _ProfilePost(
+                post: post,
+                currentUser: widget.user,
+                onEdit: _isOwnProfile
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<bool>(
+                          builder: (_) =>
+                              CreatePostScreen(user: widget.user, post: post),
+                        ),
+                      )
+                    : null,
+              ),
+          if (postsSnapshot.data!.docs.length >= _postsLimit)
+            TextButton(
+              onPressed: () => setState(() => _postsLimit += 30),
+              child: const Text('โหลดโพสต์เก่าเพิ่มเติม'),
+            ),
+        ],
       );
+    },
+  );
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream({
     required bool includeFollowers,
@@ -785,12 +793,7 @@ class _PeopleSheet extends StatelessWidget {
                             const <String, dynamic>{};
                         final name = readName(person['displayName']);
                         return ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              (name.isEmpty ? '?' : name.characters.first)
-                                  .toUpperCase(),
-                            ),
-                          ),
+                          leading: MemberAvatar(uid: uid, radius: 22),
                           title: Text(name),
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: () => Navigator.of(context).pop(uid),
@@ -868,12 +871,7 @@ class _FollowRequestsSheet extends StatelessWidget {
                           'สมาชิก',
                         );
                         return ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              (name.isEmpty ? '?' : name.characters.first)
-                                  .toUpperCase(),
-                            ),
-                          ),
+                          leading: MemberAvatar(uid: requesterUid, radius: 22),
                           title: Text(name),
                           trailing: Wrap(
                             spacing: 4,
@@ -939,23 +937,39 @@ class _FollowRequestsSheet extends StatelessWidget {
 }
 
 class _ProfilePost extends StatelessWidget {
-  const _ProfilePost({required this.post});
+  const _ProfilePost({
+    required this.post,
+    required this.currentUser,
+    this.onEdit,
+  });
   final Post post;
+  final User currentUser;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
     if (post.sharedPostId != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (post.content.isNotEmpty) Text(post.content),
-          SharedPostCard(postId: post.sharedPostId!),
-        ],
+      return Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(context),
+              if (post.content.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SelectableText(post.content),
+              ],
+              SharedPostCard(postId: post.sharedPostId!),
+            ],
+          ),
+        ),
       );
     }
     if (post.mediaPath == null) return _buildTextPost(context);
 
-    // โพสต์ที่มีสื่อคงการ์ดรูปแบบเดิมไว้ เพื่อไม่เปลี่ยนการแสดงภาพและวิดีโอ
+    // ใช้หัวโพสต์เดียวกับโพสต์ข้อความ รูปและวิดีโอจึงเห็นเจ้าของกับปุ่มแก้ไขด้วย
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
@@ -964,10 +978,7 @@ class _ProfilePost extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              post.authorName,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            _buildHeader(context),
             if (post.content.isNotEmpty) ...[
               const SizedBox(height: 8),
               SelectableText(post.content),
@@ -993,8 +1004,7 @@ class _ProfilePost extends StatelessWidget {
     );
   }
 
-  /// แยกโพสต์ข้อความล้วนให้เนื้อหาเป็นจุดเด่น พร้อมเวลาและแท็กที่อ่านง่าย
-  Widget _buildTextPost(BuildContext context) {
+  Widget _buildHeader(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final createdAt = post.createdAt.toLocal();
     final timestamp =
@@ -1004,6 +1014,84 @@ class _ProfilePost extends StatelessWidget {
         '${createdAt.hour.toString().padLeft(2, '0')}:'
         '${createdAt.minute.toString().padLeft(2, '0')}';
 
+    // เปิดหน้าเจ้าของโพสต์จากรูปหรือชื่อได้เหมือนการแตะใน Feed
+    void openOwnerProfile() => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ProfileScreen(user: currentUser, profileUid: post.userId),
+      ),
+    );
+
+    return Row(
+      children: [
+        // ดู users/{uid} สด จึงเปลี่ยนรูปในโพสต์เก่าได้ทันทีเมื่อแก้โปรไฟล์
+        InkWell(
+          onTap: openOwnerProfile,
+          customBorder: const CircleBorder(),
+          child: MemberAvatar(uid: post.userId, radius: 19),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: InkWell(
+            onTap: openOwnerProfile,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.authorName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        post.visibility == 'private'
+                            ? Icons.lock_outline_rounded
+                            : post.visibility == 'followers'
+                            ? Icons.group_outlined
+                            : Icons.public_rounded,
+                        size: 13,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          '$timestamp${post.editedAt == null ? '' : ' • แก้ไขแล้ว'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (onEdit != null)
+          IconButton(
+            onPressed: onEdit,
+            tooltip: 'แก้ไขโพสต์',
+            icon: const Icon(Icons.edit_outlined),
+          )
+        else
+          const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  /// แยกโพสต์ข้อความล้วนให้เนื้อหาเป็นจุดเด่น พร้อมเวลาและแท็กที่อ่านง่าย
+  Widget _buildTextPost(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
@@ -1012,57 +1100,7 @@ class _ProfilePost extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 19,
-                  backgroundColor: colors.primaryContainer,
-                  foregroundColor: colors.onPrimaryContainer,
-                  child: Text(post.authorName.characters.first.toUpperCase()),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.authorName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Icon(
-                            post.visibility == 'private'
-                                ? Icons.lock_outline_rounded
-                                : post.visibility == 'followers'
-                                ? Icons.group_outlined
-                                : Icons.public_rounded,
-                            size: 13,
-                            color: colors.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              '$timestamp${post.editedAt == null ? '' : ' • แก้ไขแล้ว'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: colors.onSurfaceVariant),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.notes_rounded, color: colors.primary),
-              ],
-            ),
+            _buildHeader(context),
             const SizedBox(height: 14),
             Container(
               width: double.infinity,

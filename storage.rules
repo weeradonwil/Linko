@@ -36,7 +36,6 @@ service firebase.storage {
         (request.resource == null || isValidMediaUpload());
     }
 
-    // รูปปกส่วนตัวอ่านได้เฉพาะเจ้าของและผู้ติดตามที่อนุมัติแล้ว
     // หลักฐานเขียนได้จาก backend เท่านั้น และคนรายงานไม่เห็นหลักฐานของคนอื่น
     match /moderation_evidence/{caseKey}/{revision}/{fileName} {
       function caseDocument() { return /databases/(default)/documents/moderation_cases/$(caseKey); }
@@ -46,12 +45,13 @@ service firebase.storage {
       allow write: if false;
     }
 
-    // Profile covers are readable by their owner, or signed-in users while public.
+    // สมาชิกที่ล็อกอินอ่านได้เฉพาะรูปปกปัจจุบัน แม้บัญชียังเป็นส่วนตัว
     match /profile_covers/{ownerUid}/{fileName} {
       function profile() { return /databases/(default)/documents/users/$(ownerUid); }
       allow read: if request.auth != null && firestore.exists(profile()) &&
         (request.auth.uid == ownerUid ||
-         firestore.get(profile()).data.get('privacyTarget', firestore.get(profile()).data.get('isPrivate', false)) != true);
+         firestore.get(profile()).data.get('coverPath', '') ==
+           'profile_covers/' + ownerUid + '/' + fileName);
       allow write: if request.auth != null && request.auth.uid == ownerUid &&
         (request.resource == null || (request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType == 'image/png'));
     }

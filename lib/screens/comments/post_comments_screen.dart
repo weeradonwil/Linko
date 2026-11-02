@@ -2,12 +2,15 @@ import '../../core/widgets/content_visibility.dart';
 
 // หน้าความคิดเห็นของโพสต์ แสดงรายการสดและเปิดให้สมาชิกเพิ่ม/ลบคอมเมนต์ของตน
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/models/post.dart';
 import '../../core/models/post_comment.dart';
 import '../../core/services/comment_service.dart';
 import '../../core/utils/firebase_error_message.dart';
+import '../../core/widgets/member_avatar.dart';
+import '../profile/profile.dart';
 
 /// แสดงความคิดเห็นของโพสต์ฟีดหลักหรือกลุ่ม โดย CommentService เลือกตำแหน่งและ Rules ที่ตรงกัน
 class PostCommentsScreen extends StatefulWidget {
@@ -109,7 +112,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       appBar: AppBar(title: const Text('ความคิดเห็น')),
       body: Column(
         children: [
-          _PostPreview(post: widget.post),
+          _PostPreview(post: widget.post, viewer: widget.user),
           Expanded(
             child: StreamBuilder<List<PostComment>>(
               stream: _service.watchComments(
@@ -180,10 +183,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    child: Text(_initial(widget.user.displayName)),
-                  ),
+                  MemberAvatar(uid: widget.user.uid, radius: 18),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
@@ -226,8 +226,9 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
 }
 
 class _PostPreview extends StatelessWidget {
-  const _PostPreview({required this.post});
+  const _PostPreview({required this.post, required this.viewer});
   final Post post;
+  final User viewer;
 
   @override
   Widget build(BuildContext context) {
@@ -239,9 +240,57 @@ class _PostPreview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(post.authorName, style: Theme.of(context).textTheme.titleSmall),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    ProfileScreen(user: viewer, profileUid: post.userId),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  MemberAvatar(uid: post.userId, radius: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child:
+                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(post.userId)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            final profileName = snapshot.data
+                                ?.data()?['displayName'];
+                            final name =
+                                profileName is String &&
+                                    profileName.trim().isNotEmpty
+                                ? profileName.trim()
+                                : post.authorName;
+                            return Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            );
+                          },
+                        ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (post.content.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 10),
             Text(post.content, maxLines: 3, overflow: TextOverflow.ellipsis),
           ],
         ],
@@ -264,57 +313,85 @@ class _CommentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(radius: 19, child: Text(_initial(comment.authorName))),
-        const SizedBox(width: 10),
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      // ใช้ชื่อโปรไฟล์ปัจจุบันแทนชื่อสำเนาที่เก็บไว้ในคอมเมนต์เก่า
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(comment.authorId)
+          .snapshots(),
+      builder: (context, profileSnapshot) {
+        final profile = profileSnapshot.data?.data();
+        final currentName = profile?['displayName'];
+        final authorName =
+            currentName is String && currentName.trim().isNotEmpty
+            ? currentName.trim()
+            : comment.authorName;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MemberAvatar(uid: comment.authorId, radius: 19),
+            const SizedBox(width: 10),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    comment.authorName,
-                    style: Theme.of(context).textTheme.labelLarge,
+                  // ชื่อและเวลาวางเป็นหัวแยกจากกล่องเนื้อหาคอมเมนต์
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 2, 2, 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            authorName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _relativeTime(comment.createdAt),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(comment.content),
-                  const SizedBox(height: 5),
-                  Text(
-                    _relativeTime(comment.createdAt),
-                    style: Theme.of(context).textTheme.labelSmall
-                        ?.copyWith(color: colors.onSurfaceVariant),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 11,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SelectableText(comment.content),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        ),
-        if (canDelete)
-          PopupMenuButton<String>(
-            tooltip: 'จัดการความคิดเห็น',
-            onSelected: (value) {
-              if (value == 'delete') onDelete();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'delete', child: Text('ลบความคิดเห็น')),
-            ],
-          ),
-      ],
+            if (canDelete)
+              PopupMenuButton<String>(
+                tooltip: 'จัดการความคิดเห็น',
+                onSelected: (value) {
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'delete', child: Text('ลบความคิดเห็น')),
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
-}
-
-String _initial(String? name) {
-  final value = name?.trim() ?? '';
-  return value.isEmpty ? 'ส' : value.characters.first.toUpperCase();
 }
 
 String _relativeTime(DateTime? date) {

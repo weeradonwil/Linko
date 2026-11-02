@@ -32,8 +32,8 @@
 - [`appearance_settings.dart`](../lib/core/widgets/appearance_settings.dart): ปุ่มเปิดเมนู ตัวเลือกสว่าง/มืด และรายการสีแยกสองโหมด
 - [`main.dart`](../lib/main.dart): เชื่อมตัวควบคุมกับ `MaterialApp` เหนือ Navigator เพื่อให้หน้าที่เปิดค้างเปลี่ยนธีมพร้อมกัน
 - [`appearance_test.dart`](../test/appearance_test.dart): ตรวจคู่สี การจำค่า การคืนค่าเริ่มต้น การกู้การบันทึก และเมนูบนจอเล็ก
-- [`appearance_smoke.dart`](appearance_smoke.dart): หน้าแยกทดสอบ render ของ 16 ชุดและ storage บนแพลตฟอร์มจริง โดยไม่เรียก `Firebase.initializeApp()`
-- [`run_appearance_smoke.mjs`](run_appearance_smoke.mjs): เปิด Flutter/Chrome ทดสอบ เก็บผลและภาพ และปิด process/ลบโปรไฟล์ชั่วคราวที่สร้างเอง
+- [`appearance_smoke.dart`](../tool/appearance_smoke.dart): หน้าแยกทดสอบ render ของ 16 ชุดและ storage บนแพลตฟอร์มจริง โดยไม่เรียก `Firebase.initializeApp()`
+- [`run_appearance_smoke.mjs`](../tool/run_appearance_smoke.mjs): เปิด Flutter/Chrome ทดสอบ เก็บผลและภาพ และปิด process/ลบโปรไฟล์ชั่วคราวที่สร้างเอง
 
 ## การบันทึกและค่ารุ่นเดิม
 

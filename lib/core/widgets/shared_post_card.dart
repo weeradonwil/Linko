@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../models/post.dart';
 import '../../screens/comments/post_comments_screen.dart';
+import '../../screens/profile/profile.dart';
+import 'member_avatar.dart';
 import 'post_media.dart';
 import 'content_visibility.dart';
 
@@ -38,6 +40,17 @@ class SharedPostCard extends StatelessWidget {
             );
           }
           final post = Post.fromSnapshot(snapshot.data!);
+          final viewer = FirebaseAuth.instance.currentUser;
+          void openAuthorProfile() {
+            if (viewer == null) return;
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    ProfileScreen(user: viewer, profileUid: post.userId),
+              ),
+            );
+          }
+
           return ContentVisibility(
             authorId: post.userId,
             child: Card(
@@ -56,9 +69,51 @@ class SharedPostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'แชร์จาก ${post.authorName}',
-                        style: Theme.of(context).textTheme.labelLarge,
+                      // ปุ่มโปรไฟล์แยกจากพื้นที่แตะเปิดโพสต์ต้นฉบับ
+                      Row(
+                        children: [
+                          InkWell(
+                            onTap: openAuthorProfile,
+                            customBorder: const CircleBorder(),
+                            child: MemberAvatar(uid: post.userId, radius: 18),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: InkWell(
+                              onTap: openAuthorProfile,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'แชร์จาก ${post.authorName}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge,
+                                    ),
+                                    Text(
+                                      'ดูโปรไฟล์',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Text(
