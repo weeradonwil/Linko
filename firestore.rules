@@ -550,6 +550,31 @@ service cloud.firestore {
           canChangeOwnHiddenState() &&
           request.resource.data.updatedAt == request.time;
       }
+      // ลบประวัติเฉพาะบัญชีตัวเอง โดยไม่เปลี่ยนสถานะอ่านหรือประวัติของอีกฝ่าย
+      function canClearOwnConversation() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let ids = resource.data.participantIds;
+        let oldCleared = resource.data.get('clearedAt', {}) is map ? resource.data.get('clearedAt', {}) : {};
+        let newCleared = request.resource.data.get('clearedAt', {});
+        let oldUnread = resource.data.get('unreadCounts', {}) is map ? resource.data.get('unreadCounts', {}) : {};
+        let newUnread = request.resource.data.get('unreadCounts', {});
+        let oldRead = resource.data.get('lastReadAt', {}) is map ? resource.data.get('lastReadAt', {}) : {};
+        let newRead = request.resource.data.get('lastReadAt', {});
+        return changed.hasAll(['clearedAt']) &&
+          changed.hasOnly(['hiddenFor', 'clearedAt', 'unreadCounts', 'lastReadAt', 'updatedAt']) &&
+          canChangeOwnHiddenState() &&
+          request.resource.data.hiddenFor.get(request.auth.uid, false) == true &&
+          newCleared is map && newCleared.keys().hasOnly(ids) &&
+          newCleared.get(request.auth.uid, null) == request.time &&
+          newCleared.get(otherParticipantUid(), null) == oldCleared.get(otherParticipantUid(), null) &&
+          newUnread is map && newUnread.keys().hasOnly(ids) &&
+          newUnread.get(request.auth.uid, -1) == 0 &&
+          newUnread.get(otherParticipantUid(), 0) == oldUnread.get(otherParticipantUid(), 0) &&
+          newRead is map && newRead.keys().hasOnly(ids) &&
+          newRead.get(request.auth.uid, null) == request.time &&
+          newRead.get(otherParticipantUid(), null) == oldRead.get(otherParticipantUid(), null) &&
+          request.resource.data.updatedAt == request.time;
+      }
       // Transactions that create a deterministic conversation first read its
       // document. Allow signed-in users to read a missing ID so they can create
       // it; existing conversations remain visible to participants only.
@@ -576,6 +601,7 @@ service cloud.firestore {
         (canUpdateOwnReadState() ||
          canUpdateForNewMessage() ||
          canUpdateForUnsentLatestMessage() ||
+         canClearOwnConversation() ||
          canUpdateOwnHiddenStateOnly());
       allow delete: if false;
 
@@ -585,13 +611,19 @@ service cloud.firestore {
           return signedIn() &&
             request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds;
         }
+        function canReadOwnHistory() {
+          let cleared = get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('clearedAt', {});
+          return !(cleared is map) || !(request.auth.uid in cleared) ||
+            (cleared[request.auth.uid] is timestamp &&
+             resource.data.createdAt > cleared[request.auth.uid]);
+        }
         function updatesConversationSummary() {
           let parent = getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data;
           return parent.lastMessageId == messageId &&
             parent.lastMessageSenderId == request.auth.uid &&
             parent.lastMessageAt == request.time;
         }
-        allow read: if parentHasParticipant();
+        allow read: if parentHasParticipant() && canReadOwnHistory();
         allow create: if verifiedMember() && parentHasParticipant() && notBlocked(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[0]) && notBlocked(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[1]) && validWriteTicket('conversations/' + conversationId + '/messages/' + messageId, messageId) && updatesConversationSummary() &&
           request.resource.data.keys().hasAll(['senderId','type','text','createdAt']) &&
           request.resource.data.keys().hasOnly(['senderId','type','text','mediaPath','createdAt']) &&

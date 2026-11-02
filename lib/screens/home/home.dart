@@ -292,17 +292,17 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // ให้ช่องสร้างโพสต์คงอยู่ด้านบนระหว่างเลื่อนฟีด
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
               child: Card(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(20),
                   onTap: () => _openCreatePost(context),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(10),
                     child: Row(
                       children: [
                         CircleAvatar(
-                          radius: 25,
+                          radius: 20,
                           backgroundColor: Theme.of(context)
                               .colorScheme
                               .primary,
@@ -311,12 +311,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               .onPrimary,
                           child: Text(title.characters.first.toUpperCase()),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
+                              horizontal: 12,
+                              vertical: 10,
                             ),
                             decoration: BoxDecoration(
                               color: Theme.of(context)
@@ -340,9 +340,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Icon(
                           Icons.add_photo_alternate_outlined,
+                          size: 22,
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ],

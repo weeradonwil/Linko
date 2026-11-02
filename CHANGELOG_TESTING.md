@@ -1,5 +1,14 @@
 # Change Log and Test Report
 
+## 2026-11-02 — ลบประวัติแชทเฉพาะบัญชี
+
+- แก้เปิดแชทจากโปรไฟล์แล้วข้อความที่เคยลบกลับมา: เก็บ `clearedAt` ตาม UID และไม่คืนห้องเข้าแชทลิสต์จนมีข้อความใหม่
+- อีกฝ่ายที่ไม่ได้ลบยังอ่านประวัติเดิมได้; Firestore Rules ปิดการอ่านข้อความก่อน `clearedAt` สำหรับผู้ที่ลบ และกันการเปลี่ยนเวลาของอีกฝ่าย
+- ห้องที่ซ่อนด้วยแอปรุ่นเก่าจะเติม `clearedAt` เมื่อเปิดจากโปรไฟล์ครั้งแรก; ข้อความใหม่หลังลบแสดงตามปกติ
+- ปรับแถบสร้างโพสต์บน Feed ให้เตี้ยลงตามที่ขอในรอบก่อน
+- Analyzer ผ่าน, Firebase Emulator Rules ผ่าน, ChatService จริงบน Chrome 8/8 ผ่าน และ Android debug APK build/ติดตั้งบน Emulator ผ่าน
+- สำรอง Rules ก่อน deploy, deploy เฉพาะ Firestore Rules ไป `social-network-app-c22eb` และอ่านกลับยืนยันตรงกับไฟล์ที่ทดสอบ
+
 ## 2026-10-31 — ตรวจโพสต์ไม่ได้, native Android และ UI รอบล่าสุด
 
 - APK เดิมที่ติดตั้งเป็น 1.0.2+3 ไม่มี Cloud Functions native plugin ขณะที่ source ใหม่ขอ write ticket ก่อนโพสต์ จึงต้อง rebuild/install ทั้งแอปแทน Hot Reload อย่างเดียว

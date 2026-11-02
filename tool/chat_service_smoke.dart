@@ -1,5 +1,6 @@
 // จุดเริ่ม Flutter สำหรับทดสอบ ChatService ตัวจริงบนเบราว์เซอร์กับ Emulator ในเครื่อง
 // แยกจาก lib/main.dart และใช้ demo-linko เท่านั้น; ไม่อัปโหลดไฟล์แนบจริง
+import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +12,7 @@ import 'package:social_app/core/models/chat_models.dart';
 import 'package:social_app/core/services/chat_service.dart';
 import 'package:social_app/core/services/auth_service.dart';
 import 'package:social_app/core/services/follow_service.dart';
+import 'package:web/web.dart' as web;
 
 // ส่งผลกลับให้ run_chat_service_smoke.mjs อ่านผ่าน Chrome DevTools
 @JS('globalThis.linkoChatTestResults')
@@ -49,6 +51,47 @@ Future<void> _permissionDenied(Future<dynamic> operation) async {
     return;
   }
   throw StateError('A forbidden operation succeeded');
+}
+
+// จำลองห้องที่เคยกดลบในแอปรุ่นเก่า ซึ่งยังไม่มีจุดตัดประวัติ
+Future<void> _legacyHide(String conversationId, String uid) async {
+  _check(_options.projectId == 'demo-linko', 'Emulator project is required');
+  final headers = web.Headers()
+    ..set('Authorization', 'Bearer owner')
+    ..set('Content-Type', 'application/json');
+  final response = await web.window
+      .fetch(
+        'http://127.0.0.1:8080/v1/projects/demo-linko/databases/(default)/documents:commit'
+            .toJS,
+        web.RequestInit(
+          method: 'POST',
+          headers: headers,
+          body: jsonEncode({
+            'writes': [
+              {
+                'update': {
+                  'name':
+                      'projects/demo-linko/databases/(default)/documents/conversations/$conversationId',
+                  'fields': {
+                    'hiddenFor': {
+                      'mapValue': {
+                        'fields': {
+                          uid: {'booleanValue': true},
+                        },
+                      },
+                    },
+                  },
+                },
+                'updateMask': {
+                  'fieldPaths': ['hiddenFor.$uid'],
+                },
+              },
+            ],
+          }).toJS,
+        ),
+      )
+      .toDart;
+  if (!response.ok) throw StateError('Legacy fixture failed');
 }
 
 Future<void> main() async {
@@ -167,39 +210,151 @@ Future<void> main() async {
         'Peer read state unchanged',
       );
     },
-    'reopen visible room and preserve peer hidden state': () async {
+    'deleted chat stays empty after reopening while peer keeps history':
+        () async {
+          await alice.service.sendMessage(
+            conversationId: room,
+            peerId: bob.uid,
+            text: 'Hello',
+          );
+          final oldMessage = (await received(1)).single;
+          await alice.service.hideConversation(room);
+          _check(
+            (await alice.service.watchConversations().first).isEmpty,
+            'Deleted room stays out of the list',
+          );
+          _check(
+            (await alice.service.watchMessages(room).first).isEmpty,
+            'Old messages do not return for the deleting account',
+          );
+          await _permissionDenied(
+            alice.db
+                .collection('conversations')
+                .doc(room)
+                .collection('messages')
+                .doc(oldMessage.id)
+                .get(const GetOptions(source: Source.server)),
+          );
+          _check(
+            (await received(1)).single.id == oldMessage.id,
+            'Peer keeps the original message',
+          );
+          _check(
+            await alice.service.openConversation(
+                  peerId: bob.uid,
+                  peerName: 'Bob',
+                ) ==
+                room,
+            'Open deleted room from profile',
+          );
+          _check(
+            await alice.service.openConversation(
+                  peerId: bob.uid,
+                  peerName: 'Bob',
+                ) ==
+                room,
+            'Open same room again',
+          );
+          _check(
+            (await alice.service.watchConversations().first).isEmpty,
+            'Opening from profile does not restore chat list',
+          );
+          _check(
+            (await alice.service.watchMessages(room).first).isEmpty,
+            'Opening from profile does not restore old messages',
+          );
+          await alice.service.sendMessage(
+            conversationId: room,
+            peerId: bob.uid,
+            text: 'New start',
+          );
+          final mine = await alice.service
+              .watchMessages(room)
+              .firstWhere(
+                (messages) =>
+                    messages.length == 1 && messages.single.text == 'New start',
+              )
+              .timeout(const Duration(seconds: 20));
+          _check(
+            mine.single.id != oldMessage.id,
+            'Deleter sees only the new message',
+          );
+          _check(
+            (await received(2)).first.id == oldMessage.id,
+            'Other account still sees both messages',
+          );
+          final hidden = (await summary())['hiddenFor'] as Map;
+          _check(
+            hidden[alice.uid] == false && hidden[bob.uid] == false,
+            'New message returns the chat to the list',
+          );
+        },
+    'each account can clear its own history independently': () async {
       await alice.service.sendMessage(
         conversationId: room,
         peerId: bob.uid,
-        text: 'Hello',
+        text: 'Before clearing',
       );
+      final oldMessage = (await received(1)).single;
       await alice.service.hideConversation(room);
-      _check(
-        (await alice.service.watchConversations().first).isEmpty,
-        'Hidden room filtered',
-      );
-      _check(
-        await alice.service.openConversation(
-              peerId: bob.uid,
-              peerName: 'Bob',
-            ) ==
-            room,
-        'Reopen hidden room',
-      );
-      _check(
-        await alice.service.openConversation(
-              peerId: bob.uid,
-              peerName: 'Bob',
-            ) ==
-            room,
-        'Reopen visible room',
-      );
       await bob.service.hideConversation(room);
-      await alice.service.openConversation(peerId: bob.uid, peerName: 'Bob');
-      final hidden = (await summary())['hiddenFor'] as Map;
       _check(
-        hidden[alice.uid] == false && hidden[bob.uid] == true,
-        'Peer hidden state preserved',
+        (await alice.service.watchMessages(room).first).isEmpty,
+        'Alice cannot see the old message',
+      );
+      _check(
+        (await bob.service.watchMessages(room).first).isEmpty,
+        'Bob cannot see the old message after clearing too',
+      );
+      await alice.service.sendMessage(
+        conversationId: room,
+        peerId: bob.uid,
+        text: 'After clearing',
+      );
+      final newMessage =
+          (await bob.service
+                  .watchMessages(room)
+                  .firstWhere(
+                    (messages) =>
+                        messages.length == 1 &&
+                        messages.single.text == 'After clearing',
+                  )
+                  .timeout(const Duration(seconds: 20)))
+              .single;
+      _check(
+        newMessage.id != oldMessage.id,
+        'A new message does not restore either old history',
+      );
+    },
+    'old hidden room is cleared when opened from profile': () async {
+      await alice.service.sendMessage(
+        conversationId: room,
+        peerId: bob.uid,
+        text: 'From old version',
+      );
+      final oldMessage = (await received(1)).single;
+      await _legacyHide(room, alice.uid);
+      _check(
+        (await summary())['clearedAt'] == null,
+        'Old room has no cutoff yet',
+      );
+      await alice.service.openConversation(peerId: bob.uid, peerName: 'Bob');
+      final after = await summary();
+      _check(
+        (after['clearedAt'] as Map)[alice.uid] != null,
+        'Opening old hidden room creates a cutoff',
+      );
+      _check(
+        (after['hiddenFor'] as Map)[alice.uid] == true,
+        'Old room stays out of the chat list',
+      );
+      _check(
+        (await alice.service.watchMessages(room).first).isEmpty,
+        'Old messages stay deleted after migration',
+      );
+      _check(
+        (await received(1)).single.id == oldMessage.id,
+        'Peer history survives migration',
       );
     },
     'unsend identical preview and send another text': () async {

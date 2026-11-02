@@ -205,11 +205,9 @@ class ChatListScreen extends StatelessWidget {
                                   final confirmed = await showDialog<bool>(
                                     context: context,
                                     builder: (context) => AlertDialog(
-                                      title: const Text(
-                                        'ลบแชทนี้ออกจากรายการ?',
-                                      ),
+                                      title: const Text('ลบประวัติแชทนี้?'),
                                       content: const Text(
-                                        'ข้อความของคุณและอีกฝ่ายจะยังอยู่ แชทจะถูกซ่อนจากบัญชีนี้',
+                                        'ประวัติเก่าจะหายจากบัญชีคุณ แม้เปิดแชทนี้ใหม่ อีกฝ่ายยังเห็นข้อความเดิม',
                                       ),
                                       actions: [
                                         TextButton(

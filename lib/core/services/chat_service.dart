@@ -1,6 +1,7 @@
 import 'trusted_service.dart';
 
 // จัดการการสนทนา ข้อความ การอ่านแล้ว/ยังไม่อ่าน และไฟล์แนบของบัญชีปัจจุบัน
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -59,15 +60,82 @@ class ChatService {
         });
   }
 
-  // ฟัง 100 ข้อความล่าสุดและเรียงตามเวลาส่งจากเก่าไปใหม่
-  Stream<List<ChatMessage>> watchMessages(String id, {int limit = 100}) =>
-      _conversations
-          .doc(id)
-          .collection('messages')
-          .orderBy('createdAt')
-          .limitToLast(limit)
-          .snapshots()
-          .map((s) => s.docs.map(ChatMessage.fromSnapshot).toList());
+  // คนที่ลบแชทจะเห็นเฉพาะข้อความใหม่ ส่วนอีกฝ่ายยังเห็นประวัติเดิม
+  Stream<List<ChatMessage>> watchMessages(String id, {int limit = 100}) {
+    final uid = _uid;
+    final room = _conversations.doc(id);
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+    roomSubscription;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+    messagesSubscription;
+    Timestamp? cutoff;
+    var listeningToMessages = false;
+    var generation = 0;
+    var session = 0;
+    late final StreamController<List<ChatMessage>> controller;
+
+    controller = StreamController<List<ChatMessage>>.broadcast(
+      onListen: () {
+        final activeSession = ++session;
+        roomSubscription = room.snapshots().listen((snapshot) async {
+          if (activeSession != session) return;
+          final value = readMap(snapshot.data()?['clearedAt'])[uid];
+          final nextCutoff = value is Timestamp ? value : null;
+          if (listeningToMessages && nextCutoff == cutoff) return;
+          if (listeningToMessages && nextCutoff != cutoff) {
+            // อีกเครื่องลบแชทอยู่: เอาข้อความเก่าออกก่อนเริ่ม query ใหม่
+            controller.add(const <ChatMessage>[]);
+          }
+          cutoff = nextCutoff;
+          listeningToMessages = true;
+          final currentGeneration = ++generation;
+          await messagesSubscription?.cancel();
+          if (controller.isClosed ||
+              activeSession != session ||
+              currentGeneration != generation) {
+            return;
+          }
+
+          Query<Map<String, dynamic>> query = room
+              .collection('messages')
+              .orderBy('createdAt');
+          if (nextCutoff != null) {
+            query = query.where('createdAt', isGreaterThan: nextCutoff);
+          }
+          messagesSubscription = query
+              .limitToLast(limit)
+              .snapshots()
+              .listen(
+                (snapshot) {
+                  if (currentGeneration != generation || controller.isClosed) {
+                    return;
+                  }
+                  controller.add(
+                    snapshot.docs.map(ChatMessage.fromSnapshot).toList(),
+                  );
+                },
+                onError: (Object error, StackTrace stackTrace) {
+                  if (!controller.isClosed && currentGeneration == generation) {
+                    controller.addError(error, stackTrace);
+                  }
+                },
+              );
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        session++;
+        generation++;
+        listeningToMessages = false;
+        final oldRoom = roomSubscription;
+        final oldMessages = messagesSubscription;
+        roomSubscription = null;
+        messagesSubscription = null;
+        await oldRoom?.cancel();
+        await oldMessages?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   /// สร้าง ID เดิมให้คู่สมาชิกเดิมเสมอ และใช้ transaction ป้องกันห้องซ้ำ
   Future<String> openConversation({
@@ -86,12 +154,18 @@ class ChatService {
     await _firestore.runTransaction((tx) async {
       final existing = await tx.get(ref);
       if (existing.exists) {
-        if (readMap(existing.data()?['hiddenFor'])[uid] == true) {
+        // ห้องที่เคยลบในแอปรุ่นเก่ามีแค่ hiddenFor; เติมจุดตัดประวัติครั้งแรก
+        if (readMap(existing.data()?['hiddenFor'])[uid] == true &&
+            readMap(existing.data()?['clearedAt'])[uid] is! Timestamp) {
           tx.update(ref, {
-            FieldPath(['hiddenFor', uid]): false,
+            FieldPath(['hiddenFor', uid]): true,
+            FieldPath(['clearedAt', uid]): FieldValue.serverTimestamp(),
+            FieldPath(['unreadCounts', uid]): 0,
+            FieldPath(['lastReadAt', uid]): FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
+        // เปิดจากโปรไฟล์ได้ แต่ห้องยังไม่กลับเข้ารายการจนมีข้อความใหม่
         return;
       }
       final followsPeer = await tx.get(
@@ -124,11 +198,14 @@ class ChatService {
     return id;
   }
 
-  /// ซ่อนห้องแชทเฉพาะบัญชีนี้ โดยเก็บข้อความของทั้งสองฝ่ายไว้ในห้องเดิม
+  /// ลบประวัติที่บัญชีนี้มองเห็น โดยไม่แตะข้อความที่อีกฝ่ายยังเก็บไว้
   Future<void> hideConversation(String conversationId) async {
     final uid = _uid;
     await _conversations.doc(conversationId).update({
       FieldPath(['hiddenFor', uid]): true,
+      FieldPath(['clearedAt', uid]): FieldValue.serverTimestamp(),
+      FieldPath(['unreadCounts', uid]): 0,
+      FieldPath(['lastReadAt', uid]): FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

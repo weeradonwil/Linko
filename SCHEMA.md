@@ -42,11 +42,11 @@
 
 ### `conversations/{conversationId}`
 
-- `participantIds`, `participantNames`, `unreadCounts`, `lastReadAt`, `createdAt`, `updatedAt`; อาจมี `hiddenFor`
+- `participantIds`, `participantNames`, `unreadCounts`, `lastReadAt`, `createdAt`, `updatedAt`; อาจมี `hiddenFor` และ `clearedAt` แยกตาม UID
 - ข้อมูลสรุปข้อความล่าสุด: `lastMessageText`, `lastMessageType`, `lastMessageSenderId`, `lastMessageAt`, `lastMessageId`
 - ข้อความอยู่ใน `conversations/{conversationId}/messages/{messageId}`: `senderId`, `type`, `text`, `createdAt`; อาจมี `mediaPath`
-- ยกเลิกข้อความโดยเปลี่ยนเป็น `type: deleted`; ซ่อนห้องเป็นสถานะเฉพาะผู้ใช้ ไม่ลบข้อความของอีกฝ่าย
-- การสร้างห้องใหม่ต้องมี approved follow จากผู้เริ่มถึงผู้รับ; ห้องเดิมยังสนทนาต่อได้ การส่งข้อความต้องเขียนข้อความและ summary ในชุดเดียวกัน และตั้ง `hiddenFor` ของทั้งสองฝ่ายเป็น false เพื่อให้ข้อความใหม่แสดงห้องอีกครั้ง
+- ยกเลิกข้อความโดยเปลี่ยนเป็น `type: deleted` ให้ทั้งคู่เห็น; ลบแชทจะตั้ง `hiddenFor` และ `clearedAt` เฉพาะผู้กดลบ Rules ปิดการอ่านข้อความก่อนเวลานั้นสำหรับบัญชีนั้น อีกฝ่ายยังเห็นประวัติเดิม
+- การสร้างห้องใหม่ต้องมี approved follow จากผู้เริ่มถึงผู้รับ; เปิดห้องเดิมจากโปรไฟล์ไม่ยกเลิกการลบของตน การส่งข้อความต้องเขียนข้อความและ summary ในชุดเดียวกัน และตั้ง `hiddenFor` ของทั้งสองฝ่ายเป็น false เพื่อให้ข้อความใหม่แสดงห้องอีกครั้ง โดยไม่คืนข้อความก่อน `clearedAt`
 - `unreadCounts` ของห้องใหม่ต้องเป็นเลขศูนย์แยกตามผู้ร่วมสนทนา; ค่าที่ไม่ใช่ตัวเลขในเอกสารเก่ารองรับการกลับมา increment เป็น 1 เมื่อมีข้อความใหม่
 - ไฟล์แนบอยู่ใน `chat_media/{conversationId}/{senderUid}/{fileName}`
 

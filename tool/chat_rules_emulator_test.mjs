@@ -69,4 +69,22 @@ allowed(await commit(sender.token, sendWrites(sender, recipient, 'legacy_counter
 const repaired = await get(recipient.token, room);
 assert(repaired.body.fields.unreadCounts.mapValue.fields[recipient.uid].integerValue === '1',
   'Legacy counter resumes at one unread message');
-console.log('PASS chat: follow gate, schema, repeated messages, reply, reopen, hidden room, unsend, outsider and atomic summary');
+allowed(await commit(recipient.token, [write(room, {
+  hiddenFor: m({ [recipient.uid]: b(true) }), unreadCounts: m({ [recipient.uid]: n(0) }),
+}, {
+  mask: [field('hiddenFor', recipient.uid), field('unreadCounts', recipient.uid)],
+  timestamps: [field('clearedAt', recipient.uid), field('lastReadAt', recipient.uid), 'updatedAt'],
+})]), 'Clear only my chat history');
+denied(await get(recipient.token, `${room}/messages/first`), 'Deleted history is unreadable to deleter');
+allowed(await get(sender.token, `${room}/messages/first`), 'Peer still reads original history');
+denied(await commit(sender.token, [write(room, {
+  hiddenFor: m({ [sender.uid]: b(true) }), unreadCounts: m({ [sender.uid]: n(0) }),
+}, {
+  mask: [field('hiddenFor', sender.uid), field('unreadCounts', sender.uid)],
+  timestamps: [field('clearedAt', recipient.uid), field('lastReadAt', sender.uid), 'updatedAt'],
+})]), 'Cannot erase the other participant history');
+allowed(await commit(sender.token, sendWrites(sender, recipient, 'after_clear', 'Fresh')),
+  'New message resurfaces the cleared room');
+allowed(await get(recipient.token, `${room}/messages/after_clear`), 'New message is readable after clearing');
+denied(await get(recipient.token, `${room}/messages/first`), 'New message cannot revive old history');
+console.log('PASS chat: follow gate, schema, repeated messages, reply, clear own history, peer history, unsend, outsider and atomic summary');
