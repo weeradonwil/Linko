@@ -33,3 +33,11 @@ Linko เป็นแอปโซเชียลเน็ตเวิร์ก�
 9. **SharedPreferences** — จำการตั้งค่าในเครื่อง เช่น ธีม
 10. **image_picker, video_player และ video_thumbnail** — เลือก แสดง และสร้างภาพตัวอย่างของสื่อ
 11. **Firebase Emulator, Flutter Test และ Node.js Test** — เครื่องมือทดสอบระบบ
+
+## Android APK
+
+[Download Linko 1.1.1 Debug APK](build/app/outputs/flutter-apk/Linko-1.1.1-debug.apk)
+
+Version: 1.1.1+5 (Android debug build).
+
+The APK is generated locally in the ignored build/ directory, so this link works in the local project. To make it downloadable from GitHub, publish the APK as a GitHub Release asset.
