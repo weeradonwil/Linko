@@ -541,6 +541,8 @@ class _MessageBubble extends StatelessWidget {
                                     child: PostMedia(
                                       path: message.mediaPath!,
                                       type: message.type,
+                                      thumbnailPath: message.thumbnailPath,
+                                      showVideoFrameIfNoThumbnail: true,
                                     ),
                                   ),
                                 ),

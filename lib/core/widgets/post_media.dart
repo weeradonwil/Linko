@@ -26,6 +26,7 @@ class PostMedia extends StatelessWidget {
     this.thumbnailPath,
     this.imageFit = BoxFit.contain,
     this.thumbnailFit = BoxFit.contain,
+    this.showVideoFrameIfNoThumbnail = false,
     super.key,
   });
 
@@ -34,6 +35,7 @@ class PostMedia extends StatelessWidget {
   final String? thumbnailPath;
   final BoxFit imageFit;
   final BoxFit thumbnailFit;
+  final bool showVideoFrameIfNoThumbnail;
 
   @override
   Widget build(BuildContext context) {
@@ -42,16 +44,24 @@ class PostMedia extends StatelessWidget {
             path: path,
             thumbnailPath: thumbnailPath,
             thumbnailFit: thumbnailFit,
+            showVideoFrameIfNoThumbnail: showVideoFrameIfNoThumbnail,
           )
         : _StorageImage(path: path, fit: imageFit);
   }
 }
 
 class _StorageImage extends StatefulWidget {
-  const _StorageImage({required this.path, this.fit = BoxFit.contain});
+  const _StorageImage({
+    required this.path,
+    this.fit = BoxFit.contain,
+    this.hideLoadErrors = false,
+    this.allowExpand = true,
+  });
 
   final String path;
   final BoxFit fit;
+  final bool hideLoadErrors;
+  final bool allowExpand;
 
   @override
   State<_StorageImage> createState() => _StorageImageState();
@@ -119,6 +129,7 @@ class _StorageImageState extends State<_StorageImage> {
         if (snapshot.hasError ||
             snapshot.connectionState == ConnectionState.done &&
                 snapshot.data == null) {
+          if (widget.hideLoadErrors) return const SizedBox.expand();
           return _MediaMessage(
             icon: Icons.broken_image_outlined,
             onPressed: () => setState(() {
@@ -130,21 +141,85 @@ class _StorageImageState extends State<_StorageImage> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _MediaLoading();
         }
+        final image = ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.memory(
+            snapshot.data!,
+            width: double.infinity,
+            cacheWidth: 780,
+            fit: widget.fit,
+          ),
+        );
         return ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 480),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.memory(
-              snapshot.data!,
-              width: double.infinity,
-              cacheWidth: 780,
-              fit: widget.fit,
-            ),
-          ),
+          child: widget.allowExpand
+              ? GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _FullScreenImage(bytes: snapshot.data!),
+                    ),
+                  ),
+                  child: image,
+                )
+              : image,
         );
       },
     );
   }
+}
+
+/// Opens the already-authorized image bytes and lets the user zoom/pan it.
+class _FullScreenImage extends StatefulWidget {
+  const _FullScreenImage({required this.bytes});
+
+  final Uint8List bytes;
+
+  @override
+  State<_FullScreenImage> createState() => _FullScreenImageState();
+}
+
+class _FullScreenImageState extends State<_FullScreenImage> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    body: Stack(
+      children: [
+        Positioned.fill(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Center(
+              child: Image.memory(widget.bytes, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 12,
+          left: 12,
+          child: IconButton.filledTonal(
+            tooltip: 'Close image',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _StorageVideo extends StatefulWidget {
@@ -152,11 +227,13 @@ class _StorageVideo extends StatefulWidget {
     required this.path,
     this.thumbnailPath,
     this.thumbnailFit = BoxFit.contain,
+    this.showVideoFrameIfNoThumbnail = false,
   });
 
   final String path;
   final String? thumbnailPath;
   final BoxFit thumbnailFit;
+  final bool showVideoFrameIfNoThumbnail;
 
   @override
   State<_StorageVideo> createState() => _StorageVideoState();
@@ -169,13 +246,27 @@ class _StorageVideoState extends State<_StorageVideo> {
   Future<void>? _initialization;
 
   @override
+  void initState() {
+    super.initState();
+    // วิดีโอแชทเก่าที่ไม่มีภาพปก ให้เปิดเฟรมแรกค้างไว้โดยไม่เล่นเอง
+    if (widget.showVideoFrameIfNoThumbnail && widget.thumbnailPath == null) {
+      _initialization = _prepareVideo();
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant _StorageVideo oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path ||
-        oldWidget.thumbnailPath != widget.thumbnailPath) {
+        oldWidget.thumbnailPath != widget.thumbnailPath ||
+        oldWidget.showVideoFrameIfNoThumbnail !=
+            widget.showVideoFrameIfNoThumbnail) {
       _disposeVideo();
       _controller = null;
-      _initialization = null;
+      _initialization =
+          widget.showVideoFrameIfNoThumbnail && widget.thumbnailPath == null
+          ? _prepareVideo()
+          : null;
     }
   }
 
@@ -334,6 +425,8 @@ class _StorageVideoState extends State<_StorageVideo> {
               _StorageImage(
                 path: widget.thumbnailPath!,
                 fit: widget.thumbnailFit,
+                hideLoadErrors: true,
+                allowExpand: false,
               ),
             const ColoredBox(color: Color(0x26000000)),
             Center(

@@ -87,6 +87,18 @@ class ChatMessage {
   final String text;
   final DateTime? createdAt;
   final String? mediaPath;
+
+  /// ใช้ชื่อไฟล์บอกว่ามีภาพปก จะได้ไม่อ่าน path ภาพปกที่ไม่มีอยู่จริง
+  String? get thumbnailPath {
+    final path = mediaPath;
+    if (type != 'video' || path == null) return null;
+    final slash = path.lastIndexOf('/');
+    final fileName = path.substring(slash + 1);
+    final match = RegExp(r'^media_(\d+)_thumb\.[^.]+$').firstMatch(fileName);
+    if (match == null) return null;
+    return '${path.substring(0, slash + 1)}thumbnail_${match.group(1)}.jpg';
+  }
+
   final bool isUnsent;
   final String? sharedPostId;
   factory ChatMessage.fromSnapshot(

@@ -7,7 +7,9 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../models/chat_models.dart';
 import '../utils/document_values.dart';
@@ -222,6 +224,7 @@ class ChatService {
     final conversationRef = _conversations.doc(conversationId);
     final messageRef = conversationRef.collection('messages').doc(message.id);
     String? mediaPath;
+    final thumbnailPath = message.thumbnailPath;
     await _firestore.runTransaction((transaction) async {
       final room = await transaction.get(conversationRef);
       final stored = await transaction.get(messageRef);
@@ -252,6 +255,13 @@ class ChatService {
         await _deleteMedia(mediaPath!);
       } catch (_) {
         // ยกเลิกข้อความสำเร็จแล้ว แม้ลบไฟล์แนบไม่สำเร็จก็ไม่ย้อนผลการยกเลิก
+      }
+    }
+    if (thumbnailPath != null) {
+      try {
+        await _deleteMedia(thumbnailPath);
+      } catch (_) {
+        // The unsent message stays removed if optional preview cleanup fails.
       }
     }
   }
@@ -286,11 +296,13 @@ class ChatService {
     final msg = _conversations.doc(conversationId).collection('messages').doc();
     final ticket = await TrustedService.reserve(_firestore, msg.path);
     String? path;
+    String? thumbnailPath;
     var type = 'text';
     if (attachment != null) {
       final m = await _uploadAttachment(conversationId, attachment);
       path = m.path;
       type = m.type;
+      thumbnailPath = m.thumbnailPath;
     }
     // เขียน batch ได้ทันทีโดยไม่อ่าน conversation ซ้ำก่อนส่ง; Firestore Rules
     // ตรวจสมาชิกและปฏิเสธ batch หากห้องหรือผู้ใช้ไม่มีสิทธิ์ ช่วยลดหนึ่งรอบเครือข่าย
@@ -327,13 +339,20 @@ class ChatService {
     try {
       await batch.commit();
     } catch (_) {
-      if (path != null) await _deleteMedia(path);
+      for (final uploadedPath in [path, thumbnailPath]) {
+        if (uploadedPath == null) continue;
+        try {
+          await _deleteMedia(uploadedPath);
+        } catch (_) {
+          // Cleanup errors should not hide the original message-send failure.
+        }
+      }
       rethrow;
     }
   }
 
   // ตรวจชนิดและขนาดไฟล์ก่อนอัปโหลด; path ต้องตรงกับ storage.rules
-  Future<({String path, String type})> _uploadAttachment(
+  Future<({String path, String type, String? thumbnailPath})> _uploadAttachment(
     String convId,
     XFile file,
   ) async {
@@ -361,15 +380,71 @@ class ChatService {
       throw const ChatServiceException('ไฟล์มีขนาดใหญ่เกินกำหนด');
     }
     final uid = _uid;
-    final name = 'media_${DateTime.now().microsecondsSinceEpoch}.$ext';
+    final mediaId = DateTime.now().microsecondsSinceEpoch;
+    final thumbnailBytes = type == 'video'
+        ? await _createVideoThumbnail(file.path)
+        : null;
+    String? thumbnailPath;
+    if (thumbnailBytes != null && thumbnailBytes.isNotEmpty) {
+      thumbnailPath = 'chat_media/$convId/$uid/thumbnail_$mediaId.jpg';
+      try {
+        await _storage
+            .ref(thumbnailPath)
+            .putData(
+              thumbnailBytes,
+              SettableMetadata(contentType: 'image/jpeg'),
+            );
+      } catch (_) {
+        // ถ้าเก็บภาพปกไม่สำเร็จ ห้องแชทจะใช้เฟรมแรกที่หยุดนิ่งแทน
+        try {
+          await _deleteMedia(thumbnailPath);
+        } catch (_) {
+          // ไฟล์ภาพปกที่ค้างไว้ลบภายหลังได้
+        }
+        thumbnailPath = null;
+      }
+    }
+    final name = 'media_$mediaId${thumbnailPath == null ? '' : '_thumb'}.$ext';
     final path = 'chat_media/$convId/$uid/$name';
-    await _storage
-        .ref(path)
-        .putData(
-          bytes,
-          SettableMetadata(contentType: file.mimeType ?? ('$type/$ext')),
-        );
-    return (path: path, type: type);
+    try {
+      await _storage
+          .ref(path)
+          .putData(
+            bytes,
+            SettableMetadata(contentType: file.mimeType ?? ('$type/$ext')),
+          );
+    } catch (_) {
+      if (thumbnailPath != null) {
+        try {
+          await _deleteMedia(thumbnailPath);
+        } catch (_) {
+          // เก็บ error ตอนอัปโหลดวิดีโอไว้ แม้ลบภาพปกไม่สำเร็จ
+        }
+      }
+      rethrow;
+    }
+    return (path: path, type: type, thumbnailPath: thumbnailPath);
+  }
+
+  // สร้างภาพปกบนมือถือ ถ้าทำไม่ได้ วิดีโอยังส่งได้และจะแสดงเฟรมแรกแทน
+  Future<Uint8List?> _createVideoThumbnail(String videoPath) async {
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return null;
+    }
+    try {
+      return await VideoThumbnail.thumbnailData(
+        video: videoPath,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 720,
+        // ใช้เฟรมแรก เผื่อคลิปสั้นจนไม่มีเฟรมที่ 1 วินาที
+        timeMs: 0,
+        quality: 68,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// ลบไฟล์แนบที่ไม่ใช้งานแล้ว; ถ้าไฟล์ถูกลบไปก่อนถือว่างานสำเร็จ
