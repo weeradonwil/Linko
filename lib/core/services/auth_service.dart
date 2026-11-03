@@ -100,6 +100,12 @@ class AuthService {
                   .hasMatch(data['avatarPath'] as String))) {
         updates['avatarPath'] = FieldValue.delete();
       }
+      if (data.containsKey('avatarThumbPath') &&
+          (data['avatarThumbPath'] is! String ||
+              !RegExp('^profile_thumbnails/${RegExp.escape(user.uid)}/[^/]+\$')
+                  .hasMatch(data['avatarThumbPath'] as String))) {
+        updates['avatarThumbPath'] = FieldValue.delete();
+      }
       if (data.containsKey('privacyTarget') && data['privacyTarget'] is! bool) {
         updates['privacyTarget'] = FieldValue.delete();
       }

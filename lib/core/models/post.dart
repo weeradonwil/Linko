@@ -19,6 +19,7 @@ class Post {
     this.editedAt,
     this.isDeleting = false,
     this.sharedPostId,
+    this.taggedUserIds = const [],
   });
 
   /// ID ของ document ใน posts; ใช้ระบุรายการเวลาแก้ไขหรือลบ
@@ -41,6 +42,9 @@ class Post {
   final bool isDeleting;
   final String? sharedPostId;
 
+  /// บัญชีที่ถูกแท็กในโพสต์ แยกจาก tags ซึ่งเก็บ hashtag
+  final List<String> taggedUserIds;
+
   /// คำค้นของโพสต์ ใช้แสดงเป็นป้ายกำกับและต่อยอดทำหน้าค้นหาตามแท็ก
   final List<String> tags;
 
@@ -55,6 +59,13 @@ class Post {
 
   /// Path ภาพตัวอย่างของวิดีโอ; ใช้แสดงเฟรมก่อนเริ่มเล่นไฟล์จริง
   final String? thumbnailPath;
+
+  /// Skip stale Firestore records that contain only an author and timestamp.
+  bool get hasVisibleContent =>
+      content.trim().isNotEmpty ||
+      mediaPath != null ||
+      tags.isNotEmpty ||
+      sharedPostId != null;
 
   /// อ่าน document แล้วสร้าง Post; ใช้เวลาปัจจุบันชั่วคราวหาก serverTimestamp
   /// ยังไม่ได้รับค่ากลับมาในระหว่างบันทึกแบบออฟไลน์
@@ -84,6 +95,7 @@ class Post {
       editedAt: readDate(data['editedAt']),
       isDeleting: data['isDeleting'] == true,
       sharedPostId: readOptionalString(data['sharedPostId']),
+      taggedUserIds: readStrings(data['taggedUserIds']),
       tags: readStrings(data['tags']),
       // โพสต์รุ่นก่อนที่ยังไม่มี visibility ให้คงพฤติกรรมเดิมคือเป็นสาธารณะ
       visibility: readString(data['visibility'], 'public'),

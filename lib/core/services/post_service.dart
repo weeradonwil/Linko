@@ -13,6 +13,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import '../models/post.dart';
 import '../models/post_policy.dart';
 import '../utils/document_values.dart';
+import '../utils/avatar_thumbnail.dart';
 
 /// จัดการสร้าง อ่าน แก้ไข และลบโพสต์
 /// หน้าจอเรียก service นี้แทนการติดต่อ Firebase โดยตรง
@@ -28,6 +29,7 @@ class PostService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
+  DocumentReference<Map<String, dynamic>>? _pendingCreateRef;
 
   /// ใช้ UID จาก Firebase Auth ปัจจุบันเสมอ ไม่เชื่อ UID ที่ส่งมาจาก widget
   User get _currentUser {
@@ -60,8 +62,13 @@ class PostService {
       }
       final posts =
           merged.values
-              .where((p) => !p.isDeleting || p.userId == userId)
+              .where(
+                (p) =>
+                    (p.isDeleting && p.userId == userId) ||
+                    (!p.isDeleting && p.hasVisibleContent),
+              )
               .toList()
+            // Home stays chronological; popularity ranking belongs to Explore.
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       controller.add(posts.take(limit).toList());
     }
@@ -91,6 +98,7 @@ class PostService {
             'public',
             _posts
                 .where('visibility', isEqualTo: 'public')
+                .where('authorIsPrivate', isEqualTo: false)
                 .orderBy('createdAt', descending: true)
                 .limit(limit),
           ),
@@ -131,6 +139,7 @@ class PostService {
                         _posts
                             .where('userId', whereIn: batch)
                             .where('visibility', isEqualTo: 'followers')
+                            .where('authorIsPrivate', isEqualTo: false)
                             .orderBy('createdAt', descending: true)
                             .limit(limit),
                         version: version,
@@ -163,19 +172,40 @@ class PostService {
   Future<void> updateProfilePrivacy(bool isPrivate) async {
     final userId = _currentUser.uid;
     final userRef = _firestore.collection('users').doc(userId);
-    await _firestore.runTransaction((transaction) async {
-      final profile =
-          (await transaction.get(userRef)).data() ?? const <String, dynamic>{};
-      if ((profile['isPrivate'] == true) == isPrivate &&
-          profile['privacyTarget'] is! bool) {
-        return;
-      }
-      transaction.update(userRef, {
-        'isPrivate': isPrivate,
-        // Clear targets left behind by older versions that migrated every post.
+    final current = (await userRef.get()).data() ?? const <String, dynamic>{};
+    if ((current['isPrivate'] == true) == isPrivate &&
+        current['privacyMigrationTarget'] is! bool &&
+        current['privacyTarget'] is! bool) {
+      // Even an unchanged setting can repair post snapshots left by an older app.
+      await _migratePostAudiences(userId, isPrivate);
+      if (isPrivate) await _securePrivateAvatar(userRef);
+      return;
+    }
+
+    if (isPrivate) {
+      // Hide each post before the profile is marked private. If migration stops,
+      // the profile remains public and the next app start can safely resume it.
+      await userRef.update({'privacyMigrationTarget': true});
+      await _migratePostAudiences(userId, true);
+      await _securePrivateAvatar(userRef, force: true);
+      await userRef.update({
+        'isPrivate': true,
+        'privacyTarget': FieldValue.delete(),
+        'privacyMigrationTarget': FieldValue.delete(),
+      });
+    } else {
+      // Opening the profile can only reveal posts as their public ACL is restored.
+      await userRef.update({
+        'isPrivate': false,
+        'avatarPrivateSecured': false,
+        'privacyMigrationTarget': false,
+      });
+      await _migratePostAudiences(userId, false);
+      await userRef.update({
+        'privacyMigrationTarget': FieldValue.delete(),
         'privacyTarget': FieldValue.delete(),
       });
-    });
+    }
   }
 
   /// เพิ่มฟิลด์ใหม่ให้โพสต์เก่าของเจ้าของ โดยคงโพสต์เดิมไว้เป็นสาธารณะเหมือนเดิม
@@ -183,16 +213,79 @@ class PostService {
   Future<void> normalizeOwnedPosts() async {
     final userId = _currentUser.uid;
     final userSnapshot = await _firestore.collection('users').doc(userId).get();
-    final pending = userSnapshot.data()?['privacyTarget'];
+    final data = userSnapshot.data() ?? const <String, dynamic>{};
+    final migrationTarget = data['privacyMigrationTarget'];
+    if (migrationTarget is bool) {
+      await updateProfilePrivacy(migrationTarget);
+      return;
+    }
+    final pending = data['privacyTarget'];
     if (pending is bool) {
       await updateProfilePrivacy(pending);
+      return;
     }
-    await _migratePostAudiences(
-      userId,
-      pending is bool ? pending : userSnapshot.data()?['isPrivate'] == true,
-    );
+    await _migratePostAudiences(userId, data['isPrivate'] == true);
+    if (data['isPrivate'] == true) {
+      await _securePrivateAvatar(userSnapshot.reference);
+    }
   }
 
+  // The thumbnail stays visible in cards. Replacing the old full object also
+  // invalidates any download URL issued while this account was public.
+  Future<void> _securePrivateAvatar(
+    DocumentReference<Map<String, dynamic>> userRef, {
+    bool force = false,
+  }) async {
+    final profile = (await userRef.get()).data() ?? const <String, dynamic>{};
+    final uid = _currentUser.uid;
+    final oldPath = readOptionalString(profile['avatarPath']);
+    if (oldPath == null || !oldPath.startsWith('profile_images/$uid/')) return;
+    final oldThumb = readOptionalString(profile['avatarThumbPath']);
+    if (!force && profile['avatarPrivateSecured'] == true && oldThumb != null) {
+      return;
+    }
+    final original = _storage.ref(oldPath);
+    final bytes = await original.getData(5 * 1024 * 1024);
+    if (bytes == null) {
+      throw const PostServiceException('ย้ายรูปโปรไฟล์ก่อนเปิดบัญชีส่วนตัวไม่สำเร็จ');
+    }
+    String? newThumb;
+    String? newPath;
+    try {
+      if (oldThumb == null) {
+        newThumb = 'profile_thumbnails/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.png';
+        await _storage.ref(newThumb).putData(
+          await makeAvatarThumbnail(bytes),
+          SettableMetadata(contentType: 'image/png'),
+        );
+      }
+      newPath = 'profile_images/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final metadata = await original.getMetadata();
+      await _storage.ref(newPath).putData(
+        bytes,
+        SettableMetadata(contentType: metadata.contentType ?? 'image/jpeg'),
+      );
+      await userRef.update({
+        'avatarPath': newPath,
+        'avatarThumbPath': ?newThumb,
+      });
+      await original.delete();
+      await userRef.update({'avatarPrivateSecured': true});
+    } catch (_) {
+      // If the profile already points to the new path, the next login retries
+      // the migration marker. Do not delete an object referenced by the profile.
+      final currentPath = (await userRef.get()).data()?['avatarPath'];
+      if (currentPath != newPath && newPath != null) {
+        try { await _storage.ref(newPath).delete(); } catch (_) {}
+      }
+      if (currentPath != newPath && newThumb != null) {
+        try { await _storage.ref(newThumb).delete(); } catch (_) {}
+      }
+      rethrow;
+    }
+  }
+
+  // Update the author privacy snapshot without changing each post's audience.
   Future<void> _migratePostAudiences(String userId, bool isPrivate) async {
     DocumentSnapshot<Map<String, dynamic>>? cursor;
     while (true) {
@@ -219,14 +312,8 @@ class PostService {
                   }
                   final data = current.data()!;
                   final post = Post.fromSnapshot(current);
-                  final visibility = PostPolicy.audience(
-                    isPrivate,
-                    data['visibility'],
-                  );
                   final tags = _cleanTags(post.tags);
                   final updates = <String, dynamic>{
-                    if (data['visibility'] != visibility)
-                      'visibility': visibility,
                     if (data['authorIsPrivate'] != isPrivate)
                       'authorIsPrivate': isPrivate,
                     if (!listEquals(
@@ -259,6 +346,7 @@ class PostService {
     required List<String> tags,
     required String visibility,
     XFile? attachment,
+    List<String> taggedUserIds = const [],
   }) async {
     final user = _currentUser;
     final ownerProfile = await _firestore
@@ -277,8 +365,14 @@ class PostService {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
     }
 
-    final postRef = _posts.doc();
-    final ticket = await TrustedService.reserve(_firestore, postRef.path);
+    // Keep the same document ID when this composer retries a failed save.
+    // reserveWrite can then reuse its ticket instead of consuming another slot.
+    final postRef = _pendingCreateRef ??= _posts.doc();
+    final ticket = await TrustedService.reserve(
+      _firestore,
+      postRef.path,
+      taggedUserIds: taggedUserIds,
+    );
     final media = attachment == null
         ? null
         : await _uploadAttachment(postRef.id, attachment);
@@ -291,6 +385,7 @@ class PostService {
         'authorName': (name == null || name.isEmpty) ? 'สมาชิก' : name,
         'content': cleanContent,
         'tags': _cleanTags(tags),
+        'taggedUserIds': taggedUserIds,
         'visibility': effectiveVisibility,
         'authorIsPrivate': isPrivateProfile,
         'createdAt': FieldValue.serverTimestamp(),
@@ -301,6 +396,7 @@ class PostService {
       });
       if (ticket != null) create.delete(ticket);
       await create.commit();
+      _pendingCreateRef = null;
     } catch (_) {
       // ถ้าบันทึกข้อมูลโพสต์ไม่ได้ ให้ลบไฟล์ที่เพิ่งอัปโหลดเพื่อไม่ทิ้งไฟล์กำพร้า
       if (media != null) {
@@ -323,6 +419,7 @@ class PostService {
     required String? oldThumbnailPath,
     XFile? newAttachment,
     bool removeMedia = false,
+    List<String> taggedUserIds = const [],
   }) async {
     final ownerUid = _currentUser.uid;
     final ownerProfile = await _firestore
@@ -361,6 +458,12 @@ class PostService {
       throw const PostServiceException('กรุณาใส่ข้อความหรือแนบภาพ/วิดีโอ');
     }
 
+    final ticket = await TrustedService.reserve(
+      _firestore,
+      existing.reference.path,
+      taggedUserIds: taggedUserIds,
+      update: true,
+    );
     final newMedia = newAttachment == null
         ? null
         : await _uploadAttachment(postId, newAttachment);
@@ -380,6 +483,7 @@ class PostService {
         transaction.update(existing.reference, {
           'content': cleanContent,
           'tags': _cleanTags(tags),
+          'taggedUserIds': taggedUserIds,
           'visibility': effectiveVisibility,
           'authorIsPrivate': isPrivateProfile,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -399,6 +503,7 @@ class PostService {
             'thumbnailPath': FieldValue.delete(),
           },
         });
+        if (ticket != null) transaction.delete(ticket);
       });
     } catch (_) {
       if (newMedia != null) {

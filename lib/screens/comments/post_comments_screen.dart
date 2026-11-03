@@ -10,6 +10,8 @@ import '../../core/models/post_comment.dart';
 import '../../core/services/comment_service.dart';
 import '../../core/utils/firebase_error_message.dart';
 import '../../core/widgets/member_avatar.dart';
+import '../../core/widgets/post_stats_bar.dart';
+import '../../core/widgets/tagged_post_content.dart';
 import '../profile/profile.dart';
 
 /// แสดงความคิดเห็นของโพสต์ฟีดหลักหรือกลุ่ม โดย CommentService เลือกตำแหน่งและ Rules ที่ตรงกัน
@@ -34,6 +36,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   final _textController = TextEditingController();
   bool _sending = false;
   int _limit = 50;
+  int _statsRefreshKey = 0;
 
   @override
   void dispose() {
@@ -52,6 +55,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       );
       if (!mounted) return;
       _textController.clear();
+      setState(() => _statsRefreshKey++);
       if (!result.notificationsComplete && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -90,6 +94,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
         commentId: comment.id,
         groupId: widget.groupId,
       );
+      if (mounted) setState(() => _statsRefreshKey++);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -113,6 +118,11 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
       body: Column(
         children: [
           _PostPreview(post: widget.post, viewer: widget.user),
+          PostStatsBar(
+            post: widget.post,
+            groupId: widget.groupId,
+            refreshKey: _statsRefreshKey,
+          ),
           Expanded(
             child: StreamBuilder<List<PostComment>>(
               stream: _service.watchComments(
@@ -165,6 +175,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                       authorId: comment.authorId,
                       child: _CommentTile(
                         comment: comment,
+                        viewer: widget.user,
                         canDelete:
                             comment.authorId == widget.user.uid ||
                             widget.post.userId == widget.user.uid,
@@ -289,9 +300,14 @@ class _PostPreview extends StatelessWidget {
               ),
             ),
           ),
-          if (post.content.isNotEmpty) ...[
+          if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text(post.content, maxLines: 3, overflow: TextOverflow.ellipsis),
+            TaggedPostContent(
+              post: post,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              selectable: false,
+            ),
           ],
         ],
       ),
@@ -302,17 +318,26 @@ class _PostPreview extends StatelessWidget {
 class _CommentTile extends StatelessWidget {
   const _CommentTile({
     required this.comment,
+    required this.viewer,
     required this.canDelete,
     required this.onDelete,
   });
 
   final PostComment comment;
+  final User viewer;
   final bool canDelete;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    void openProfile() => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ProfileScreen(user: viewer, profileUid: comment.authorId),
+      ),
+    );
+
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       // ใช้ชื่อโปรไฟล์ปัจจุบันแทนชื่อสำเนาที่เก็บไว้ในคอมเมนต์เก่า
       stream: FirebaseFirestore.instance
@@ -329,7 +354,11 @@ class _CommentTile extends StatelessWidget {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            MemberAvatar(uid: comment.authorId, radius: 19),
+            InkWell(
+              onTap: openProfile,
+              customBorder: const CircleBorder(),
+              child: MemberAvatar(uid: comment.authorId, radius: 19),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -341,12 +370,19 @@ class _CommentTile extends StatelessWidget {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            authorName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                          child: InkWell(
+                            onTap: openProfile,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                authorName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),

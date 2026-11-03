@@ -77,10 +77,14 @@ class SearchService {
     final s = await _firestore
         .collection('posts')
         .where('visibility', isEqualTo: 'public')
+        .where('authorIsPrivate', isEqualTo: false)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .get();
-    return s.docs.map(Post.fromSnapshot).where((p) => !p.isDeleting).toList();
+    return s.docs
+        .map(Post.fromSnapshot)
+        .where((p) => !p.isDeleting && p.hasVisibleContent)
+        .toList();
   }
 
   /// Each request scans a bounded page. Continue with the returned cursor
@@ -89,30 +93,61 @@ class SearchService {
     String value, {
     DocumentSnapshot<Map<String, dynamic>>? cursor,
     int pageSize = 80,
+    bool tagsOnly = false,
   }) async {
     Query<Map<String, dynamic>> query = _firestore
         .collection('posts')
         .where('visibility', isEqualTo: 'public')
+        .where('authorIsPrivate', isEqualTo: false)
         .orderBy('createdAt', descending: true)
         .limit(pageSize);
     if (cursor != null) query = query.startAfterDocument(cursor);
     final snapshot = await query.get();
-    final q = value.trim().toLowerCase().replaceFirst(RegExp(r'^#'), '');
-    final posts = snapshot.docs
-        .map(Post.fromSnapshot)
-        .where(
-          (p) =>
-              !p.isDeleting &&
-              (q.isEmpty ||
-                  p.content.toLowerCase().contains(q) ||
-                  p.tags.any((tag) => tag.toLowerCase().contains(q))),
-        )
-        .toList();
+    final rawQuery = value.trim().toLowerCase();
+    final matchTagsOnly = tagsOnly || rawQuery.startsWith('#');
+    final q = rawQuery.replaceFirst(RegExp(r'^#'), '');
+    final posts = snapshot.docs.map(Post.fromSnapshot).where((post) {
+      if (post.isDeleting || !post.hasVisibleContent) return false;
+      if (rawQuery.isEmpty) return true;
+      if (q.isEmpty) return false;
+      if (matchTagsOnly) {
+        return post.tags.any((tag) => tag.toLowerCase() == q);
+      }
+      return post.content.toLowerCase().contains(q) ||
+          post.tags.any((tag) => tag.toLowerCase().contains(q));
+    }).toList();
     return PostSearchPage(
       posts,
       snapshot.docs.isEmpty ? cursor : snapshot.docs.last,
       snapshot.docs.length == pageSize,
     );
+  }
+
+  /// Rank a bounded batch by real like reactions; newest posts break ties.
+  Future<List<Post>> rankByLikes(List<Post> posts) async {
+    final ranked = await Future.wait(
+      posts.map((post) async {
+        try {
+          final result = await _firestore
+              .collection('posts')
+              .doc(post.id)
+              .collection('reactions')
+              .where('reaction', isEqualTo: 'like')
+              .count()
+              .get();
+          return (post: post, likes: result.count ?? 0);
+        } catch (_) {
+          return (post: post, likes: 0);
+        }
+      }),
+    );
+    ranked.sort((a, b) {
+      final byLikes = b.likes.compareTo(a.likes);
+      return byLikes != 0
+          ? byLikes
+          : b.post.createdAt.compareTo(a.post.createdAt);
+    });
+    return ranked.map((entry) => entry.post).toList();
   }
 
   Map<String, dynamic> _person(String uid, Map<String, dynamic> data) {

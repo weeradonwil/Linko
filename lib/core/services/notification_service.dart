@@ -14,6 +14,7 @@ class NotificationService {
   static const _socialTypes = [
     'like',
     'comment',
+    'tag',
     'follow',
     'moderation',
     'moderation_group',

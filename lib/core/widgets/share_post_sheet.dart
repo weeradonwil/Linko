@@ -8,6 +8,7 @@ import '../services/trusted_service.dart';
 import '../services/chat_service.dart';
 import '../utils/firebase_error_message.dart';
 import 'member_avatar.dart';
+import 'live_profile_name.dart';
 import 'post_media.dart';
 import 'share_destination_picker.dart';
 
@@ -69,8 +70,9 @@ class _SharePreview extends StatelessWidget {
                       MemberAvatar(uid: post.userId, radius: 17),
                       const SizedBox(width: 9),
                       Expanded(
-                        child: Text(
-                          post.authorName,
+                        child: LiveProfileName(
+                          uid: post.userId,
+                          fallbackName: post.authorName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall,

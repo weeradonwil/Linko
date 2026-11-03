@@ -3,7 +3,9 @@ class PostPolicy {
   PostPolicy._();
 
   static bool profileIsPrivate(Map<String, dynamic> profile) =>
-      (profile['privacyTarget'] is bool
+      (profile['privacyMigrationTarget'] is bool
+          ? profile['privacyMigrationTarget']
+          : profile['privacyTarget'] is bool
           ? profile['privacyTarget']
           : profile['isPrivate']) ==
       true;

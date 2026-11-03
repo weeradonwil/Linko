@@ -10,18 +10,14 @@ import 'package:social_app/core/widgets/cover_editor.dart';
 import 'package:social_app/core/widgets/reaction_people_sheet.dart';
 
 void main() {
-  // ตัวเลขในแถบยอดต้องไม่เอา Like/Dislike ไปปนกับอารมณ์อื่น
-  test('reaction summary keeps like and dislike separate', () {
+  test('reaction summary combines likes and emojis while keeping dislikes separate', () {
     expect(
       ReactionSummary.visible({'like': 12, 'love': 3, 'haha': 2, 'dislike': 2}),
-      {'like': 12, 'other': 5, 'dislike': 2},
+      {'other': 17, 'dislike': 2},
     );
   });
-  test('a single other reaction keeps its own emoji', () {
-    expect(ReactionSummary.visible({'like': 2, 'love': 1}), {
-      'like': 2,
-      'love': 1,
-    });
+  test('like-only count uses the combined reaction summary', () {
+    expect(ReactionSummary.visible({'like': 2}), {'other': 2});
   });
   test('zero and unknown reactions are not displayed', () {
     expect(ReactionSummary.visible({'like': 0, 'unknown': 99}), isEmpty);
@@ -37,7 +33,7 @@ void main() {
     expect(post.sharedPostId, 'original');
     expect(post.mediaPath, isNull);
   });
-  testWidgets('summary renders another label and separate counters', (
+  testWidgets('summary renders combined count and separate dislikes', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -50,9 +46,8 @@ void main() {
         ),
       ),
     );
-    expect(find.text('👍 12'), findsOneWidget);
-    expect(find.text('อื่นๆ 5'), findsOneWidget);
-    expect(find.text('👎 2'), findsOneWidget);
+    expect(find.textContaining('17'), findsOneWidget);
+    expect(find.textContaining('2'), findsOneWidget);
   });
   testWidgets('cover crop exports an actual 1200 by 400 PNG', (tester) async {
     final bytes = (await tester.runAsync(() async {

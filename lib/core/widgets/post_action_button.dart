@@ -11,6 +11,7 @@ class PostActionButton extends StatelessWidget {
     this.emoji,
     this.onLongPress,
     this.badgeCount,
+    this.inlineCount,
   });
 
   final IconData icon;
@@ -20,13 +21,16 @@ class PostActionButton extends StatelessWidget {
   final String? emoji;
   final ValueChanged<BuildContext>? onLongPress;
   final int? badgeCount;
+  final int? inlineCount;
 
   @override
   Widget build(BuildContext context) => Builder(
     builder: (buttonContext) => Semantics(
       selected: color == null ? null : true,
       child: Tooltip(
-        message: badgeCount != null && badgeCount! > 0
+        message: inlineCount != null && inlineCount! > 0
+            ? '$label ${inlineCount!}'
+            : badgeCount != null && badgeCount! > 0
             ? '$label ${badgeCount!}'
             : label,
         // ปุ่มถูกใจใช้กดค้างเปิดอิโมจิ จึงไม่ให้ Tooltip แย่ง gesture นี้
@@ -50,11 +54,30 @@ class PostActionButton extends StatelessWidget {
             child: Badge(
               isLabelVisible: badgeCount != null && badgeCount! > 0,
               label: badgeCount == null ? null : Text('$badgeCount'),
-              child: emoji == null
-                  ? Icon(icon, size: 22)
-                  : Text(
-                      emoji!,
-                      style: const TextStyle(fontSize: 22, height: 1),
+              child: inlineCount == null
+                  ? emoji == null
+                        ? Icon(icon, size: 22)
+                        : Text(
+                            emoji!,
+                            style: const TextStyle(fontSize: 22, height: 1),
+                          )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        emoji == null
+                            ? Icon(icon, size: 22)
+                            : Text(
+                                emoji!,
+                                style: const TextStyle(fontSize: 22, height: 1),
+                              ),
+                        if (inlineCount! > 0) ...[
+                          const SizedBox(width: 5),
+                          Text(
+                            '$inlineCount',
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ],
+                      ],
                     ),
             ),
           ),

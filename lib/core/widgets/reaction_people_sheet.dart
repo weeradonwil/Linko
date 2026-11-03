@@ -87,7 +87,7 @@ class _ReactionPeopleSheetState extends State<ReactionPeopleSheet> {
       if (_filter == 'other') {
         query = query.where(
           'reaction',
-          whereIn: const ['love', 'haha', 'wow', 'sad', 'angry'],
+          whereIn: const ['like', 'love', 'haha', 'wow', 'sad', 'angry'],
         );
       } else if (_filter != null) {
         query = query.where('reaction', isEqualTo: _filter);

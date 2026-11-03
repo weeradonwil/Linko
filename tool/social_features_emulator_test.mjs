@@ -1,14 +1,14 @@
 import { createRequire } from 'node:module';
-import { processExpiredWarnings, processLegacyReports, processBlockChanges, processEvidenceCopies } from '../functions/index.mjs';
+import { processExpiredWarnings, processLegacyReports, processBlockChanges, processEvidenceCopies, processTaggedPosts } from '../functions/index.mjs';
 import { scanWork } from '../functions/workers.mjs';
 import { caseId } from '../functions/policy.mjs';
-import { projectId, s, b, a, write, commit, get, allowed, denied, assert, documentName, createProfile, storage } from './emulator_test_support.mjs';
+import { projectId, s, b, a, write, commit, get, allowed, denied, assert, documentName, createProfile, storage, follow } from './emulator_test_support.mjs';
 
 // ไฟล์นี้ใช้ Admin SDK เฉพาะจัด fixture ใน demo project บนเครื่อง ห้ามชี้ production
 if (!projectId.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) throw new Error('Local Emulator only');
 const require = createRequire(new URL('../functions/package.json', import.meta.url));
 const { getAuth } = require('firebase-admin/auth');
-const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore');
 const db = getFirestore();
 let passed = 0;
 const pass = text => { passed++; console.log(`PASS social ${passed}: ${text}`); };
@@ -36,10 +36,65 @@ async function post(member, key, content = 'Original public post') {
 async function report(member, postId, groupId = null) { return rpc(member,'submitReport',{postId,groupId,reason:'สแปม',details:'รายละเอียดสำหรับทดสอบ'}); }
 await db.doc('app_config/security').set({verificationRequired:true,writeTicketsRequired:true,reportBackendRequired:true,evidenceCopiesEnabled:true,rolloutAt:Timestamp.now()});
 await db.doc('app_config/moderation').set({reportThreshold:2,warningHours:24,suspensionHours:72,minimumAccountHours:0,autoEnforce:true});
-const [author, first, second, owner, outsider, unverified] = await Promise.all([user(),user(),user(),user(),user(),user(false)]);
+const [author, first, second, owner, outsider, unverified, tagAuthor, tagFriend] = await Promise.all([user(),user(),user(),user(),user(),user(false),user(),user()]);
 
 await rpc(unverified,'reserveWrite',{path:`posts/unverified_${suffix}`},false);
 pass('unverified email cannot reserve a write');
+await follow(tagAuthor, tagFriend);
+await follow(tagAuthor, second);
+const missingBlockEdge = await get(tagAuthor.token, `block_edges/${tagAuthor.uid}_${tagFriend.uid}`);
+assert(missingBlockEdge.status === 404, `tagging cannot check an unblocked account: ${JSON.stringify(missingBlockEdge.body)}`);
+pass('a member can check that a missing block edge does not exist');
+const taggedPostId = `tagged_${suffix}`;
+denied(await commit(tagAuthor.token,[write(`posts/forged_${suffix}`,{
+  userId:s(tagAuthor.uid),authorName:s('Member'),authorIsPrivate:b(false),content:s('forged tag'),tags:a([]),
+  taggedUserIds:a([s(tagFriend.uid)]),visibility:s('public'),mediaType:s('none'),
+},{timestamps:['createdAt','updatedAt'],exists:false})]),'Forged tag without trusted ticket');
+await rpc(tagAuthor,'reserveWrite',{path:`posts/unrelated_${suffix}`,taggedUserIds:[outsider.uid]},false);
+const tagTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${taggedPostId}`,taggedUserIds:[tagFriend.uid]});
+allowed(await commit(tagAuthor.token,[write(`posts/${taggedPostId}`,{
+  userId:s(tagAuthor.uid),authorName:s('Member'),authorIsPrivate:b(false),content:s('tagged post'),tags:a([]),
+  taggedUserIds:a([s(tagFriend.uid)]),visibility:s('public'),mediaType:s('none'),
+},{timestamps:['createdAt','updatedAt'],exists:false}),{delete:documentName(`write_tickets/${tagTicket.ticketId}`)}]),'Create tagged post with trusted ticket');
+await processTaggedPosts();
+let tagNotice = await db.doc(`notifications/tag_feed_${taggedPostId}_${tagFriend.uid}`).get();
+assert(tagNotice?.exists && tagNotice.data().type === 'tag' && tagNotice.data().postId === taggedPostId,'tag notification was not created');
+pass('tag requires an eligible account and trusted ticket, then sends one in-app notification');
+const updateTagTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${taggedPostId}`,taggedUserIds:[tagFriend.uid,second.uid],update:true});
+allowed(await commit(tagAuthor.token,[write(`posts/${taggedPostId}`,{
+  content:s('tagged post updated'),tags:a([]),taggedUserIds:a([s(tagFriend.uid),s(second.uid)]),
+},{mask:['content','tags','taggedUserIds','updatedAt','editedAt'],timestamps:['updatedAt','editedAt']}),{delete:documentName(`write_tickets/${updateTagTicket.ticketId}`)}]),'Update tagged post with trusted ticket');
+await processTaggedPosts();
+let addedTagNotice = await db.doc(`notifications/tag_feed_${taggedPostId}_${second.uid}`).get();
+assert(addedTagNotice?.exists,'newly added account did not receive a tag notification');
+pass('editing a post notifies newly tagged accounts');
+// This is the production-shaped case: a private profile tags a followed
+// account and attaches a photo. Saving must work, but the recipient cannot
+// open the private post, so the worker must not send an unusable notification.
+await db.doc(`users/${tagAuthor.uid}`).update({isPrivate:true});
+const privateTaggedId = `private_tagged_${suffix}`;
+const privateMediaPath = `post_media/${tagAuthor.uid}/${privateTaggedId}/image.jpg`;
+const privateTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${privateTaggedId}`,taggedUserIds:[tagFriend.uid]});
+allowed(await commit(tagAuthor.token,[write(`posts/${privateTaggedId}`,{
+  userId:s(tagAuthor.uid),authorName:s('Member'),authorIsPrivate:b(true),content:s('Hi @Friend'),tags:a([]),
+  taggedUserIds:a([s(tagFriend.uid)]),visibility:s('public'),mediaType:s('image'),mediaPath:s(privateMediaPath),
+},{timestamps:['createdAt','updatedAt'],exists:false}),{delete:documentName(`write_tickets/${privateTicket.ticketId}`)}]),'Private account creates photo with a tagged friend');
+denied(await get(tagFriend.token,`posts/${privateTaggedId}`),'Tagged friend cannot open a private account post');
+await processTaggedPosts();
+assert(!(await db.doc(`notifications/tag_feed_${privateTaggedId}_${tagFriend.uid}`).get()).exists,
+  'private post sent an inaccessible tag notification');
+const privateUpdateTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${privateTaggedId}`,taggedUserIds:[tagFriend.uid,second.uid],update:true});
+allowed(await commit(tagAuthor.token,[write(`posts/${privateTaggedId}`,{
+  content:s('Edited private photo'),taggedUserIds:a([s(tagFriend.uid),s(second.uid)]),
+},{mask:['content','taggedUserIds','updatedAt','editedAt'],timestamps:['updatedAt','editedAt']}),
+{delete:documentName(`write_tickets/${privateUpdateTicket.ticketId}`)}]),'Edit private photo tags');
+const privateRemoveTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${privateTaggedId}`,taggedUserIds:[],update:true});
+allowed(await commit(tagAuthor.token,[write(`posts/${privateTaggedId}`,{
+  content:s('Removed friend tags'),taggedUserIds:a([]),
+},{mask:['content','taggedUserIds','updatedAt','editedAt'],timestamps:['updatedAt','editedAt']}),
+{delete:documentName(`write_tickets/${privateRemoveTicket.ticketId}`)}]),'Remove private photo tags');
+await db.doc(`users/${tagAuthor.uid}`).update({isPrivate:false});
+pass('private photo post can be created, edited and untagged without leaking notifications');
 const original = `original_${suffix}`;
 await post(author,original);
 denied(await commit(author.token,[write(`posts/no_ticket_${suffix}`,{userId:s(author.uid),authorName:s('Member'),authorIsPrivate:b(false),content:s('bypass'),tags:a([]),visibility:s('public'),mediaType:s('none')},{timestamps:['createdAt','updatedAt']})]),'Direct ticket bypass');
@@ -97,6 +152,17 @@ pass('contesting a warning stops automatic punishment');
 const groupId = `group_${suffix}`;
 await db.doc(`groups/${groupId}`).set({name:'Private group',description:'test',ownerId:owner.uid,visibility:'private',memberCount:4,createdAt:Timestamp.now()});
 for(const member of [owner,author,first,second]) await db.doc(`groups/${groupId}/members/${member.uid}`).set({uid:member.uid,role:member.uid===owner.uid?'owner':'member',joinedAt:Timestamp.now()});
+for(const member of [tagAuthor,tagFriend]) await db.doc(`groups/${groupId}/members/${member.uid}`).set({uid:member.uid,role:'member',joinedAt:Timestamp.now()});
+const groupTaggedPostId = `gtagged_${suffix}`;
+const groupTagTicket = await rpc(owner,'reserveWrite',{path:`groups/${groupId}/posts/${groupTaggedPostId}`,taggedUserIds:[tagFriend.uid]});
+allowed(await commit(owner.token,[write(`groups/${groupId}/posts/${groupTaggedPostId}`,{
+  authorId:s(owner.uid),authorName:s('Member'),content:s('group tag'),tags:a([]),
+  taggedUserIds:a([s(tagFriend.uid)]),mediaType:s('none'),
+},{timestamps:['createdAt'],exists:false}),{delete:documentName(`write_tickets/${groupTagTicket.ticketId}`)}]),'Create tagged group post with trusted ticket');
+await processTaggedPosts();
+let groupTagNotice = await db.doc(`notifications/tag_${groupId}_${groupTaggedPostId}_${tagFriend.uid}`).get();
+assert(groupTagNotice?.exists && groupTagNotice.data().groupId === groupId,'group tag notification was not created');
+pass('group tags require group membership and notify a tagged member');
 const groupPost = `gpost_${suffix}`;
 await db.doc(`groups/${groupId}/posts/${groupPost}`).set({authorId:author.uid,authorName:'Member',content:'Private group content',tags:[],mediaType:'none',createdAt:Timestamp.now()});
 await report(first,groupPost,groupId);
@@ -127,16 +193,33 @@ pass('group share requires real membership');
 await db.doc(`users/${author.uid}`).update({isPrivate:true});
 await db.doc(`posts/${original}`).update({authorIsPrivate:true});
 await db.doc(`users/${second.uid}`).update({isPrivate:true});
-allowed(await get(outsider.token,`posts/${original}`),'public post from private account remains readable');
-await rpc(second,'sharePost',{postId:original,destination:'feed',requestId:`share_private_owner_feed_${suffix}`,caption:'Public share'});
-const privateOwnerFeed = (await db.doc(`posts/share_private_owner_feed_${suffix}`).get()).data();
-assert(privateOwnerFeed.sharedPostId===original && privateOwnerFeed.visibility==='public','private-account public post was not shared to feed');
-allowed(await get(outsider.token,`posts/share_private_owner_feed_${suffix}`),'public share by private account remains readable');
-await rpc(second,'sharePost',{postId:original,destination:'group',targetId:groupId,requestId:`share_private_owner_group_${suffix}`,caption:''});
-assert((await db.doc(`groups/${groupId}/posts/share_private_owner_group_${suffix}`).get()).data().sharedPostId===original,'private-account public post was not shared to group');
+denied(await get(outsider.token,`posts/${original}`),'public post snapshot is hidden when its owner is private');
+await rpc(second,'sharePost',{postId:original,destination:'feed',requestId:`share_private_owner_feed_${suffix}`,caption:'Public share'},false);
+await rpc(second,'sharePost',{postId:original,destination:'group',targetId:groupId,requestId:`share_private_owner_group_${suffix}`,caption:''},false);
+const privateGroupShare = `private_group_share_${suffix}`;
+await db.doc(`group_account_state/${groupId}_${author.uid}`).update({postingSuspendedUntil:Timestamp.fromMillis(Date.now()-1)});
+await rpc(author,'sharePost',{postId:original,destination:'group',targetId:groupId,requestId:privateGroupShare,caption:''});
+const privateShareMediaPath = `post_media/${author.uid}/${original}/share-check.png`;
+const privateShareImage = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lGQAAAAASUVORK5CYII=','base64');
+allowed(await storage(author.token,privateShareMediaPath,{method:'POST',bytes:privateShareImage}),'author uploads private share media');
+denied(await get(first.token,`posts/${original}`),'group recipient reads private-account source before grant');
+denied(await storage(first.token,privateShareMediaPath),'group recipient reads private media before grant');
+await rpc(first,'openSharedPost',{postId:original,destination:'group',targetId:groupId,shareId:privateGroupShare});
+allowed(await get(first.token,`posts/${original}`),'group recipient opens explicitly shared source');
+allowed(await storage(first.token,privateShareMediaPath),'group recipient opens private media');
+await rpc(outsider,'openSharedPost',{postId:original,destination:'group',targetId:groupId,shareId:privateGroupShare},false);
+await db.doc(`groups/${groupId}/members/${first.uid}`).delete();
+denied(await get(first.token,`posts/${original}`),'former group member keeps private share');
+denied(await storage(first.token,privateShareMediaPath),'former group member keeps private media');
+await db.doc(`groups/${groupId}/members/${first.uid}`).set({uid:first.uid,role:'member',joinedAt:Timestamp.now()});
+pass('private-account owner can share to group; only current members can unlock it');
+await db.doc(`groups/${groupId}/posts/${privateGroupShare}`).delete();
+denied(await get(first.token,`posts/${original}`),'deleted group share revokes source access');
 await db.doc(`users/${author.uid}`).update({isPrivate:false});
+await db.doc(`posts/${original}`).update({authorIsPrivate:false});
 await db.doc(`users/${second.uid}`).update({isPrivate:false});
-pass('public post from private account can be shared to feed and group');
+allowed(await get(outsider.token,`posts/${original}`),'public post is visible again after the account is opened');
+pass('private account snapshots cannot be read or shared through public/group sharing');
 allowed(await commit(first.token,[write(`posts/share_feed_${suffix}`,{content:s('edited caption')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'edit shared feed caption');
 allowed(await commit(first.token,[write(`posts/share_feed_${suffix}`,{content:s('')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'clear shared feed caption');
 allowed(await commit(first.token,[write(`groups/${groupId}/posts/share_group_${suffix}`,{content:s('')},{mask:['content'],timestamps:['updatedAt','editedAt']})]),'empty shared group caption');
@@ -148,6 +231,21 @@ await db.doc(`conversations/${room}`).set({participantIds:[first.uid,second.uid]
 await rpc(first,'sharePost',{postId:original,destination:'chat',targetId:room,requestId:`share_chat_${suffix}`,caption:''});
 assert((await db.doc(`conversations/${room}/messages/share_chat_${suffix}`).get()).data().sharedPostId===original,'chat share missing');
 pass('chat receives a post card and unread count');
+const privateRoom = `private_share_room_${suffix}`;
+const privateChatShare = `private_chat_share_${suffix}`;
+await db.doc(`conversations/${privateRoom}`).set({participantIds:[author.uid,first.uid],participantNames:{[author.uid]:'Author',[first.uid]:'First'},unreadCounts:{[author.uid]:0,[first.uid]:0},createdAt:Timestamp.now(),updatedAt:Timestamp.now()});
+await db.doc(`users/${author.uid}`).update({isPrivate:true});
+await db.doc(`posts/${original}`).update({authorIsPrivate:true});
+await rpc(author,'sharePost',{postId:original,destination:'chat',targetId:privateRoom,requestId:privateChatShare,caption:''});
+denied(await get(first.token,`posts/${original}`),'chat recipient reads private source before grant');
+await rpc(first,'openSharedPost',{postId:original,destination:'chat',targetId:privateRoom,shareId:privateChatShare});
+allowed(await get(first.token,`posts/${original}`),'chat recipient opens private-account source');
+await rpc(second,'openSharedPost',{postId:original,destination:'chat',targetId:privateRoom,shareId:privateChatShare},false);
+await db.doc(`conversations/${privateRoom}/messages/${privateChatShare}`).update({type:'deleted',sharedPostId:FieldValue.delete()});
+denied(await get(first.token,`posts/${original}`),'unsent chat share still grants access');
+await db.doc(`users/${author.uid}`).update({isPrivate:false});
+await db.doc(`posts/${original}`).update({authorIsPrivate:false});
+pass('private-account owner can share to chat; unsend revokes recipient access');
 const legacyRoom = `legacy_room_${suffix}`;
 await db.doc(`conversations/${legacyRoom}`).set({participantIds:[first.uid,unverified.uid],participantNames:{[first.uid]:'First',[unverified.uid]:'Legacy'},unreadCounts:{[first.uid]:0,[unverified.uid]:0},createdAt:Timestamp.now(),updatedAt:Timestamp.now()});
 await rpc(first,'sharePost',{postId:original,destination:'chat',targetId:legacyRoom,requestId:`share_legacy_${suffix}`},false);
@@ -181,6 +279,29 @@ await db.doc(`users/${owner.uid}`).update({isPrivate:true});
 allowed(await storage(outsider.token,cover),'signed-in non-follower reads current private cover');
 allowed(await storage(owner.token,cover),'owner reads private cover');
 pass('current cover is visible to signed-in users; only owner can upload');
+await db.doc(`users/${owner.uid}`).update({isPrivate:false});
+const avatarFull = `profile_images/${owner.uid}/avatar.png`;
+const avatarThumb = `profile_thumbnails/${owner.uid}/avatar.png`;
+allowed(await storage(owner.token,avatarFull,{method:'POST',bytes:png,contentType:'image/png'}),'owner uploads full avatar');
+allowed(await storage(owner.token,avatarThumb,{method:'POST',bytes:png,contentType:'image/png'}),'owner uploads small avatar');
+allowed(await commit(owner.token,[write(`users/${owner.uid}`,{
+  avatarPath:s(avatarFull),avatarThumbPath:s(avatarThumb),avatarPrivateSecured:b(true),
+},{mask:['avatarPath','avatarThumbPath','avatarPrivateSecured']})]),'save avatar paths');
+allowed(await storage(outsider.token,avatarFull),'public profile full avatar can be opened');
+await db.doc(`users/${owner.uid}`).update({isPrivate:true});
+denied(await storage(outsider.token,avatarFull),'private profile full avatar is owner-only');
+allowed(await storage(outsider.token,avatarThumb),'private profile small avatar stays visible');
+allowed(await storage(owner.token,avatarFull),'owner can open own private full avatar');
+await db.doc(`users/${owner.uid}`).update({isPrivate:false});
+pass('private avatar full-size access is blocked while its small preview stays visible');
+const expiredTicket = db.doc(`write_tickets/expired_${suffix}`);
+const activeTicket = db.doc(`write_tickets/active_${suffix}`);
+await expiredTicket.set({expiresAt:Timestamp.fromMillis(Date.now()-120000)});
+await activeTicket.set({expiresAt:Timestamp.fromMillis(Date.now()+120000)});
+await processTaggedPosts();
+assert(!(await expiredTicket.get()).exists && (await activeTicket.get()).exists,
+  'ticket cleanup deleted an active reservation or retained an expired one');
+pass('scheduled worker clears expired write tickets while preserving active reservations');
 // หลักฐานต้องเป็นคนละไฟล์ และคนที่ไม่เกี่ยวข้องอ่าน/เขียนไม่ได้
 const photoId = `photo_${suffix}`;
 const photoPath = `post_media/${author.uid}/${photoId}/photo.png`;

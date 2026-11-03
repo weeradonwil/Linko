@@ -89,6 +89,7 @@ class GroupPost {
     this.editedAt,
     this.isDeleting = false,
     this.sharedPostId,
+    this.taggedUserIds = const [],
   });
 
   final String id;
@@ -103,6 +104,7 @@ class GroupPost {
   final DateTime? editedAt;
   final bool isDeleting;
   final String? sharedPostId;
+  final List<String> taggedUserIds;
 
   /// แปลงเป็นข้อมูลกลาง เพื่อใช้ฟอร์มแก้ไขและหน้าความคิดเห็นร่วมกับฟีดหลัก
   Post asPost() => Post.fromData(id, {
@@ -118,6 +120,7 @@ class GroupPost {
     'thumbnailPath': thumbnailPath,
     'isDeleting': isDeleting,
     'sharedPostId': sharedPostId,
+    'taggedUserIds': taggedUserIds,
   });
 
   factory GroupPost.fromSnapshot(
@@ -140,6 +143,7 @@ class GroupPost {
           : null,
       isDeleting: data['isDeleting'] == true,
       sharedPostId: readOptionalString(data['sharedPostId']),
+      taggedUserIds: readStrings(data['taggedUserIds']),
     );
   }
 }

@@ -25,6 +25,7 @@ class GroupService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
+  final Map<String, DocumentReference<Map<String, dynamic>>> _pendingPosts = {};
 
   String get _uid {
     final user = _auth.currentUser;
@@ -480,14 +481,23 @@ class GroupService {
     required String content,
     XFile? attachment,
     List<String> tags = const [],
+    List<String> taggedUserIds = const [],
   }) async {
     final text = content.trim();
     if ((text.isEmpty && attachment == null) || text.length > 1000) {
       throw const GroupServiceException('โพสต์ต้องมี 1–1,000 ตัวอักษร');
     }
     final user = _auth.currentUser;
-    final post = _groups.doc(groupId).collection('posts').doc();
-    final ticket = await TrustedService.reserve(_firestore, post.path);
+    // Retries from this composer reuse the same ID and existing write ticket.
+    final post = _pendingPosts.putIfAbsent(
+      groupId,
+      () => _groups.doc(groupId).collection('posts').doc(),
+    );
+    final ticket = await TrustedService.reserve(
+      _firestore,
+      post.path,
+      taggedUserIds: taggedUserIds,
+    );
     final media = attachment == null
         ? null
         : await _uploadGroupMedia(groupId, post.id, attachment);
@@ -500,6 +510,7 @@ class GroupService {
             : 'สมาชิก',
         'content': text,
         'tags': _cleanTags(tags),
+        'taggedUserIds': taggedUserIds,
         'createdAt': FieldValue.serverTimestamp(),
         'mediaType': media?.type ?? 'none',
         if (media != null) 'mediaPath': media.path,
@@ -507,6 +518,7 @@ class GroupService {
       });
       if (ticket != null) create.delete(ticket);
       await create.commit();
+      _pendingPosts.remove(groupId);
     } catch (_) {
       if (media != null) {
         await _deleteStorageFile(media.path);
@@ -526,6 +538,7 @@ class GroupService {
     List<String> tags = const [],
     XFile? newAttachment,
     bool removeMedia = false,
+    List<String> taggedUserIds = const [],
   }) async {
     final reference = _groups.doc(groupId).collection('posts').doc(postId);
     final before = await reference.get();
@@ -553,6 +566,12 @@ class GroupService {
         'กรุณาใส่ข้อความไม่เกิน 1,000 ตัวอักษรหรือแนบสื่อ',
       );
     }
+    final ticket = await TrustedService.reserve(
+      _firestore,
+      reference.path,
+      taggedUserIds: taggedUserIds,
+      update: true,
+    );
     final media = newAttachment == null
         ? null
         : await _uploadGroupMedia(groupId, postId, newAttachment);
@@ -572,6 +591,7 @@ class GroupService {
         transaction.update(reference, {
           'content': text,
           'tags': _cleanTags(tags),
+          'taggedUserIds': taggedUserIds,
           'updatedAt': FieldValue.serverTimestamp(),
           'editedAt': FieldValue.serverTimestamp(),
           if (media != null) ...{
@@ -585,6 +605,7 @@ class GroupService {
             'mediaType': 'none',
           },
         });
+        if (ticket != null) transaction.delete(ticket);
       });
     } catch (_) {
       if (media != null) {

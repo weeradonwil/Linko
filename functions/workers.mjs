@@ -20,13 +20,21 @@ export async function scanWork(db, name, collection, timeField, handle, {pageSiz
   let processed=0;
   try {
     for(let pageNumber=0;pageNumber<maxPages;pageNumber++) {
-      let query=db.collection(collection).where(timeField,'>=',rollout).orderBy(timeField).orderBy(FieldPath.documentId()).limit(pageSize);
-      if(position.at && position.id) query=query.startAfter(position.at,position.id);
+      // @group:posts scans feed and group posts; callers filter the document path.
+      const source = collection.startsWith('@group:')
+        ? db.collectionGroup(collection.slice('@group:'.length))
+        : db.collection(collection);
+      let query=source.where(timeField,'>=',rollout).orderBy(timeField).orderBy(FieldPath.documentId()).limit(pageSize);
+      if(position.at && position.id) query=query.startAfter(
+        position.at,
+        collection.startsWith('@group:') ? db.doc(position.id) : position.id,
+      );
       const page=await query.get();
       if(page.empty) break;
       for(const doc of page.docs) { await handle(doc); processed++; }
       const last=page.docs.at(-1);
-      position.at=last.get(timeField); position.id=last.id;
+      position.at=last.get(timeField);
+      position.id=collection.startsWith('@group:') ? last.ref.path : last.id;
       const saved=await db.runTransaction(async tx => {
         const current=await tx.get(ref);
         // ถ้า lease เปลี่ยนเจ้าของไปแล้ว ห้ามเขียน checkpoint เก่าย้อนทับของรอบใหม่

@@ -18,6 +18,47 @@ service firebase.storage {
       function postDocument() {
         return /databases/(default)/documents/posts/$(postId);
       }
+      function ownerProfile() {
+        return /databases/(default)/documents/users/$(ownerUid);
+      }
+
+      function shareGrantPath() {
+        return /databases/(default)/documents/posts/$(postId)/share_access/$(request.auth.uid);
+      }
+      function groupShareMediaAccess(grant) {
+        let groupPath = /databases/(default)/documents/groups/$(grant.targetId);
+        let sharePath = /databases/(default)/documents/groups/$(grant.targetId)/posts/$(grant.shareId);
+        return firestore.exists(groupPath) &&
+          firestore.get(groupPath).data.get('isDeleting', false) != true &&
+          firestore.exists(/databases/(default)/documents/groups/$(grant.targetId)/members/$(request.auth.uid)) &&
+          firestore.exists(sharePath) &&
+          firestore.get(sharePath).data.get('sharedPostId', '') == postId &&
+          firestore.get(sharePath).data.authorId == ownerUid;
+      }
+      function chatShareMediaAccess(grant) {
+        let roomPath = /databases/(default)/documents/conversations/$(grant.targetId);
+        let sharePath = /databases/(default)/documents/conversations/$(grant.targetId)/messages/$(grant.shareId);
+        return firestore.exists(roomPath) &&
+          request.auth.uid in firestore.get(roomPath).data.participantIds &&
+          firestore.exists(sharePath) &&
+          firestore.get(sharePath).data.type == 'post' &&
+          firestore.get(sharePath).data.get('sharedPostId', '') == postId &&
+          firestore.get(sharePath).data.senderId == ownerUid;
+      }
+      function validShareMediaGrant(grant) {
+        return grant.ownerId == ownerUid && grant.expiresAt > request.time &&
+          firestore.get(postDocument()).data.userId == ownerUid &&
+          firestore.get(postDocument()).data.visibility == 'public' &&
+          firestore.get(postDocument()).data.get('isDeleting', false) != true &&
+          !firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)/blocks/$(ownerUid)) &&
+          !firestore.exists(/databases/(default)/documents/users/$(ownerUid)/blocks/$(request.auth.uid)) &&
+          ((grant.destination == 'group' && groupShareMediaAccess(grant)) ||
+           (grant.destination == 'chat' && chatShareMediaAccess(grant)));
+      }
+      function canReadSharedMedia() {
+        return firestore.exists(postDocument()) && firestore.exists(shareGrantPath()) &&
+          validShareMediaGrant(firestore.get(shareGrantPath()).data);
+      }
 
       // เจ้าของจัดการไฟล์ของตัวเองได้; ผู้ใช้คนอื่นอ่านได้เฉพาะไฟล์ของโพสต์สาธารณะ
       // Firebase Console อาจขอเปิดการเชื่อมต่อ Rules ระหว่าง Storage กับ Firestore
@@ -25,9 +66,15 @@ service firebase.storage {
         (request.auth.uid == ownerUid ||
          (firestore.exists(postDocument()) &&
           firestore.get(postDocument()).data.userId == ownerUid &&
+          firestore.get(postDocument()).data.get('authorIsPrivate', false) == false &&
+          firestore.exists(ownerProfile()) &&
+          firestore.get(ownerProfile()).data.get('privacyMigrationTarget',
+            firestore.get(ownerProfile()).data.get('privacyTarget',
+              firestore.get(ownerProfile()).data.get('isPrivate', false))) != true &&
           (firestore.get(postDocument()).data.visibility == 'public' ||
            (firestore.get(postDocument()).data.visibility == 'followers' &&
-            firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid))))));
+            firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid))))) ||
+         canReadSharedMedia());
 
       // เจ้าของลบไฟล์ได้; การอัปโหลดต้องผ่าน MIME type และขนาดใน isValidMediaUpload()
       allow write: if request.auth != null &&
@@ -107,14 +154,34 @@ service firebase.storage {
         (request.resource == null || isValidMediaUpload());
     }
 
-    // Profile images are private to their owner for writes and readable by signed-in users.
+    // The full image is visible to other signed-in users only while this
+    // account is public. Profile cards use the separate small preview below.
     match /profile_images/{ownerUid}/{fileName} {
-      allow read: if request.auth != null;
+      function profile() { return /databases/(default)/documents/users/$(ownerUid); }
+      allow read: if request.auth != null &&
+        (request.auth.uid == ownerUid ||
+         (firestore.exists(profile()) &&
+          firestore.get(profile()).data.get('isPrivate', true) == false &&
+          firestore.get(profile()).data.get('privacyMigrationTarget', false) != true &&
+          firestore.get(profile()).data.get('privacyTarget', false) != true &&
+          firestore.get(profile()).data.get('avatarPath', '') ==
+            'profile_images/' + ownerUid + '/' + fileName));
       allow write: if request.auth != null &&
         request.auth.uid == ownerUid &&
         (request.resource == null ||
           (request.resource.size <= 5 * 1024 * 1024 &&
            request.resource.contentType.matches('image/.*')));
+    }
+
+    match /profile_thumbnails/{ownerUid}/{fileName} {
+      function profile() { return /databases/(default)/documents/users/$(ownerUid); }
+      allow read: if request.auth != null && firestore.exists(profile()) &&
+        (request.auth.uid == ownerUid ||
+         firestore.get(profile()).data.get('avatarThumbPath', '') ==
+           'profile_thumbnails/' + ownerUid + '/' + fileName);
+      allow write: if request.auth != null && request.auth.uid == ownerUid &&
+        (request.resource == null ||
+         (request.resource.size <= 1024 * 1024 && request.resource.contentType == 'image/png'));
     }
 
   }

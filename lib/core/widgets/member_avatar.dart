@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import '../utils/avatar_thumbnail.dart';
 
 /// โหลดจากโปรไฟล์จริง มีตัวอักษรสำรองเวลาไม่มีรูปหรือเปิดไฟล์ไม่ได้
 class MemberAvatar extends StatelessWidget {
@@ -21,7 +22,7 @@ class MemberAvatar extends StatelessWidget {
                       ? data!['displayName'] as String
                       : 'สมาชิก')
                   .trim();
-          final path = data?['avatarPath'];
+          final path = visibleAvatarPath(data);
           final fallback = Text(
             name.isEmpty ? '?' : name.characters.first.toUpperCase(),
           );

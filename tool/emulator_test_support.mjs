@@ -19,6 +19,9 @@ export function assert(condition, message) { if (!condition) throw new Error(mes
 export function allowed(result, message) { assert(result.ok, `${message}: ${JSON.stringify(result.body)}`); }
 export function denied(result, message) {
   assert(result.status === 403, `${message}: expected 403, got ${result.status}: ${JSON.stringify(result.body)}`);
+  if (/maximum of 1000 expressions|evaluation error/i.test(JSON.stringify(result.body))) {
+    console.warn(`WARN Rules evaluation limit during ${message}; 403 alone does not prove the intended policy branch`);
+  }
 }
 export async function request(path, { token, method = 'GET', body } = {}) {
   const response = await fetch(firestoreBase + path, {

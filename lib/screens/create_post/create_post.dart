@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/post.dart';
@@ -23,6 +24,7 @@ class CreatePostScreen extends StatefulWidget {
     this.postService,
     this.groupService,
     this.imagePicker,
+    this.authorAvatar,
     super.key,
   });
 
@@ -39,6 +41,8 @@ class CreatePostScreen extends StatefulWidget {
   final PostService? postService;
   final GroupService? groupService;
   final ImagePicker? imagePicker;
+  // เปิดทางให้ widget test ใส่ avatar ปลอมได้โดยไม่ต้องต่อ Firebase
+  final Widget? authorAvatar;
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -49,6 +53,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentController = TextEditingController();
   final _tagsController = TextEditingController();
   late final _postService = widget.postService ?? PostService();
+  late final _groupService = widget.groupService ?? GroupService();
   late final _picker = widget.imagePicker ?? ImagePicker();
 
   XFile? _attachment;
@@ -56,6 +61,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _removeExistingMedia = false;
   bool _isSaving = false;
   late String _visibility;
+  late List<String> _taggedUserIds;
+  final Map<String, String> _taggedUserNames = {};
 
   bool get _isEditing => widget.post != null;
 
@@ -68,6 +75,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _visibility = post?.visibility == 'followers'
         ? 'public'
         : post?.visibility ?? 'public';
+    _taggedUserIds = [...?post?.taggedUserIds];
+    if (_taggedUserIds.isNotEmpty) _loadTaggedUserNames();
   }
 
   @override
@@ -123,6 +132,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     // กันกดจากปุ่มบนกับปุ่มล่างติดกันก่อนหน้าจอวาดสถานะกำลังบันทึก
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
+    if (widget.groupId == null &&
+        _visibility == 'private' &&
+        _taggedUserIds.isNotEmpty) {
+      _showError('เอาแท็กเพื่อนออกก่อน เพราะโพสต์ส่วนตัวเห็นได้เฉพาะคุณ');
+      return;
+    }
     setState(() => _isSaving = true);
 
     final tags = _tagsController.text
@@ -132,14 +147,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         .toList();
 
     try {
+      if (_taggedUserIds.any((uid) => !_taggedUserNames.containsKey(uid))) {
+        await _loadTaggedUserNames();
+      }
       if (widget.groupId != null) {
-        final groups = widget.groupService ?? GroupService();
+        final groups = _groupService;
         if (_isEditing) {
           await groups.updatePost(
             groupId: widget.groupId!,
             postId: widget.post!.id,
             content: _contentController.text,
             tags: tags,
+            taggedUserIds: _taggedUserIds,
             newAttachment: _attachment,
             removeMedia: _removeExistingMedia,
           );
@@ -148,6 +167,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             groupId: widget.groupId!,
             content: _contentController.text,
             tags: tags,
+            taggedUserIds: _taggedUserIds,
             attachment: _attachment,
           );
         }
@@ -156,6 +176,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           postId: widget.post!.id,
           content: _contentController.text,
           tags: tags,
+          taggedUserIds: _taggedUserIds,
           visibility: _visibility,
           oldMediaPath: widget.post!.mediaPath,
           oldThumbnailPath: widget.post!.thumbnailPath,
@@ -166,6 +187,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         await _postService.createPost(
           content: _contentController.text,
           tags: tags,
+          taggedUserIds: _taggedUserIds,
           visibility: _visibility,
           attachment: _attachment,
         );
@@ -182,6 +204,210 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  // เลือกได้เฉพาะคนที่ติดตามกันหรือสมาชิกกลุ่ม และ backend จะตรวจซ้ำก่อนบันทึก
+  Future<void> _pickTaggedPeople() async {
+    if (_visibility == 'private' && widget.groupId == null) {
+      if (_taggedUserIds.isNotEmpty) {
+        setState(() {
+          _taggedUserIds.clear();
+          _taggedUserNames.clear();
+        });
+        _showError('เอาแท็กเพื่อนออกแล้ว เพราะโพสต์ส่วนตัวเห็นได้เฉพาะคุณ');
+        return;
+      }
+      _showError('โพสต์ส่วนตัวเห็นได้เฉพาะคุณ จึงแท็กเพื่อนไม่ได้');
+      return;
+    }
+    try {
+      final db = FirebaseFirestore.instance;
+      final candidates = <String>{};
+      if (widget.groupId != null) {
+        final members = await db
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('members')
+            .limit(100)
+            .get();
+        candidates.addAll(members.docs.map((doc) => doc.id));
+      } else {
+        final results = await Future.wait([
+          db
+              .collection('users')
+              .doc(widget.user.uid)
+              .collection('followers')
+              .limit(100)
+              .get(),
+          db
+              .collection('users')
+              .doc(widget.user.uid)
+              .collection('following')
+              .limit(100)
+              .get(),
+        ]);
+        for (final result in results) {
+          candidates.addAll(result.docs.map((doc) => doc.id));
+        }
+      }
+      candidates.remove(widget.user.uid);
+      final people = <({String uid, String name})>[];
+      final checked = await Future.wait(
+        candidates.map((uid) async {
+          final results = await Future.wait([
+            db.collection('users').doc(uid).get(),
+            db.collection('block_edges').doc('${widget.user.uid}_$uid').get(),
+            db.collection('block_edges').doc('${uid}_${widget.user.uid}').get(),
+          ]);
+          final user = results[0].data();
+          if (user == null || results[1].exists || results[2].exists) {
+            return null;
+          }
+          final name = user['displayName'] is String
+              ? (user['displayName'] as String).trim()
+              : '';
+          return (uid: uid, name: name.isEmpty ? 'สมาชิก' : name);
+        }),
+      );
+      people.addAll(checked.whereType<({String uid, String name})>());
+      people.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      if (!mounted) return;
+      final selected = Set<String>.of(_taggedUserIds);
+      final unavailable = selected
+          .where((uid) => !people.any((person) => person.uid == uid))
+          .toList();
+      final result = await showModalBottomSheet<Set<String>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .72,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'แท็กเพื่อน (${selected.length}/10)',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.pop(sheetContext, selected),
+                          child: const Text('เสร็จ'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: people.isEmpty && unavailable.isEmpty
+                        ? const Center(
+                            child: Text('ยังไม่มีเพื่อนหรือสมาชิกที่แท็กได้'),
+                          )
+                        : ListView.builder(
+                            itemCount: people.length + unavailable.length,
+                            itemBuilder: (context, index) {
+                              if (index >= unavailable.length) {
+                                final person =
+                                    people[index - unavailable.length];
+                                final checked = selected.contains(person.uid);
+                                return CheckboxListTile(
+                                  secondary: MemberAvatar(
+                                    uid: person.uid,
+                                    radius: 21,
+                                  ),
+                                  title: Text(person.name),
+                                  value: checked,
+                                  onChanged: (value) {
+                                    setSheetState(() {
+                                      if (value == true &&
+                                          selected.length < 10) {
+                                        selected.add(person.uid);
+                                      }
+                                      if (value != true) {
+                                        selected.remove(person.uid);
+                                      }
+                                    });
+                                  },
+                                );
+                              }
+                              final uid = unavailable[index];
+                              return CheckboxListTile(
+                                secondary: MemberAvatar(uid: uid, radius: 21),
+                                title: const Text('บัญชีที่เลือกไว้ก่อนหน้า'),
+                                subtitle: Text(uid),
+                                value: true,
+                                onChanged: (_) =>
+                                    setSheetState(() => selected.remove(uid)),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      if (result != null && mounted) {
+        final nextIds = result.toList();
+        final names = {for (final person in people) person.uid: person.name};
+        for (final uid in nextIds) {
+          if (!names.containsKey(uid)) {
+            final profile = await db.collection('users').doc(uid).get();
+            final name = profile.data()?['displayName'];
+            names[uid] = name is String && name.trim().isNotEmpty
+                ? name.trim()
+                : 'สมาชิก';
+          }
+        }
+        setState(() {
+          _taggedUserIds = nextIds;
+          _taggedUserNames
+            ..clear()
+            ..addAll(names);
+        });
+        // Keep names out of the editable body. The post renderer adds @names
+        // from the selected IDs, so removing a chip never deletes typed text.
+      }
+    } catch (error) {
+      _showError(firebaseErrorMessage(error, action: 'โหลดรายชื่อสำหรับแท็ก'));
+    }
+  }
+
+  Future<void> _loadTaggedUserNames() async {
+    final db = FirebaseFirestore.instance;
+    final selectedIds = List<String>.of(_taggedUserIds);
+    try {
+      final profiles = await Future.wait(
+        selectedIds.map((uid) => db.collection('users').doc(uid).get()),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (var index = 0; index < profiles.length; index++) {
+          final value = profiles[index].data()?['displayName'];
+          _taggedUserNames[selectedIds[index]] =
+              value is String && value.trim().isNotEmpty
+              ? value.trim()
+              : 'สมาชิก';
+        }
+      });
+    } catch (_) {
+      // Keep existing tags removable even if profile names cannot be fetched.
+    }
+  }
+
+  void _removeTaggedUser(String uid) {
+    setState(() {
+      _taggedUserIds.remove(uid);
+      _taggedUserNames.remove(uid);
+    });
   }
 
   void _clearAttachment() {
@@ -232,7 +458,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             children: [
               Row(
                 children: [
-                  MemberAvatar(uid: widget.user.uid, radius: 20),
+                  widget.authorAvatar ??
+                      MemberAvatar(uid: widget.user.uid, radius: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -298,6 +525,49 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   return tags.length > 5 ? 'ใส่แท็กได้ไม่เกิน 5 รายการ' : null;
                 },
               ),
+              if (widget.groupId != null ||
+                  _visibility != 'private' ||
+                  _taggedUserIds.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _isSaving ? null : _pickTaggedPeople,
+                    icon: Icon(
+                      _visibility == 'private' && widget.groupId == null
+                          ? Icons.person_remove_alt_1_outlined
+                          : Icons.person_add_alt_1_outlined,
+                    ),
+                    label: Text(
+                      _visibility == 'private' &&
+                              widget.groupId == null &&
+                              _taggedUserIds.isNotEmpty
+                          ? 'เอาแท็กเพื่อนออก'
+                          : _taggedUserIds.isEmpty
+                          ? 'แท็กเพื่อน'
+                          : 'แท็กเพื่อน (${_taggedUserIds.length})',
+                    ),
+                  ),
+                ),
+              ],
+              if (_taggedUserIds.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: _taggedUserIds
+                      .map(
+                        (uid) => InputChip(
+                          avatar: MemberAvatar(uid: uid, radius: 11),
+                          label: Text('@${_taggedUserNames[uid] ?? 'สมาชิก'}'),
+                          onDeleted: _isSaving
+                              ? null
+                              : () => _removeTaggedUser(uid),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
               if (widget.post?.sharedPostId != null)
                 SharedPostCard(postId: widget.post!.sharedPostId!),
               const SizedBox(height: 8),

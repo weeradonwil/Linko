@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/utils/avatar_thumbnail.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({
@@ -16,6 +17,7 @@ class EditProfileScreen extends StatefulWidget {
     required this.initialName,
     required this.initialBio,
     this.initialAvatarPath,
+    this.initialAvatarThumbPath,
     this.initialCoverPath,
   });
 
@@ -23,6 +25,7 @@ class EditProfileScreen extends StatefulWidget {
   final String initialName;
   final String initialBio;
   final String? initialAvatarPath;
+  final String? initialAvatarThumbPath;
   final String? initialCoverPath;
 
   @override
@@ -138,6 +141,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _saving = true);
 
     String? uploadedPath;
+    String? uploadedThumb;
     String? uploadedCover;
     bool profileSaved = false;
     try {
@@ -150,6 +154,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               _selectedAvatarBytes!,
               SettableMetadata(contentType: 'image/jpeg'),
             );
+        uploadedThumb =
+            'profile_thumbnails/${widget.user.uid}/avatar_${DateTime.now().microsecondsSinceEpoch}.png';
+        await FirebaseStorage.instance.ref(uploadedThumb).putData(
+          await makeAvatarThumbnail(_selectedAvatarBytes!),
+          SettableMetadata(contentType: 'image/png'),
+        );
       }
 
       if (_coverBytes != null) {
@@ -168,6 +178,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             'displayNameLower': name.toLowerCase(),
             'bio': bio,
             'avatarPath': ?uploadedPath,
+            'avatarThumbPath': ?uploadedThumb,
+            if (uploadedPath != null) 'avatarPrivateSecured': true,
             'coverPath': ?uploadedCover,
             if (_removeCover) 'coverPath': FieldValue.delete(),
           });
@@ -204,6 +216,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             // Keep the updated profile if old-file cleanup fails.
           }
         }
+        final oldThumb = widget.initialAvatarThumbPath;
+        if (oldThumb != null &&
+            oldThumb.startsWith('profile_thumbnails/${widget.user.uid}/')) {
+          try {
+            await FirebaseStorage.instance.ref(oldThumb).delete();
+          } catch (_) {
+            // A stale small preview is harmless; the profile points to the new one.
+          }
+        }
       }
 
       if (!mounted) return;
@@ -221,6 +242,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           await FirebaseStorage.instance.ref(uploadedPath).delete();
         } catch (_) {
           // Ignore cleanup errors and show the original save error.
+        }
+      }
+      if (!profileSaved && uploadedThumb != null) {
+        try {
+          await FirebaseStorage.instance.ref(uploadedThumb).delete();
+        } catch (_) {
+          // Keep the original upload error.
         }
       }
       if (mounted) {

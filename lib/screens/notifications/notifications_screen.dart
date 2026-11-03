@@ -84,7 +84,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       );
       return;
     }
-    if ((item.type == 'comment' || item.type == 'like') &&
+    if ((item.type == 'comment' || item.type == 'like' || item.type == 'tag') &&
         item.postId != null) {
       try {
         final post = await _commentService.getPost(
@@ -330,6 +330,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'moderation' => 'คำเตือนและสิทธิ์โพสต์',
     'moderation_group' => 'มีรายงานใหม่ในกลุ่มของคุณ',
     'comment' => '${item.actorName} แสดงความคิดเห็นในโพสต์ของคุณ',
+    'tag' => '${item.actorName} แท็กคุณในโพสต์',
     'like' => '${item.actorName} ถูกใจโพสต์ของคุณ',
     'follow' => '${item.actorName} เริ่มติดตามคุณ',
     _ => '${item.actorName} มีกิจกรรมใหม่',

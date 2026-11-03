@@ -3,9 +3,10 @@ import '../../core/widgets/shared_post_card.dart';
 import '../../core/widgets/share_post_sheet.dart';
 import '../../core/widgets/post_action_button.dart';
 import '../../core/widgets/post_comment_count_button.dart';
-import '../../core/widgets/reaction_people_sheet.dart';
 import '../../core/widgets/content_visibility.dart';
 import '../../core/widgets/member_avatar.dart';
+import '../../core/widgets/live_profile_name.dart';
+import '../../core/widgets/tagged_post_content.dart';
 
 // หน้า Feed หลัก เชื่อมการโหลดโพสต์ การจัดการโพสต์ และทางลัดไปฟีเจอร์อื่น
 import 'dart:async';
@@ -87,6 +88,12 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => CreatePostScreen(user: widget.user)),
     );
   }
+
+  void _openTagSearch(String tag) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SearchExploreScreen(user: widget.user, initialTag: tag),
+    ),
+  );
 
   /// ส่ง Post เดิมไปให้ฟอร์ม เพื่อแสดงเนื้อหาเดิมและบันทึกทับ document เดิม
   Future<void> _openEditPost(BuildContext context, Post post) async {
@@ -379,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
                     itemCount:
                         posts.length + (posts.length >= _feedLimit ? 1 : 0),
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    separatorBuilder: (_, _) => const SizedBox(height: 16),
                     itemBuilder: (context, index) {
                       if (index == posts.length) {
                         return TextButton(
@@ -433,6 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           onComment: () => _openComments(context, post),
+                          onTagTap: _openTagSearch,
                         ),
                       );
                     },
@@ -453,7 +461,9 @@ class _HomeScreenState extends State<HomeScreen> {
             unselectedFontSize: 12,
             elevation: 0,
             onTap: (index) {
-              if (index == 2) {
+              if (index == 0) {
+                _restartFeed();
+              } else if (index == 2) {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => ChatListScreen(user: widget.user),
@@ -534,6 +544,7 @@ class _PostCard extends StatelessWidget {
     required this.onReaction,
     required this.onAuthorTap,
     required this.onComment,
+    required this.onTagTap,
   });
 
   final Post post;
@@ -546,6 +557,7 @@ class _PostCard extends StatelessWidget {
   final ValueChanged<String> onReaction;
   final VoidCallback onAuthorTap;
   final Future<void> Function() onComment;
+  final ValueChanged<String> onTagTap;
 
   @override
   Widget build(BuildContext context) {
@@ -573,8 +585,9 @@ class _PostCard extends StatelessWidget {
                     children: [
                       InkWell(
                         onTap: onAuthorTap,
-                        child: Text(
-                          post.authorName,
+                        child: LiveProfileName(
+                          uid: post.userId,
+                          fallbackName: post.authorName,
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -674,8 +687,8 @@ class _PostCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            if (post.content.isNotEmpty)
-              SelectableText(post.content, style: theme.textTheme.bodyLarge),
+            if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty)
+              TaggedPostContent(post: post, style: theme.textTheme.bodyLarge),
             if (post.sharedPostId != null)
               SharedPostCard(postId: post.sharedPostId!),
             if (post.mediaPath != null && post.mediaType == 'image') ...[
@@ -701,9 +714,10 @@ class _PostCard extends StatelessWidget {
                 runSpacing: 4,
                 children: post.tags
                     .map(
-                      (tag) => Chip(
+                      (tag) => ActionChip(
                         label: Text('#$tag'),
                         visualDensity: VisualDensity.compact,
+                        onPressed: () => onTagTap(tag),
                       ),
                     )
                     .toList(),
@@ -739,19 +753,12 @@ class _PostCard extends StatelessWidget {
                     );
                   }
                 }
+                // Keep all non-dislike reactions in the count beside the like control.
+                final likeCount = counts.entries
+                    .where((entry) => entry.key != 'dislike')
+                    .fold<int>(0, (sum, entry) => sum + entry.value);
                 return Column(
                   children: [
-                    if (counts.values.any((count) => count > 0))
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 4, bottom: 4),
-                          child: ReactionSummaryBar(
-                            counts: counts,
-                            path: 'posts/${post.id}/reactions',
-                          ),
-                        ),
-                      ),
                     Row(
                       children: [
                         Expanded(
@@ -772,6 +779,7 @@ class _PostCard extends StatelessWidget {
                             color: selected != null && selected != 'dislike'
                                 ? theme.colorScheme.primary
                                 : null,
+                            inlineCount: likeCount,
                             onPressed: () => onReaction('like'),
                             onLongPress: (buttonContext) async {
                               final reaction = await SocialReactionPicker.show(

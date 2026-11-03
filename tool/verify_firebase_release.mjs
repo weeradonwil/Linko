@@ -42,14 +42,28 @@ const states = wanted.map(item => {
 assert(states.every(item => item.state === 'READY'), `Indexes not ready: ${JSON.stringify(states.filter(item => item.state !== 'READY'))}`);
 result.indexes = { ready: states.length, expected: wanted.length };
 console.log(`PASS production: all ${states.length} required indexes are READY`);
+// Field overrides are needed for collection-group scans. Verify that the
+// default collection indexes were kept when the override was added.
+result.fieldIndexes = [];
+for (const override of JSON.parse(await readFile('firestore.indexes.json', 'utf8')).fieldOverrides ?? []) {
+  const field = await firebaseRest(`https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/collectionGroups/${override.collectionGroup}/fields/${override.fieldPath}`);
+  const actual = field.indexConfig?.indexes ?? [];
+  for (const wantedIndex of override.indexes) {
+    const found = actual.find(item => item.queryScope === wantedIndex.queryScope &&
+      (item.fields?.[0]?.order ?? item.fields?.[0]?.arrayConfig) === (wantedIndex.order ?? wantedIndex.arrayConfig));
+    assert(found?.state === 'READY', `Field index ${override.fieldPath} ${wantedIndex.queryScope} ${wantedIndex.order ?? wantedIndex.arrayConfig} is not READY`);
+    result.fieldIndexes.push({field:override.fieldPath,scope:wantedIndex.queryScope,mode:wantedIndex.order ?? wantedIndex.arrayConfig,state:found.state});
+  }
+}
+console.log(`PASS production: ${result.fieldIndexes.length} field indexes are READY, including the existing collection indexes`);
 
-const expected = ['enforceWarnings', 'legacyReportWorker', 'blockCleanupWorker', 'evidenceCopyWorker', 'reserveWrite', 'respondToWarning', 'reviewGroupReport', 'sharePost', 'submitReport'];
+const expected = ['enforceWarnings', 'legacyReportWorker', 'blockCleanupWorker', 'evidenceCopyWorker', 'tagNotificationWorker', 'reserveWrite', 'respondToWarning', 'reviewGroupReport', 'sharePost', 'openSharedPost', 'submitReport'];
 const functions = await firebaseRest(`https://cloudfunctions.googleapis.com/v2/projects/${project}/locations/asia-southeast1/functions`);
 const deployed = expected.map(name => (functions.functions ?? []).find(item => item.name.endsWith('/' + name)));
 assert(deployed.every(item => item?.state === 'ACTIVE' && item.buildConfig?.runtime === 'nodejs22' && item.labels?.['firebase-functions-codebase'] === 'linko'), 'Some Linko functions are missing or not ACTIVE on Node22');
 result.functions = deployed.map(item => ({ name: item.name.split('/').at(-1), state: item.state, runtime: item.buildConfig.runtime, generation: item.environment }));
 result.retiredResources = (functions.functions ?? []).filter(item => ['ingestLegacyReport','onBlockChanged','preserveEvidence'].includes(item.name.split('/').at(-1))).map(item => ({name:item.name.split('/').at(-1),state:item.state}));
-console.log('PASS production: all 9 Linko functions are ACTIVE in asia-southeast1');
+console.log('PASS production: all 11 Linko functions are ACTIVE in asia-southeast1');
 
 // ไม่เก็บ Authorization header ลง log ใช้ token เดิมในหน่วยความจำเพื่ออ่าน Scheduler เท่านั้น
 const schedulerResponse = await fetch(`https://cloudscheduler.googleapis.com/v1/projects/${project}/locations/asia-southeast1/jobs`, {
@@ -58,18 +72,18 @@ const schedulerResponse = await fetch(`https://cloudscheduler.googleapis.com/v1/
 assert(schedulerResponse.ok, `Cannot inspect scheduler: HTTP ${schedulerResponse.status}`);
 const scheduler = await schedulerResponse.json();
 result.schedulers=[];
-for(const [functionName,schedules] of [['enforceWarnings',['every 5 minutes','*/5 * * * *']],['legacyReportWorker',['* * * * *','every 1 minutes']],['blockCleanupWorker',['* * * * *','every 1 minutes']],['evidenceCopyWorker',['* * * * *','every 1 minutes']]]) {
+for(const [functionName,schedules] of [['enforceWarnings',['every 5 minutes','*/5 * * * *']],['legacyReportWorker',['* * * * *','every 1 minutes']],['blockCleanupWorker',['* * * * *','every 1 minutes']],['evidenceCopyWorker',['* * * * *','every 1 minutes']],['tagNotificationWorker',['* * * * *','every 1 minutes']]]) {
   const job = (scheduler.jobs ?? []).find(item => item.name.includes(`firebase-schedule-${functionName}-`));
   assert(job?.state === 'ENABLED' && job.httpTarget?.oidcToken?.serviceAccountEmail, `${functionName} scheduler is not enabled with authenticated delivery`);
   assert(schedules.includes(job.schedule), `Unexpected ${functionName} schedule`);
   assert(!job.lastAttemptTime || !job.status?.code, `${functionName} last execution failed`);
   result.schedulers.push({name:functionName,state:job.state,schedule:job.schedule,timeZone:job.timeZone,lastAttemptTime:job.lastAttemptTime ?? null,lastAttemptCode:job.lastAttemptTime ? job.status?.code ?? 0 : null});
 }
-console.log('PASS production: 4 schedulers are enabled with OIDC; enforcement every 5 minutes, workers every minute');
+console.log('PASS production: 5 schedulers are enabled with OIDC; enforcement every 5 minutes, workers every minute');
 
 // เรียกแบบไม่ล็อกอินต้องถูกปฏิเสธก่อนเขียนข้อมูล เป็น smoke check ที่ไม่มีข้อมูลผู้ใช้จริง
 result.callableChecks = [];
-for (const name of ['reserveWrite', 'respondToWarning', 'reviewGroupReport', 'sharePost', 'submitReport']) {
+for (const name of ['reserveWrite', 'respondToWarning', 'reviewGroupReport', 'sharePost', 'openSharedPost', 'submitReport']) {
   // ใช้ URL เดียวกับ Flutter FirebaseFunctions SDK เพื่อตรวจ routing จริงด้วย
   const endpoint = `https://asia-southeast1-${project}.cloudfunctions.net/${name}`;
   const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: {} }), signal: AbortSignal.timeout(60000) });
@@ -77,7 +91,7 @@ for (const name of ['reserveWrite', 'respondToWarning', 'reviewGroupReport', 'sh
   assert(response.status === 401 && body.error?.status === 'UNAUTHENTICATED', `${name} did not reject unauthenticated calls as expected`);
   result.callableChecks.push({ name, status: response.status, error: body.error.status, via: 'cloudfunctions.net' });
 }
-console.log('PASS production: 5 callable endpoints reject unauthenticated calls without test writes');
+console.log('PASS production: 6 callable endpoints reject unauthenticated calls without test writes');
 const preflight = await fetch(`https://asia-southeast1-${project}.cloudfunctions.net/submitReport`, {
   method: 'OPTIONS', headers: { Origin: `https://${project}.web.app`, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' }, signal: AbortSignal.timeout(30000),
 });

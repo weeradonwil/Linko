@@ -25,7 +25,9 @@ service cloud.firestore {
     }
     function canPost() {
       return verifiedMember() && (!exists(/databases/$(database)/documents/account_state/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/account_state/$(request.auth.uid)).data.get('postingSuspendedUntil', request.time) <= request.time);
+        get(/databases/$(database)/documents/account_state/$(request.auth.uid)).data.get('postingSuspendedUntil', request.time) <= request.time) &&
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('privacyMigrationTarget', null) == null);
     }
     function canPostInGroup(groupId) {
       let key = groupId + '_' + request.auth.uid;
@@ -44,6 +46,30 @@ service cloud.firestore {
         (exists(ticket) && !existsAfter(ticket) && get(ticket).data.uid == request.auth.uid &&
          get(ticket).data.targetPath == path && get(ticket).data.expiresAt > request.time);
     }
+    // จำกัดจำนวนแท็กใน Rules; สิทธิ์ผู้ถูกแท็กตรวจซ้ำโดย reserveWrite ฝั่ง Admin SDK
+    function validTaggedUserIds(data) {
+      let ids = data.get('taggedUserIds', []);
+      return ids is list && ids.size() <= 10 && !(request.auth.uid in ids) &&
+        (ids.size() < 1 || (ids[0] is string && ids[0].size() > 0 && ids[0].size() <= 160)) &&
+        (ids.size() < 2 || (ids[1] is string && ids[1].size() > 0 && ids[1].size() <= 160)) &&
+        (ids.size() < 3 || (ids[2] is string && ids[2].size() > 0 && ids[2].size() <= 160)) &&
+        (ids.size() < 4 || (ids[3] is string && ids[3].size() > 0 && ids[3].size() <= 160)) &&
+        (ids.size() < 5 || (ids[4] is string && ids[4].size() > 0 && ids[4].size() <= 160)) &&
+        (ids.size() < 6 || (ids[5] is string && ids[5].size() > 0 && ids[5].size() <= 160)) &&
+        (ids.size() < 7 || (ids[6] is string && ids[6].size() > 0 && ids[6].size() <= 160)) &&
+        (ids.size() < 8 || (ids[7] is string && ids[7].size() > 0 && ids[7].size() <= 160)) &&
+        (ids.size() < 9 || (ids[8] is string && ids[8].size() > 0 && ids[8].size() <= 160)) &&
+        (ids.size() < 10 || (ids[9] is string && ids[9].size() > 0 && ids[9].size() <= 160));
+    }
+    // รายชื่อที่บันทึกต้องตรงกับ ticket ที่ backend ออก และใช้ ticket ได้ครั้งเดียว
+    function validTagTicket(path, itemId, data) {
+      let ticket = /databases/$(database)/documents/write_tickets/$(request.auth.uid + '_' + itemId);
+      let ids = data.get('taggedUserIds', []);
+      return ids.size() == 0 ||
+        (exists(ticket) && !existsAfter(ticket) && get(ticket).data.uid == request.auth.uid &&
+         get(ticket).data.targetPath == path && get(ticket).data.taggedUserIds == ids &&
+         get(ticket).data.expiresAt > request.time);
+    }
 
     match /app_config/{name} { allow read: if signedIn(); allow write: if false; }
     match /account_state/{uid} { allow read: if signedIn() && request.auth.uid == uid; allow write: if false; }
@@ -53,7 +79,12 @@ service cloud.firestore {
       allow create, update: if false;
     }
     match /block_edges/{edgeId} {
-      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      // The app checks both directional edge IDs, including missing edges, so
+      // a member can tell whether they block each other before tagging.
+      allow get: if signedIn() &&
+        (edgeId.matches('^' + request.auth.uid + '_.*$') ||
+         edgeId.matches('^.*_' + request.auth.uid + '$'));
+      allow list: if signedIn() && request.auth.uid in resource.data.participants;
       allow create: if verifiedMember() && request.resource.data.actorId == request.auth.uid &&
         edgeId == request.auth.uid + '_' + request.resource.data.targetId &&
         request.resource.data.targetId != request.auth.uid &&
@@ -86,15 +117,24 @@ service cloud.firestore {
 
     function isPrivateProfile(userId) {
       let data = get(/databases/$(database)/documents/users/$(userId)).data;
-      return data.get('privacyTarget', data.get('isPrivate', false)) == true;
+      return data.get('privacyMigrationTarget',
+        data.get('privacyTarget', data.get('isPrivate', false))) == true;
+    }
+
+    // During a privacy migration, the owner updates every post snapshot first.
+    function expectedPostPrivacy(userId) {
+      let data = get(/databases/$(database)/documents/users/$(userId)).data;
+      return data.get('privacyMigrationTarget', isPrivateProfile(userId));
     }
 
     function canReadPostData(postData) {
       let visibility = postData.get('visibility', 'public');
       return signedIn() && (
         isAdmin() || postData.userId == request.auth.uid ||
-        visibility == 'public' ||
-        (visibility == 'followers' && isApprovedFollower(postData.userId))
+        (postData.get('authorIsPrivate', false) != true &&
+         !isPrivateProfile(postData.userId) &&
+         (visibility == 'public' ||
+          (visibility == 'followers' && isApprovedFollower(postData.userId))))
       );
     }
 
@@ -120,6 +160,10 @@ service cloud.firestore {
         data.createdAt is timestamp &&
         (!('coverPath' in data) || (data.coverPath is string && data.coverPath.matches('profile_covers/' + userId + '/[^/]+'))) &&
         (!('privacyTarget' in data) || data.privacyTarget is bool) &&
+        (!('privacyMigrationTarget' in data) || data.privacyMigrationTarget is bool) &&
+        (!('avatarPrivateSecured' in data) || data.avatarPrivateSecured is bool) &&
+        (!('avatarThumbPath' in data) ||
+          (data.avatarThumbPath is string && data.avatarThumbPath.matches('profile_thumbnails/' + userId + '/[^/]+'))) &&
         (!('avatarPath' in data) ||
           (data.avatarPath is string && data.avatarPath.matches('profile_images/' + userId + '/[^/]+')));
     }
@@ -157,15 +201,15 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == userId &&
         request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'displayNameLower', 'bio', 'isPrivate',
-          'avatarPath', 'coverPath', 'createdAt', 'updatedAt'
+          'avatarPath', 'avatarThumbPath', 'avatarPrivateSecured', 'coverPath', 'createdAt', 'updatedAt'
         ]) && validProfileData(request.resource.data, userId) &&
         request.resource.data.createdAt == request.time &&
         (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
       allow delete: if signedIn() && request.auth.uid == userId;
       allow update: if signedIn() && request.auth.uid == userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'displayNameLower', 'isPrivate', 'avatarPath', 'coverPath', 'bio',
-          'uid', 'createdAt', 'updatedAt', 'privacyTarget'
+          'displayName', 'displayNameLower', 'isPrivate', 'avatarPath', 'avatarThumbPath', 'avatarPrivateSecured', 'coverPath', 'bio',
+          'uid', 'createdAt', 'updatedAt', 'privacyTarget', 'privacyMigrationTarget'
         ]) &&
         validProfileData(request.resource.data, userId) &&
         ((resource.data.get('createdAt', null) is timestamp &&
@@ -241,18 +285,54 @@ service cloud.firestore {
     }
 
     match /posts/{postId} {
+      function groupShareStillVisible(grant) {
+        let groupPath = /databases/$(database)/documents/groups/$(grant.targetId);
+        let sharePath = /databases/$(database)/documents/groups/$(grant.targetId)/posts/$(grant.shareId);
+        return exists(groupPath) &&
+          get(groupPath).data.get('isDeleting', false) != true &&
+          exists(/databases/$(database)/documents/groups/$(grant.targetId)/members/$(request.auth.uid)) &&
+          exists(sharePath) &&
+          get(sharePath).data.get('sharedPostId', '') == postId &&
+          get(sharePath).data.authorId == resource.data.userId;
+      }
+      function chatShareStillVisible(grant) {
+        let roomPath = /databases/$(database)/documents/conversations/$(grant.targetId);
+        let sharePath = /databases/$(database)/documents/conversations/$(grant.targetId)/messages/$(grant.shareId);
+        return exists(roomPath) && request.auth.uid in get(roomPath).data.participantIds &&
+          exists(sharePath) && get(sharePath).data.type == 'post' &&
+          get(sharePath).data.get('sharedPostId', '') == postId &&
+          get(sharePath).data.senderId == resource.data.userId;
+      }
+      function sharedGrantIsValid(grant) {
+        return resource.data.visibility == 'public' && resource.data.get('isDeleting', false) != true &&
+          grant.ownerId == resource.data.userId && grant.expiresAt > request.time &&
+          notBlocked(resource.data.userId) &&
+          ((grant.destination == 'group' && groupShareStillVisible(grant)) ||
+           (grant.destination == 'chat' && chatShareStillVisible(grant)));
+      }
+      function canReadSharedPost() {
+        let grantPath = /databases/$(database)/documents/posts/$(postId)/share_access/$(request.auth.uid);
+        return exists(grantPath) && sharedGrantIsValid(get(grantPath).data);
+      }
       // โพสต์สาธารณะอ่านได้โดยสมาชิก; โพสต์ส่วนตัวอ่านได้เฉพาะเจ้าของ
       // Single-document reads can use the full policy, including legacy docs.
-      allow get: if canReadPostData(resource.data);
+      allow get: if canReadPostData(resource.data) || (signedIn() && canReadSharedPost());
+
+      // Only the backend issues a grant after checking the destination.
+      match /share_access/{readerId} {
+        allow read, write: if false;
+      }
 
       // Keep each list permission aligned with its matching query constraint.
       // Firestore evaluates a query as a whole and cannot filter out documents
       // that do not satisfy the read rules.
       allow list: if signedIn() && isAdmin();
-      allow list: if signedIn() && resource.data.userId == request.auth.uid;
-      allow list: if signedIn() && resource.data.visibility == 'public';
-      allow list: if signedIn() && resource.data.visibility == 'followers' &&
-        isApprovedFollower(resource.data.userId);
+      allow list: if signedIn() && resource.data.get('userId', '') == request.auth.uid;
+      allow list: if signedIn() && resource.data.get('visibility', '') == 'public' &&
+        resource.data.get('authorIsPrivate', false) == false;
+      allow list: if signedIn() && resource.data.get('visibility', '') == 'followers' &&
+        resource.data.get('authorIsPrivate', false) == false &&
+        isApprovedFollower(resource.data.get('userId', ''));
 
       allow create: if canPost() && validWriteTicket('posts/' + postId, postId) &&
         request.resource.data.keys().hasAll([
@@ -262,14 +342,17 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           'userId', 'authorName', 'content', 'tags', 'visibility',
           'createdAt', 'updatedAt', 'mediaPath', 'mediaType', 'thumbnailPath',
-          'authorIsPrivate'
+          'authorIsPrivate', 'taggedUserIds'
         ]) &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.authorName is string &&
         request.resource.data.authorIsPrivate is bool &&
+        // ป้องกัน snapshot privacy เก่าระหว่างบัญชีกำลังเปลี่ยนสถานะส่วนตัว
+        request.resource.data.authorIsPrivate == expectedPostPrivacy(request.auth.uid) &&
         request.resource.data.content is string &&
         request.resource.data.content.size() <= 1000 &&
         validPostTags(request.resource.data.tags) &&
+        validTaggedUserIds(request.resource.data) && validTagTicket('posts/' + postId, postId, request.resource.data) &&
         (request.resource.data.content.size() > 0 || request.resource.data.mediaType != 'none') &&
         validPostVisibility(request.resource.data) &&
         request.resource.data.mediaType in ['none', 'image', 'video'] &&
@@ -291,14 +374,18 @@ service cloud.firestore {
         request.resource.data.userId == resource.data.userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'content', 'tags', 'visibility', 'updatedAt', 'editedAt',
-          'mediaPath', 'mediaType', 'thumbnailPath', 'authorIsPrivate'
+          'mediaPath', 'mediaType', 'thumbnailPath', 'authorIsPrivate', 'taggedUserIds'
         ]) &&
         validPostUpdateTimestamps() &&
         request.resource.data.content is string &&
         request.resource.data.content.size() <= 1000 &&
         validPostTags(request.resource.data.tags) &&
+        validTaggedUserIds(request.resource.data) &&
+        (request.resource.data.get('taggedUserIds', []) == resource.data.get('taggedUserIds', []) ||
+         validTagTicket('posts/' + postId, postId, request.resource.data)) &&
         (request.resource.data.content.size() > 0 || request.resource.data.mediaType != 'none' || resource.data.get('sharedPostId', null) is string) &&
         request.resource.data.authorIsPrivate is bool &&
+        request.resource.data.authorIsPrivate == expectedPostPrivacy(request.auth.uid) &&
         validPostVisibility(request.resource.data) &&
         request.resource.data.mediaType in ['none', 'image', 'video'] &&
         ((request.resource.data.mediaType == 'none' &&
@@ -951,10 +1038,11 @@ service cloud.firestore {
           ]) &&
           request.resource.data.keys().hasOnly([
             'authorId', 'authorName', 'content', 'createdAt', 'mediaType',
-            'mediaPath', 'thumbnailPath', 'tags'
+            'mediaPath', 'thumbnailPath', 'tags', 'taggedUserIds'
           ]) &&
           request.resource.data.authorId == request.auth.uid &&
           validGroupPost(request.resource.data) &&
+          validTaggedUserIds(request.resource.data) && validTagTicket('groups/' + groupId + '/posts/' + groupPostId, groupPostId, request.resource.data) &&
           request.resource.data.authorName is string &&
           request.resource.data.content is string &&
           request.resource.data.content.size() <= 1000 &&
@@ -982,8 +1070,11 @@ service cloud.firestore {
           get(groupPath()).data.get('isDeleting', false) != true &&
           resource.data.get('isDeleting', false) != true &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'content', 'tags', 'mediaPath', 'mediaType', 'thumbnailPath', 'updatedAt', 'editedAt'
+            'content', 'tags', 'mediaPath', 'mediaType', 'thumbnailPath', 'updatedAt', 'editedAt', 'taggedUserIds'
           ]) && validGroupPost(request.resource.data) &&
+          validTaggedUserIds(request.resource.data) &&
+          (request.resource.data.get('taggedUserIds', []) == resource.data.get('taggedUserIds', []) ||
+           validTagTicket('groups/' + groupId + '/posts/' + groupPostId, groupPostId, request.resource.data)) &&
           request.resource.data.updatedAt == request.time && request.resource.data.editedAt == request.time;
         // ปิดการเพิ่มข้อมูลย่อยก่อนเริ่มลบ เพื่อให้การลบหลาย batch ทำต่อได้อย่างปลอดภัย
         allow update: if (isGroupMember() || isGroupManager()) &&

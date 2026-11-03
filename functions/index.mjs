@@ -8,6 +8,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { randomUUID } from 'node:crypto';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { readPolicy, caseId, contentHash, needsWarning, suspensionEnd, reserveRate } from './policy.mjs';
+import { isValidTaggedUserIds } from './tag_policy.mjs';
 
 initializeApp();
 setGlobalOptions({ region: 'asia-southeast1', maxInstances: 5 });
@@ -38,6 +39,13 @@ async function source(uid, postId, groupId) {
   const snap = await db.doc(path).get();
   if (!snap.exists || snap.data().isDeleting) fail('not-found', 'โพสต์นี้ไม่พร้อมใช้งาน');
   const post = snap.data();
+  // Stop a public post snapshot from bypassing its owner's private profile.
+  if (!groupId && post.userId && post.userId !== uid) {
+    const profile = (await db.doc(`users/${post.userId}`).get()).data() ?? {};
+    if (profile.privacyMigrationTarget === true || profile.privacyTarget === true || profile.isPrivate === true || post.authorIsPrivate === true) {
+      fail('permission-denied', 'Private accounts cannot be shared');
+    }
+  }
   const ownerId = post.userId ?? post.authorId;
   if (await blocked(uid, ownerId)) fail('permission-denied', 'ไม่สามารถโต้ตอบกับบัญชีนี้ได้');
   let groupOwnerId = null;
@@ -59,7 +67,13 @@ export const reserveWrite = onCall(async request => {
   const postMatch = path.match(/^posts\/([\w-]+)$/);
   const groupMatch = path.match(/^groups\/([\w-]+)\/posts\/([\w-]+)$/);
   const messageMatch = path.match(/^conversations\/([\w-]+)\/messages\/([\w-]+)$/);
+  const taggedUserIds = request.data?.taggedUserIds ?? [];
+  const isUpdate = request.data?.update === true;
+  if (!isValidTaggedUserIds(uid, taggedUserIds)) {
+    fail('invalid-argument', 'รายชื่อบัญชีที่แท็กไม่ถูกต้อง');
+  }
   if (!postMatch && !groupMatch && !messageMatch) fail('invalid-argument', 'ตำแหน่งข้อมูลไม่ถูกต้อง');
+  if (taggedUserIds.length && !postMatch && !groupMatch) fail('invalid-argument', 'แท็กได้เฉพาะโพสต์');
   if (groupMatch) {
     if (!(await db.doc(`groups/${groupMatch[1]}/members/${uid}`).get()).exists) fail('permission-denied', 'ยังไม่ได้เป็นสมาชิกกลุ่ม');
   }
@@ -68,6 +82,24 @@ export const reserveWrite = onCall(async request => {
     if (!room?.participantIds?.includes(uid)) fail('permission-denied', 'ไม่ใช่สมาชิกแชท');
     const peer = room.participantIds.find(value => value !== uid);
     if (peer && await blocked(uid, peer)) fail('permission-denied', 'ส่งข้อความไม่ได้ เพราะมีการบล็อกกัน');
+  }
+  if (taggedUserIds.length) {
+    for (const peer of taggedUserIds) {
+      if (await blocked(uid, peer)) fail('permission-denied', 'แท็กบัญชีที่บล็อกกันไม่ได้');
+      const user = await db.doc(`users/${peer}`).get();
+      if (!user.exists) fail('not-found', 'ไม่พบบัญชีที่เลือก');
+      if (groupMatch) {
+        const memberRef = db.doc(`groups/${groupMatch[1]}/members/${peer}`);
+        const group = await db.doc(`groups/${groupMatch[1]}`).get();
+        if (!(await memberRef.get()).exists && group.data()?.ownerId !== peer) fail('failed-precondition', 'แท็กได้เฉพาะสมาชิกกลุ่ม');
+      } else if (postMatch) {
+        const [follower, following] = await db.getAll(
+          db.doc(`users/${uid}/followers/${peer}`),
+          db.doc(`users/${uid}/following/${peer}`),
+        );
+        if (!follower.exists && !following.exists) fail('failed-precondition', 'แท็กได้เฉพาะผู้ติดตามหรือบัญชีที่คุณติดตาม');
+      }
+    }
   }
   const kind = messageMatch ? 'message' : 'post';
   const now = Date.now();
@@ -78,16 +110,97 @@ export const reserveWrite = onCall(async request => {
     const refs = [ticketRef, limitRef, db.doc(`account_state/${uid}`), db.doc(path)];
     if (groupMatch) refs.push(db.doc(`group_account_state/${groupMatch[1]}_${uid}`));
     const [ticket, limit, state, existing, groupState] = await tx.getAll(...refs);
-    if (existing.exists) fail('already-exists', 'รายการนี้ถูกสร้างแล้ว');
+    if (existing.exists && !(isUpdate && (postMatch || groupMatch) &&
+        (existing.data()?.userId ?? existing.data()?.authorId) === uid)) fail('already-exists', 'รายการนี้ถูกสร้างแล้ว');
     if (kind === 'post' && [state, groupState].some(doc => doc?.data()?.postingSuspendedUntil?.toMillis() > now)) fail('permission-denied', 'บัญชีนี้อยู่ระหว่างพักสิทธิ์โพสต์');
-    if (ticket.exists && ticket.data().targetPath === path && ticket.data().expiresAt.toMillis() > now) return;
+    if (ticket.exists && ticket.data().targetPath === path &&
+        ticket.data().expiresAt.toMillis() > now) {
+      // A retry or changed tag selection keeps the same reservation and rate slot.
+      if (JSON.stringify(ticket.data().taggedUserIds ?? []) !== JSON.stringify(taggedUserIds)) {
+        tx.update(ticketRef, { taggedUserIds });
+      }
+      return;
+    }
     const next = reserveRate(limit.data(), now, kind === 'post' ? 60000 : 10000, kind === 'post' ? 5 : 15);
     if (!next) fail('resource-exhausted', 'ส่งเร็วไปนิด รอสักครู่แล้วลองใหม่นะ');
     tx.set(limitRef, next);
-    tx.set(ticketRef, { uid, targetPath: path, expiresAt: Timestamp.fromMillis(now + 300000) });
+    tx.set(ticketRef, { uid, targetPath: path, taggedUserIds, expiresAt: Timestamp.fromMillis(now + 300000) });
   });
   return { ticketId: ticketRef.id };
 });
+
+// Bangkok does not support the Firestore trigger used here, so the scheduled
+// worker reads committed posts. A stable notification ID makes retries safe.
+async function notifyPostTags({ after, postId, groupId = null }) {
+  const added = Array.isArray(after?.taggedUserIds) ? [...new Set(after.taggedUserIds)] : [];
+  if (!added.length || after.isDeleting) return;
+  const authorId = after.userId ?? after.authorId;
+  if (!authorId) return;
+  const authorSnap = await db.doc(`users/${authorId}`).get();
+  const actorName = String(authorSnap.data()?.displayName ?? after.authorName ?? 'สมาชิก').slice(0, 60);
+  for (const recipientId of added) {
+    if (recipientId === authorId || await blocked(authorId, recipientId)) continue;
+    if (groupId) {
+      const [group, member] = await db.getAll(
+        db.doc(`groups/${groupId}`),
+        db.doc(`groups/${groupId}/members/${recipientId}`),
+      );
+      if (!member.exists && group.data()?.ownerId !== recipientId) continue;
+    } else {
+      const profile = authorSnap.data() ?? {};
+      if (profile.isPrivate === true || profile.privacyTarget === true ||
+          profile.privacyMigrationTarget === true || after.authorIsPrivate === true) continue;
+      const visibility = after.visibility ?? 'public';
+      if (visibility === 'private') continue;
+      if (visibility === 'followers' && !(await db.doc(`users/${authorId}/followers/${recipientId}`).get()).exists) continue;
+      const [follower, following] = await db.getAll(
+        db.doc(`users/${authorId}/followers/${recipientId}`),
+        db.doc(`users/${authorId}/following/${recipientId}`),
+      );
+      if (!follower.exists && !following.exists) continue;
+    }
+    const notificationId = `tag_${groupId ?? 'feed'}_${postId}_${recipientId}`;
+    const notification = db.doc(`notifications/${notificationId}`);
+    await db.runTransaction(async tx => {
+      const existing = await tx.get(notification);
+      if (!existing.exists) tx.create(notification, {
+        recipientId, actorId: authorId, actorName, type: 'tag',
+        body: 'แท็กคุณในโพสต์', postId, ...(groupId ? { groupId } : {}),
+        isRead: false, createdAt: stamp(),
+      });
+    });
+  }
+}
+
+export async function processTaggedPosts() {
+  const scans = [
+    ['tag_feed_created', 'posts', 'createdAt', false],
+    ['tag_feed_updated', 'posts', 'updatedAt', false],
+    ['tag_group_created', '@group:posts', 'createdAt', true],
+    ['tag_group_updated', '@group:posts', 'updatedAt', true],
+  ];
+  for (const [cursor, source, field, groupOnly] of scans) {
+    await scanWork(db, cursor, source, field, async doc => {
+      const parts = doc.ref.path.split('/');
+      if ((parts.length === 4) !== groupOnly) return;
+      await notifyPostTags({
+        after: doc.data(), postId: doc.id,
+        ...(groupOnly ? { groupId: parts[1] } : {}),
+      });
+    });
+  }
+  // A cancelled draft leaves a five-minute ticket behind. Remove only tickets
+  // that expired at least one minute ago; active reservations are untouched.
+  const expired = await db.collection('write_tickets')
+    .where('expiresAt', '<=', Timestamp.fromMillis(Date.now() - 60000))
+    .limit(200).get();
+  if (!expired.empty) {
+    const batch = db.batch();
+    for (const ticket of expired.docs) batch.delete(ticket.ref);
+    await batch.commit();
+  }
+}
+export const tagNotificationWorker = onSchedule(workerSchedule, processTaggedPosts);
 
 async function submitReportImpl(request, legacyRef = null) {
   const uid = await member(request);
@@ -291,7 +404,7 @@ export const sharePost = onCall(async request => {
   if (caption.length > 1000 || !['feed', 'group', 'chat'].includes(destination)) fail('invalid-argument', 'ข้อมูลการแชร์ไม่ถูกต้อง');
   const original = await source(uid, postId, null);
   if (original.post.visibility !== 'public' || original.post.sharedPostId) fail('permission-denied', 'ตอนนี้แชร์ได้เฉพาะโพสต์ต้นฉบับสาธารณะใน Feed');
-  const me = (await db.doc(`users/${uid}`).get()).data();
+  const meRef = db.doc(`users/${uid}`);
   let path = `posts/${requestId}`;
   let peer = null;
   if (destination === 'group') {
@@ -310,11 +423,20 @@ export const sharePost = onCall(async request => {
   }
   return db.runTransaction(async tx => {
     const stateRef = db.doc(`account_state/${uid}`);
-    const refs = [db.doc(path), stateRef, db.doc(`rate_limits/${uid}_share`), db.doc(original.path)];
+    const refs = [db.doc(path), stateRef, db.doc(`rate_limits/${uid}_share`), db.doc(original.path), db.doc(`users/${original.ownerId}`), meRef];
     if (destination === 'group') refs.push(db.doc(`group_account_state/${targetId}_${uid}`), db.doc(`groups/${targetId}`), db.doc(`groups/${targetId}/members/${uid}`));
     if (destination === 'chat') refs.push(db.doc(`conversations/${targetId}`));
-    const [exists, state, rate, fresh, groupState, group, membership] = await tx.getAll(...refs);
+    const [exists, state, rate, fresh, originalOwner, me, groupState, group, membership] = await tx.getAll(...refs);
     if (exists.exists) return { id: requestId };
+    const ownerProfile = originalOwner.data() ?? {};
+    const privateSource = ownerProfile.privacyMigrationTarget === true || ownerProfile.privacyTarget === true || ownerProfile.isPrivate === true || fresh.data()?.authorIsPrivate === true;
+    // An author may deliberately share their own private-account post into a
+    // specific group or chat. The recipient still needs a live access grant.
+    if (privateSource && !(uid === original.ownerId && destination !== 'feed')) {
+      fail('permission-denied', 'โพสต์จากบัญชีส่วนตัวแชร์ได้เฉพาะเจ้าของไปยังกลุ่มหรือแชท');
+    }
+    const myProfile = me.data() ?? {};
+    if (Object.hasOwn(myProfile, 'privacyMigrationTarget')) fail('failed-precondition', 'Wait for privacy update to finish');
     // สิทธิ์แชร์ยึด visibility ของโพสต์ บัญชีส่วนตัวก็เลือกให้บางโพสต์เป็นสาธารณะได้
     if (!fresh.exists || fresh.data().visibility !== 'public' || fresh.data().isDeleting) fail('permission-denied', 'ต้นฉบับไม่พร้อมให้แชร์แล้ว');
     const now = Date.now();
@@ -328,12 +450,56 @@ export const sharePost = onCall(async request => {
     if (!next) fail('resource-exhausted', 'แชร์เร็วไป รอสักครู่แล้วลองใหม่');
     tx.set(db.doc(`rate_limits/${uid}_share`), next);
     const common = { content: caption, sharedPostId: postId, createdAt: stamp(), mediaType: 'none', tags: [] };
-    if (destination === 'feed') tx.create(db.doc(path), { ...common, userId: uid, authorName: me?.displayName ?? 'สมาชิก', visibility: 'public', authorIsPrivate: me?.privacyTarget ?? me?.isPrivate ?? false });
-    if (destination === 'group') tx.create(db.doc(path), { ...common, authorId: uid, authorName: me?.displayName ?? 'สมาชิก' });
+    if (destination === 'feed') tx.create(db.doc(path), { ...common, userId: uid, authorName: myProfile.displayName ?? 'สมาชิก', visibility: 'public', authorIsPrivate: myProfile.privacyTarget ?? myProfile.isPrivate ?? false });
+    if (destination === 'group') tx.create(db.doc(path), { ...common, authorId: uid, authorName: myProfile.displayName ?? 'สมาชิก' });
     if (destination === 'chat') {
       tx.create(db.doc(path), { senderId: uid, type: 'post', text: caption, sharedPostId: postId, createdAt: stamp() });
       tx.update(db.doc(`conversations/${targetId}`), { lastMessageText: 'แชร์โพสต์ให้คุณ', lastMessageType: 'post', lastMessageSenderId: uid, lastMessageId: requestId, lastMessageAt: stamp(), updatedAt: stamp(), [`unreadCounts.${peer}`]: FieldValue.increment(1), [`hiddenFor.${uid}`]: false, [`hiddenFor.${peer}`]: false });
     }
     return { id: requestId };
+  });
+});
+
+// Issue one short-lived read grant only after checking the actual share and
+// current destination membership. Rules recheck both on every read.
+export const openSharedPost = onCall(async request => {
+  const uid = await member(request);
+  const postId = id(request.data?.postId);
+  const shareId = id(request.data?.shareId);
+  const destination = request.data?.destination;
+  const targetId = id(request.data?.targetId);
+  if (!['group', 'chat'].includes(destination)) fail('invalid-argument', 'ปลายทางการแชร์ไม่ถูกต้อง');
+  const postRef = db.doc(`posts/${postId}`);
+  const shareRef = db.doc(destination === 'group'
+    ? `groups/${targetId}/posts/${shareId}`
+    : `conversations/${targetId}/messages/${shareId}`);
+  const destinationRef = db.doc(destination === 'group' ? `groups/${targetId}` : `conversations/${targetId}`);
+  const membershipRef = destination === 'group' ? db.doc(`groups/${targetId}/members/${uid}`) : null;
+  const grantRef = db.doc(`posts/${postId}/share_access/${uid}`);
+  return db.runTransaction(async tx => {
+    const refs = [postRef, shareRef, destinationRef, ...(membershipRef ? [membershipRef] : [])];
+    const [post, share, target, membership] = await tx.getAll(...refs);
+    const source = post.data();
+    const shared = share.data();
+    if (!post.exists || source?.isDeleting || source?.visibility !== 'public' || !share.exists || shared?.sharedPostId !== postId) {
+      fail('not-found', 'โพสต์ต้นฉบับหรือรายการแชร์ไม่พร้อมใช้งาน');
+    }
+    if (destination === 'group') {
+      if (!target.exists || target.data().isDeleting || !membership?.exists || shared.authorId !== source.userId) {
+        fail('permission-denied', 'ต้องเป็นสมาชิกกลุ่มและเจ้าของโพสต์เป็นผู้แชร์');
+      }
+    } else if (!target.exists || !target.data().participantIds?.includes(uid) ||
+        shared.type !== 'post' || shared.senderId !== source.userId) {
+      fail('permission-denied', 'เฉพาะผู้ร่วมแชทเท่านั้นที่เปิดโพสต์นี้ได้');
+    }
+    const ownerId = source.userId;
+    if (!ownerId || ownerId === uid) return {granted: true};
+    const blocks = await tx.getAll(db.doc(`users/${uid}/blocks/${ownerId}`), db.doc(`users/${ownerId}/blocks/${uid}`));
+    if (blocks.some(value => value.exists)) fail('permission-denied', 'เปิดโพสต์นี้ไม่ได้เพราะมีการบล็อกกัน');
+    tx.set(grantRef, {
+      destination, targetId, shareId, ownerId,
+      expiresAt: Timestamp.fromMillis(Date.now() + 60 * 60 * 1000),
+    });
+    return {granted: true};
   });
 });

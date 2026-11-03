@@ -2,7 +2,6 @@ import 'post_action_button.dart';
 import 'post_comment_count_button.dart';
 import 'content_visibility.dart';
 import 'shared_post_card.dart';
-import 'reaction_people_sheet.dart';
 
 // การ์ดโพสต์กลุ่ม: แสดงสื่อ แท็ก ปฏิกิริยา ความคิดเห็น และเมนูจัดการตามสิทธิ์
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,8 +18,10 @@ import '../../screens/create_post/create_post.dart';
 import '../../screens/profile/profile.dart';
 import 'post_media.dart';
 import 'member_avatar.dart';
+import 'live_profile_name.dart';
 import 'post_report_dialog.dart';
 import 'social_reaction_picker.dart';
+import 'tagged_post_content.dart';
 
 /// รวมการใช้งานโพสต์กลุ่มไว้จุดเดียว และใช้ฟอร์ม/หน้าความคิดเห็นร่วมกับฟีดหลัก
 class GroupPostCard extends StatefulWidget {
@@ -181,8 +182,9 @@ class _GroupPostCardState extends State<GroupPostCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            post.authorName,
+                          LiveProfileName(
+                            uid: post.authorId,
+                            fallbackName: post.authorName,
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           Text(
@@ -235,17 +237,10 @@ class _GroupPostCardState extends State<GroupPostCard> {
                   ),
                 ],
               ),
-              if (post.content.isNotEmpty)
+              if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: SelectableText(post.content),
-                ),
-              if (post.tags.isNotEmpty)
-                Wrap(
-                  spacing: 6,
-                  children: post.tags
-                      .map((tag) => Chip(label: Text('#$tag')))
-                      .toList(),
+                  child: TaggedPostContent(post: post.asPost()),
                 ),
               if (post.mediaPath != null)
                 Padding(
@@ -257,7 +252,22 @@ class _GroupPostCardState extends State<GroupPostCard> {
                   ),
                 ),
               if (post.sharedPostId != null)
-                SharedPostCard(postId: post.sharedPostId!),
+                SharedPostCard(
+                  postId: post.sharedPostId!,
+                  shareId: post.id,
+                  groupId: widget.groupId,
+                ),
+              if (post.tags.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: post.tags
+                        .map((tag) => Chip(label: Text('#$tag')))
+                        .toList(),
+                  ),
+                ),
               const Divider(height: 24),
               StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _reactions.watchReactions(widget.groupId, post.id),
@@ -280,6 +290,9 @@ class _GroupPostCardState extends State<GroupPostCard> {
                     if (doc.id == widget.user.uid) mine = reaction;
                   }
                   final selected = SocialReaction.byId(mine);
+                  final likeCount = counts.entries
+                      .where((entry) => entry.key != 'dislike')
+                      .fold<int>(0, (total, entry) => total + entry.value);
                   Future<void> react(String value) => _perform(
                     () => _reactions.toggleReaction(
                       groupId: widget.groupId,
@@ -290,11 +303,6 @@ class _GroupPostCardState extends State<GroupPostCard> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ReactionSummaryBar(
-                        counts: counts,
-                        path:
-                            'groups/${widget.groupId}/posts/${post.id}/reactions',
-                      ),
                       Row(
                         children: [
                           Expanded(
@@ -312,6 +320,7 @@ class _GroupPostCardState extends State<GroupPostCard> {
                                   selected != null && selected.id != 'dislike'
                                   ? Theme.of(context).colorScheme.primary
                                   : null,
+                              inlineCount: likeCount,
                               onPressed: _busy ? null : () => react('like'),
                               onLongPress: _busy
                                   ? null

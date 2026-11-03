@@ -366,6 +366,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     return _MessageBubble(
                       key: ValueKey(message.id),
                       message: message,
+                      conversationId: widget.conversationId,
                       isMine: message.senderId == widget.user.uid,
                       peerId: widget.peerId,
                       onUnsend: () => _unsendMessage(message),
@@ -466,11 +467,13 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     super.key,
     required this.message,
+    required this.conversationId,
     required this.isMine,
     required this.peerId,
     required this.onUnsend,
   });
   final ChatMessage message;
+  final String conversationId;
   final bool isMine;
   final String peerId;
   final VoidCallback onUnsend;
@@ -548,7 +551,11 @@ class _MessageBubble extends StatelessWidget {
                                 ),
                               if (!message.isUnsent &&
                                   message.sharedPostId != null)
-                                SharedPostCard(postId: message.sharedPostId!),
+                                SharedPostCard(
+                                  postId: message.sharedPostId!,
+                                  shareId: message.id,
+                                  conversationId: conversationId,
+                                ),
                               if (message.text.isNotEmpty)
                                 Padding(
                                   padding: message.mediaPath == null

@@ -18,11 +18,18 @@ import '../../core/services/follow_service.dart';
 import '../../core/services/post_service.dart';
 import '../../core/widgets/post_media.dart';
 import '../../core/widgets/member_avatar.dart';
+import '../../core/widgets/live_profile_name.dart';
+import '../../core/widgets/post_engagement_bar.dart';
+import '../../core/widgets/tagged_post_content.dart';
 import '../admin/admin_reports_screen.dart';
 import '../chat/chat_room.dart';
+import '../comments/post_comments_screen.dart';
 import '../create_post/create_post.dart';
+import '../search/search_explore.dart';
 import 'edit_profile_screen.dart';
 import 'profile_image_screen.dart';
+import '../../core/utils/avatar_thumbnail.dart';
+import 'change_email_screen.dart';
 
 /// แสดงโปรไฟล์ตนเองหรือสมาชิกที่เปิดจากผลค้นหา/โพสต์
 class ProfileScreen extends StatefulWidget {
@@ -44,14 +51,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _openingChat = false;
   bool _privacyBusy = false;
   int _postsLimit = 30;
+  String? _profileEmail;
   String get _profileUid => widget.profileUid ?? widget.user.uid;
   bool get _isOwnProfile => _profileUid == widget.user.uid;
 
   @override
   void initState() {
     super.initState();
+    _profileEmail = widget.user.email;
     _followService = FollowService(firestore: _firestore);
     _hasAdminClaim = _isAdmin();
+  }
+
+  Future<void> _changeEmail() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ChangeEmailScreen(user: widget.user),
+      ),
+    );
+    if (changed != true || !mounted) return;
+    final refreshedUser = FirebaseAuth.instance.currentUser;
+    setState(() => _profileEmail = refreshedUser?.email ?? widget.user.email);
   }
 
   Future<bool> _isAdmin() async {
@@ -65,10 +85,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String bio,
     required String? avatarPath,
   }) async {
-    final currentCover =
-        (await _firestore.collection('users').doc(_profileUid).get())
-                .data()?['coverPath']
-            as String?;
+    final currentProfile =
+        (await _firestore.collection('users').doc(_profileUid).get()).data();
+    final currentCover = currentProfile?['coverPath'] as String?;
     if (!mounted) return;
     final authNameSynced = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
@@ -77,6 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           initialName: name,
           initialBio: bio,
           initialAvatarPath: avatarPath,
+          initialAvatarThumbPath: readOptionalString(currentProfile?['avatarThumbPath']),
           initialCoverPath: currentCover,
         ),
       ),
@@ -170,6 +190,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _deleteProfilePost(Post post) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ลบโพสต์นี้?'),
+        content: const Text('โพสต์และโพสต์ที่แชร์นี้จะถูกลบออกจากบัญชีของคุณ'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('ลบโพสต์'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !mounted) return;
+
+    try {
+      // Shared posts are normal posts owned by this account, so the same
+      // service removes the share card without touching its original post.
+      await _postService.deletePost(post);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('ลบโพสต์แล้ว')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('ลบโพสต์ไม่สำเร็จ: $error')));
+      }
+    }
+  }
+
   void _showFollowRequests() {
     showModalBottomSheet<void>(
       context: context,
@@ -251,8 +307,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final name = storedName.isEmpty ? 'สมาชิก' : storedName;
           final bio = readString(data['bio']).trim();
           final isPrivate = PostPolicy.profileIsPrivate(data);
-          final privacyPending = data['privacyTarget'] is bool;
+          final privacyPending =
+              data['privacyMigrationTarget'] is bool ||
+              data['privacyTarget'] is bool;
+          final privacyRetryTarget = data['privacyMigrationTarget'] is bool
+              ? data['privacyMigrationTarget'] as bool
+              : data['privacyTarget'] as bool?;
           final avatarPath = readOptionalString(data['avatarPath']);
+          final avatarPreviewPath = visibleAvatarPath(data);
           final coverPath = readOptionalString(data['coverPath']);
           // รูปปกเป็นข้อมูลที่แสดงบนโปรไฟล์ ส่วนรูปโปรไฟล์ขนาดใหญ่ยังจำกัดเมื่อเป็นบัญชีส่วนตัว
           final canOpenAvatar = _isOwnProfile || !isPrivate;
@@ -311,11 +373,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           backgroundColor: colors.surface,
                                           child: FutureBuilder<String>(
                                             future:
-                                                avatarPath == null ||
-                                                    avatarPath.isEmpty
+                                                avatarPreviewPath == null ||
+                                                    avatarPreviewPath.isEmpty
                                                 ? null
                                                 : FirebaseStorage.instance
-                                                      .ref(avatarPath)
+                                                      .ref(avatarPreviewPath)
                                                       .getDownloadURL(),
                                             builder: (context, avatar) => CircleAvatar(
                                               radius: avatarRadius,
@@ -370,12 +432,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ?.copyWith(color: colors.onSurfaceVariant),
                         ),
                       ],
-                      if (_isOwnProfile && widget.user.email != null)
+                      if (_isOwnProfile && _profileEmail != null) ...[
                         Text(
-                          widget.user.email!,
+                          _profileEmail!,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colors.onSurfaceVariant),
                         ),
+                        TextButton.icon(
+                          onPressed: _changeEmail,
+                          icon: const Icon(Icons.alternate_email_rounded),
+                          label: const Text('เปลี่ยนอีเมล'),
+                        ),
+                      ],
                       const SizedBox(height: 18),
                       Row(
                         children: [
@@ -452,9 +520,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             trailing: TextButton(
                               onPressed: _privacyBusy
                                   ? null
-                                  : () => _togglePrivacy(
-                                      data['privacyTarget'] as bool,
-                                    ),
+                                  : () => _togglePrivacy(privacyRetryTarget!),
                               child: Text(
                                 _privacyBusy ? 'กำลังบันทึก' : 'ดำเนินการต่อ',
                               ),
@@ -589,7 +655,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               ContentVisibility(
                 authorId: _profileUid,
-                child: _buildProfilePosts(),
+                child: _buildProfilePosts(isPrivate: isPrivate),
               ),
             ],
           );
@@ -599,8 +665,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   /// Public posts stay visible regardless of account privacy.
-  Widget _buildProfilePosts() {
+  Widget _buildProfilePosts({required bool isPrivate}) {
     if (_isOwnProfile) return _profilePostsList(includeFollowers: true);
+    if (isPrivate) {
+      return const _ProfileMessage('บัญชีนี้เป็นส่วนตัว จึงยังดูโพสต์ไม่ได้');
+    }
     return StreamBuilder<bool>(
       stream: _followService.watchIsFollowing(_profileUid),
       builder: (context, following) =>
@@ -624,7 +693,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       final posts = postsSnapshot.data!.docs
           .map(Post.fromSnapshot)
-          .where((p) => !p.isDeleting || _isOwnProfile)
+          .where((p) => p.isDeleting ? _isOwnProfile : p.hasVisibleContent)
           .toList();
       if (posts.isEmpty) return const _ProfileMessage('ยังไม่มีโพสต์');
       return Column(
@@ -661,6 +730,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       )
                     : null,
+                onDelete: _isOwnProfile ? () => _deleteProfilePost(post) : null,
               ),
           if (postsSnapshot.data!.docs.length >= _postsLimit)
             TextButton(
@@ -682,6 +752,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       query = includeFollowers
           ? query.where('visibility', whereIn: ['public', 'followers'])
           : query.where('visibility', isEqualTo: 'public');
+      query = query.where('authorIsPrivate', isEqualTo: false);
     }
     return query
         .orderBy('createdAt', descending: true)
@@ -941,27 +1012,51 @@ class _ProfilePost extends StatelessWidget {
     required this.post,
     required this.currentUser,
     this.onEdit,
+    this.onDelete,
   });
   final Post post;
   final User currentUser;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  Future<void> _openComments(BuildContext context) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PostCommentsScreen(user: currentUser, post: post),
+        ),
+      );
+
+  void _openTag(BuildContext context, String tag) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SearchExploreScreen(user: currentUser, initialTag: tag),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     if (post.sharedPostId != null) {
       return Card(
-        margin: const EdgeInsets.only(bottom: 10),
+        margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context),
-              if (post.content.isNotEmpty) ...[
+              if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                SelectableText(post.content),
+                TaggedPostContent(post: post),
               ],
               SharedPostCard(postId: post.sharedPostId!),
+              if (post.tags.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildPostTags(context),
+              ],
+              const SizedBox(height: 8),
+              PostEngagementBar(
+                post: post,
+                onComment: () => _openComments(context),
+              ),
             ],
           ),
         ),
@@ -971,7 +1066,7 @@ class _ProfilePost extends StatelessWidget {
 
     // ใช้หัวโพสต์เดียวกับโพสต์ข้อความ รูปและวิดีโอจึงเห็นเจ้าของกับปุ่มแก้ไขด้วย
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -979,24 +1074,24 @@ class _ProfilePost extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(context),
-            if (post.content.isNotEmpty) ...[
+            if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty) ...[
               const SizedBox(height: 8),
-              SelectableText(post.content),
-            ],
-            if (post.tags.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                children: post.tags
-                    .map((tag) => Chip(label: Text('#$tag')))
-                    .toList(),
-              ),
+              TaggedPostContent(post: post),
             ],
             const SizedBox(height: 8),
             PostMedia(
               path: post.mediaPath!,
               type: post.mediaType,
               thumbnailPath: post.thumbnailPath,
+            ),
+            if (post.tags.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildPostTags(context),
+            ],
+            const SizedBox(height: 8),
+            PostEngagementBar(
+              post: post,
+              onComment: () => _openComments(context),
             ),
           ],
         ),
@@ -1040,8 +1135,9 @@ class _ProfilePost extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    post.authorName,
+                  LiveProfileName(
+                    uid: post.userId,
+                    fallbackName: post.authorName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall
@@ -1076,7 +1172,31 @@ class _ProfilePost extends StatelessWidget {
             ),
           ),
         ),
-        if (onEdit != null)
+        if (onEdit != null && onDelete != null)
+          PopupMenuButton<String>(
+            tooltip: 'จัดการโพสต์',
+            onSelected: (action) {
+              if (action == 'edit') onEdit!();
+              if (action == 'delete') onDelete!();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'edit',
+                child: ListTile(
+                  leading: Icon(Icons.edit_outlined),
+                  title: Text('แก้ไขโพสต์'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('ลบโพสต์'),
+                ),
+              ),
+            ],
+          )
+        else if (onEdit != null)
           IconButton(
             onPressed: onEdit,
             tooltip: 'แก้ไขโพสต์',
@@ -1093,7 +1213,7 @@ class _ProfilePost extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1109,46 +1229,45 @@ class _ProfilePost extends StatelessWidget {
                 color: colors.primaryContainer.withValues(alpha: 0.38),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: SelectableText(
-                post.content.isEmpty ? 'โพสต์ข้อความ' : post.content,
-                style: Theme.of(context).textTheme.bodyLarge
-                    ?.copyWith(height: 1.5, fontWeight: FontWeight.w500),
-              ),
+              child: post.content.isEmpty && post.taggedUserIds.isEmpty
+                  ? Text(
+                      'โพสต์ข้อความ',
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(height: 1.5, fontWeight: FontWeight.w500),
+                    )
+                  : TaggedPostContent(
+                      post: post,
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(height: 1.5, fontWeight: FontWeight.w500),
+                    ),
             ),
             if (post.tags.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: post.tags
-                    .map(
-                      (tag) => DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: colors.outlineVariant),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: Text(
-                            '#$tag',
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(color: colors.primary),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
+              _buildPostTags(context),
             ],
+            const SizedBox(height: 8),
+            PostEngagementBar(
+              post: post,
+              onComment: () => _openComments(context),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildPostTags(BuildContext context) => Wrap(
+    spacing: 7,
+    runSpacing: 7,
+    children: post.tags
+        .map(
+          (tag) => ActionChip(
+            label: Text('#$tag'),
+            onPressed: () => _openTag(context, tag),
+          ),
+        )
+        .toList(),
+  );
 }
 
 class _ProfileMessage extends StatelessWidget {

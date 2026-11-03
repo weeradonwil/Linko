@@ -9,17 +9,24 @@ import '../../core/models/post.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/utils/latest_request.dart';
 import '../../core/services/search_service.dart';
+import '../../core/services/post_service.dart';
 import '../../core/widgets/post_media.dart';
 import '../../core/widgets/member_avatar.dart';
+import '../../core/widgets/live_profile_name.dart';
+import '../../core/widgets/post_engagement_bar.dart';
+import '../../core/widgets/tagged_post_content.dart';
 import '../../core/widgets/social_navigation.dart';
 import '../chat/chat_list.dart';
+import '../comments/post_comments_screen.dart';
+import '../create_post/create_post.dart';
 import '../notifications/notifications_screen.dart';
 import '../profile/profile.dart';
 import '../groups/groups_screen.dart';
 
 class SearchExploreScreen extends StatefulWidget {
-  const SearchExploreScreen({super.key, required this.user});
+  const SearchExploreScreen({super.key, required this.user, this.initialTag});
   final User user;
+  final String? initialTag;
   @override
   State<SearchExploreScreen> createState() => _SearchExploreScreenState();
 }
@@ -43,11 +50,18 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   List<Map<String, dynamic>> _users = [];
   List<Post> _posts = [];
   List<({String tag, int count})> _tags = [];
-  static const _filters = ['ทั้งหมด', 'ผู้ใช้', 'แท็ก', 'โพสต์'];
+  static const _filters = ['ทั้งหมด', 'ผู้ใช้', 'แท็ก'];
   @override
   void initState() {
     super.initState();
-    _loadExplore();
+    final initialTag = widget.initialTag;
+    if (initialTag != null) {
+      _controller.text = '#$initialTag';
+      _filter = 2;
+      _runSearch();
+    } else {
+      _loadExplore();
+    }
   }
 
   @override
@@ -75,11 +89,13 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
       ]);
       if (!mounted || !_requests.accepts(request)) return;
       final page = results[1] as PostSearchPage;
+      final popularPosts = await _service.rankByLikes(page.posts);
+      if (!mounted || !_requests.accepts(request)) return;
       setState(() {
         _users = results[0] as List<Map<String, dynamic>>;
         _userCursor = null;
         _hasMoreUsers = false;
-        _posts = page.posts;
+        _posts = popularPosts;
         _postCursor = page.cursor;
         _hasMorePosts = page.hasMore;
         _tags = results[2] as List<({String tag, int count})>;
@@ -117,7 +133,10 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     try {
       final jobs = <Future<dynamic>>[];
       if (filter == 0 || filter == 1) jobs.add(_service.searchUserPage(query));
-      if (filter != 1) jobs.add(_service.searchPostPage(query));
+      final tagsOnly = filter == 2 || query.startsWith('#');
+      if (filter != 1) {
+        jobs.add(_service.searchPostPage(query, tagsOnly: tagsOnly));
+      }
       final values = await Future.wait(jobs);
       if (!mounted || !_requests.accepts(request)) return;
       var i = 0;
@@ -156,12 +175,21 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     final query = _controller.text.trim();
     setState(() => _loadingMore = true);
     try {
-      final page = await _service.searchPostPage(query, cursor: _postCursor);
+      final page = await _service.searchPostPage(
+        query,
+        cursor: _postCursor,
+        tagsOnly: _filter == 2 || query.startsWith('#'),
+      );
+      if (!mounted || !_requests.accepts(request)) return;
+      final merged = {
+        for (final post in [..._posts, ...page.posts]) post.id: post,
+      }.values.toList();
+      final ordered = query.isEmpty && _filter == 0
+          ? await _service.rankByLikes(merged)
+          : merged;
       if (!mounted || !_requests.accepts(request)) return;
       setState(() {
-        _posts = {
-          for (final post in [..._posts, ...page.posts]) post.id: post,
-        }.values.toList();
+        _posts = ordered;
         _postCursor = page.cursor;
         _hasMorePosts = page.hasMore;
         _loadingMore = false;
@@ -175,12 +203,17 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     }
   }
 
-  Widget _loadMoreButton() => !_hasMorePosts || _filter == 1
-      ? const SizedBox.shrink()
-      : TextButton(
-          onPressed: _loadingMore ? null : _loadMorePosts,
-          child: Text(_loadingMore ? 'กำลังโหลด' : 'ค้นต่อในโพสต์เก่า'),
-        );
+  Widget _loadMoreButton() {
+    if (!_hasMorePosts ||
+        _filter == 1 ||
+        (_filter == 2 && _controller.text.trim().isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    return TextButton(
+      onPressed: _loadingMore ? null : _loadMorePosts,
+      child: Text(_loadingMore ? 'กำลังโหลด' : 'ค้นต่อในโพสต์เก่า'),
+    );
+  }
 
   /// ค้นต่อโดยไม่ให้ผลจากคำค้นเดิมแทรกกลับมาหลังผู้ใช้เปลี่ยนข้อความหรือตัวกรอง
   Future<void> _loadMoreUsers() async {
@@ -225,6 +258,51 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     );
     setState(() => _filter = 2);
     _runSearch();
+  }
+
+  Future<void> _openComments(Post post) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => PostCommentsScreen(user: widget.user, post: post),
+    ),
+  );
+
+  Future<void> _editPost(Post post) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CreatePostScreen(user: widget.user, post: post),
+      ),
+    );
+    if (saved == true && mounted) await _runSearch();
+  }
+
+  Future<void> _deletePost(Post post) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ลบโพสต์นี้?'),
+        content: const Text('เมื่อเอาออกแล้วจะกู้คืนโพสต์นี้ไม่ได้'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('ลบโพสต์'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await PostService().deletePost(post);
+      if (mounted) await _runSearch();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('ลบโพสต์ไม่สำเร็จ: $error')));
+      }
+    }
   }
 
   void _go(int i) {
@@ -327,7 +405,6 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                           Icons.people_outline,
                           Icons.person_outline,
                           Icons.tag,
-                          Icons.article_outlined,
                         ][i],
                         size: 18,
                       ),
@@ -430,6 +507,24 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
       children: [
+        if (_filter == 2 && query.isEmpty) ...[
+          _sectionTitle(context, Icons.tag, 'เลือกแท็ก'),
+          if (_tags.isEmpty)
+            const _Hint(text: 'ยังไม่มีแท็กให้เลือก')
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: _tags
+                  .map(
+                    (item) => ActionChip(
+                      label: Text('#${item.tag} · ${item.count}'),
+                      onPressed: () => _setTag(item.tag),
+                    ),
+                  )
+                  .toList(),
+            ),
+        ],
         if ((_filter == 0 || _filter == 1) && _users.isNotEmpty) ...[
           _sectionTitle(context, Icons.people_outline, 'ผู้ใช้'),
           ..._users.map((p) => _personRow(context, p)),
@@ -445,17 +540,20 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
             _users.isNotEmpty &&
             _posts.isNotEmpty)
           const SizedBox(height: 14),
-        if ((_filter == 0 || _filter == 2 || _filter == 3) &&
+        if ((_filter == 0 || _filter == 2) &&
+            query.isNotEmpty &&
             _posts.isNotEmpty) ...[
           _sectionTitle(
             context,
             Icons.article_outlined,
-            _filter == 2 ? 'โพสต์ที่มีแท็กหรือคำนี้' : 'โพสต์',
+            _filter == 2
+                ? 'โพสต์ในแท็ก #${query.replaceFirst(RegExp(r'^#'), '')}'
+                : 'โพสต์ที่เกี่ยวข้อง',
           ),
           ..._posts.map((p) => _postCard(context, p)),
         ],
         _loadMoreButton(),
-        if (_users.isEmpty && _posts.isEmpty)
+        if (query.isNotEmpty && _users.isEmpty && _posts.isEmpty)
           _Empty(
             icon: Icons.search_off_rounded,
             title: 'ไม่พบผลการค้นหา',
@@ -554,7 +652,7 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
   Widget _postCard(BuildContext context, Post post) {
     return Card(
       clipBehavior: Clip.antiAlias,
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -575,8 +673,9 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                     onTap: () => _openPerson({'uid': post.userId}),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(
-                        post.authorName,
+                      child: LiveProfileName(
+                        uid: post.userId,
+                        fallbackName: post.authorName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.bold),
@@ -595,6 +694,28 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (post.userId == widget.user.uid)
+                  PopupMenuButton<String>(
+                    tooltip: 'จัดการโพสต์',
+                    onSelected: (action) =>
+                        action == 'edit' ? _editPost(post) : _deletePost(post),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('แก้ไขโพสต์'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(Icons.delete_outline),
+                          title: Text('ลบโพสต์'),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -615,11 +736,12 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (post.content.isNotEmpty)
-                  Text(
-                    post.content,
+                if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty)
+                  TaggedPostContent(
+                    post: post,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
+                    selectable: false,
                   ),
                 if (post.tags.isNotEmpty)
                   Padding(
@@ -637,6 +759,13 @@ class _SearchExploreScreenState extends State<SearchExploreScreen> {
                     ),
                   ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: PostEngagementBar(
+              post: post,
+              onComment: () => _openComments(post),
             ),
           ),
         ],

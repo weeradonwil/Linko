@@ -13,6 +13,9 @@ import 'package:social_app/screens/create_post/create_post.dart';
 
 class _User extends Fake implements User {
   @override
+  String get uid => 'test-author';
+
+  @override
   String get displayName => 'dummy';
 }
 
@@ -22,6 +25,7 @@ class _Posts extends Fake implements PostService {
   List<String>? tags;
   String? visibility;
   XFile? attachment;
+  List<String>? taggedUserIds;
   Object? failure;
   Completer<void>? pending;
 
@@ -30,6 +34,7 @@ class _Posts extends Fake implements PostService {
     required String content,
     required List<String> tags,
     required String visibility,
+    List<String> taggedUserIds = const [],
     XFile? attachment,
   }) async {
     calls++;
@@ -37,6 +42,7 @@ class _Posts extends Fake implements PostService {
     this.tags = tags;
     this.visibility = visibility;
     this.attachment = attachment;
+    this.taggedUserIds = taggedUserIds;
     if (failure != null) throw failure!;
     if (pending != null) await pending!.future;
   }
@@ -51,6 +57,7 @@ class _Groups extends Fake implements GroupService {
     required String groupId,
     required String content,
     List<String> tags = const [],
+    List<String> taggedUserIds = const [],
     XFile? attachment,
   }) async {
     calls++;
@@ -108,6 +115,7 @@ Future<void> _open(
                   imagePicker: picker ?? _Picker(),
                   groupService: groups,
                   groupId: groupId,
+                  authorAvatar: const CircleAvatar(child: Text('d')),
                 ),
               ),
             ),
@@ -234,7 +242,7 @@ void main() {
     expect(find.byType(CreatePostScreen), findsNothing);
   });
 
-  testWidgets('Firestore permission error names the rules that rejected save', (
+  testWidgets('Firestore permission error does not guess that deployment is missing', (
     tester,
   ) async {
     final posts = _Posts()
@@ -247,7 +255,8 @@ void main() {
     await tester.tap(_save);
     await tester.pumpAndSettle();
     expect(find.textContaining('Firestore'), findsOneWidget);
-    expect(find.textContaining('Firestore Rules'), findsOneWidget);
+    expect(find.textContaining('permission-denied'), findsOneWidget);
+    expect(find.textContaining('ตรวจ Firestore Rules ที่ deploy'), findsNothing);
   });
 
   testWidgets('rapid taps while saving do not create duplicate posts', (

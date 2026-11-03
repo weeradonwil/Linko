@@ -28,11 +28,20 @@ class TrustedService {
   /// เปิดหลังย้ายข้อมูลเก่าเสร็จแล้ว Rules ใช้ flag เดียวกันและผู้ใช้เปลี่ยนไม่ได้
   static Future<DocumentReference<Map<String, dynamic>>?> reserve(
     FirebaseFirestore db,
-    String path,
-  ) async {
+    String path, {
+    List<String> taggedUserIds = const [],
+    bool update = false,
+  }) async {
     final config = await db.doc('app_config/security').get();
-    if (config.data()?['writeTicketsRequired'] != true) return null;
-    final result = await call('reserveWrite', {'path': path}, app: db.app);
+    if (config.data()?['writeTicketsRequired'] != true &&
+        taggedUserIds.isEmpty) {
+      return null;
+    }
+    final result = await call('reserveWrite', {
+      'path': path,
+      'taggedUserIds': taggedUserIds,
+      'update': update,
+    }, app: db.app);
     return db.collection('write_tickets').doc(result['ticketId'] as String);
   }
 }
