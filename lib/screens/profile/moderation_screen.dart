@@ -106,6 +106,7 @@ class _ModerationScreenState extends State<ModerationScreen> {
               'resolved': 'ปิดเรื่องแล้ว',
               'dismissed': 'ไม่พบการละเมิด',
               'removed': 'นำโพสต์ออกแล้ว',
+              'suspended': 'พักสิทธิ์โพสต์ 72 ชั่วโมง',
             };
             final groupId = data['groupId'] as String?;
             final owner = data['ownerId'] == _uid;

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 export const defaults = Object.freeze({ reportThreshold: 2, warningHours: 24, suspensionHours: 72, minimumAccountHours: 24, autoEnforce: false });
 export function readPolicy(data = {}) {
   const integer = (key, min, max) => Number.isInteger(data[key]) && data[key] >= min && data[key] <= max ? data[key] : defaults[key];
-  return { reportThreshold: integer('reportThreshold', 1, 100), warningHours: integer('warningHours', 1, 168), suspensionHours: integer('suspensionHours', 1, 720), minimumAccountHours: integer('minimumAccountHours', 0, 720), autoEnforce: data.autoEnforce === true };
+  return { reportThreshold: integer('reportThreshold', 1, 100), warningHours: integer('warningHours', 1, 168), suspensionHours: integer('suspensionHours', 1, 720), minimumAccountHours: integer('minimumAccountHours', 0, 720), autoEnforce: data.autoEnforce === true, repeatReportSuspensionEnabled: data.repeatReportSuspensionEnabled === true };
 }
 export const contentHash = post => createHash('sha256').update(JSON.stringify([String(post.content ?? '').trim(), post.mediaPath ?? null, post.sharedPostId ?? null])).digest('hex');
 export const caseId = path => createHash('sha256').update(path).digest('hex');

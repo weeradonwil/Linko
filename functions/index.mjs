@@ -10,6 +10,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import { readPolicy, caseId, contentHash, needsWarning, suspensionEnd, reserveRate } from './policy.mjs';
 import { isValidTaggedUserIds } from './tag_policy.mjs';
 import { canReadPostAudience } from './post_access.mjs';
+import { repeatReportDecision } from './repeat_reports.mjs';
 
 initializeApp();
 setGlobalOptions({ region: 'asia-southeast1', maxInstances: 5 });
@@ -215,6 +216,35 @@ export async function processTaggedPosts() {
 }
 export const tagNotificationWorker = onSchedule(workerSchedule, processTaggedPosts);
 
+// อ่านก่อนเริ่มเขียนใน transaction: เคส/รอบเดียวกันมี ledger เดียว จึงนับและลงโทษได้ครั้งเดียว
+// ฟีดใช้ account_state ส่วนรายงานกลุ่มคงขอบเขต group_account_state เดิม
+async function prepareRepeatReport(tx, { rules, caseRef, ownerId, groupId, round, now }) {
+  if (!rules.autoEnforce || !rules.repeatReportSuspensionEnabled) return null;
+  const stateRef = db.doc(groupId ? `group_account_state/${groupId}_${ownerId}` : `account_state/${ownerId}`);
+  const ledgerRef = stateRef.collection('report_cases').doc(`${caseRef.id}_${round}`);
+  const [state, ledger] = await tx.getAll(stateRef, ledgerRef);
+  if (ledger.exists) return { duplicate: true, ...ledger.data() };
+  const decision = repeatReportDecision({ now,
+    previousAt: state.data()?.lastQualifyingReportAt?.toMillis(),
+    currentUntil: state.data()?.postingSuspendedUntil?.toMillis(),
+  });
+  return { ...decision, stateRef, ledgerRef, ownerId, round, now };
+}
+
+function recordRepeatReport(tx, action, caseRef) {
+  if (!action || action.duplicate) return;
+  const state = { uid: action.ownerId, lastQualifyingReportAt: Timestamp.fromMillis(action.now) };
+  if (action.level === 2) {
+    state.postingSuspendedUntil = Timestamp.fromMillis(action.suspensionUntil);
+    state.lastCaseId = caseRef.id;
+  }
+  tx.set(action.stateRef, state, { merge: true });
+  tx.create(action.ledgerRef, { level: action.level, caseId: caseRef.id, round: action.round,
+    countedAt: Timestamp.fromMillis(action.now),
+    ...(action.level === 2 ? { suspensionUntil: action.suspensionUntil } : {}),
+  });
+}
+
 async function submitReportImpl(request, legacyRef = null) {
   const uid = await member(request);
   const postId = id(request.data?.postId);
@@ -230,30 +260,52 @@ async function submitReportImpl(request, legacyRef = null) {
   const actor = await getAuth().getUser(uid);
   if (Date.now() - Date.parse(actor.metadata.creationTime) < rules.minimumAccountHours * 3600000) fail('failed-precondition', `บัญชีใหม่ต้องรอให้ครบ ${rules.minimumAccountHours} ชั่วโมงก่อนรายงาน`);
   // hash รวมตำแหน่งเต็ม กันชื่อโพสต์ Feed ไปชนกับ ID รายงานในกลุ่ม
-  const reportRef = db.doc(`post_reports/${caseId(target.path)}_${uid}`);
   const caseRef = db.doc(`moderation_cases/${caseId(target.path)}`);
   const notificationRef = db.doc(`notifications/warning_${caseRef.id}`);
   const now = Date.now();
   const result = await db.runTransaction(async tx => {
-    const [existing, current, fresh, rate] = await tx.getAll(reportRef, caseRef, db.doc(target.path), db.doc(`rate_limits/${uid}_report`));
-    if (existing.exists) { if (legacyRef) tx.update(legacyRef, {processed:true}); return { alreadyReported: true }; }
+    const [current, fresh, rate] = await tx.getAll(caseRef, db.doc(target.path), db.doc(`rate_limits/${uid}_report`));
     if (!fresh.exists || fresh.data().isDeleting) fail('not-found', 'โพสต์นี้ไม่พร้อมใช้งาน');
-    const nextRate = reserveRate(rate.data(), now, 3600000, 10);
-    if (!nextRate) fail('resource-exhausted', 'รายงานหลายรายการแล้ว ลองใหม่ภายหลังนะ');
     const hash = contentHash(fresh.data());
     const sameRound = current.data()?.contentHash === hash;
+    const round = sameRound ? current.data()?.reportRound ?? 1 : (current.data()?.reportRound ?? 0) + 1;
+    // เปิดรอบใหม่เมื่อเนื้อหาเปลี่ยน ผู้รายงานเดิมรายงานรุ่นใหม่ได้ แต่หนึ่งบัญชีนับหนึ่งรายต่อรอบ
+    const repeatEnabled = rules.autoEnforce && rules.repeatReportSuspensionEnabled;
+    const reportRef = db.doc(`post_reports/${caseRef.id}_${repeatEnabled ? `${round}_` : ''}${uid}`);
+    const [existing, oldReport] = await tx.getAll(reportRef,
+      ...(repeatEnabled ? [db.doc(`post_reports/${caseRef.id}_${uid}`)] : []));
+    // ช่วงเปิดฟีเจอร์ใหม่ รายงานรูปแบบเดิมของคนเดียวกันในรอบนี้ต้องไม่ถูกนับเป็นอีกบัญชี
+    const oldReportAt = oldReport?.data()?.createdAt?.toMillis() ?? oldReport?.createTime?.toMillis();
+    const reportedInOldFormat = sameRound && oldReport?.data()?.contentHash === hash &&
+      oldReportAt >= (current.data()?.createdAt?.toMillis() ?? 0);
+    if (existing.exists || reportedInOldFormat) { if (legacyRef) tx.update(legacyRef, {processed:true}); return { alreadyReported: true }; }
+    const nextRate = reserveRate(rate.data(), now, 3600000, 10);
+    if (!nextRate) fail('resource-exhausted', 'รายงานหลายรายการแล้ว ลองใหม่ภายหลังนะ');
     const count = (sameRound ? current.data()?.reportCount ?? 0 : 0) + 1;
-    const alreadyWarned = sameRound && ['warned', 'contested', 'removed'].includes(current.data()?.status);
+    const alreadyWarned = sameRound && ['warned', 'contested', 'removed', 'suspended'].includes(current.data()?.status);
     const warn = !alreadyWarned && needsWarning(count, rules, target.ownerId === target.groupOwnerId ? null : groupId);
+    const repeat = warn ? await prepareRepeatReport(tx, { rules, caseRef, ownerId: target.ownerId, groupId, round, now }) : null;
     tx.create(reportRef, { postId, groupId, postOwnerId: target.ownerId, reporterUid: uid, reason, details, contentHash: hash, status: 'open', processed: true, createdAt: stamp() });
     if (legacyRef) tx.update(legacyRef, {processed:true});
     tx.set(db.doc(`rate_limits/${uid}_report`), nextRate);
     const base = { sourcePath: target.path, postId, groupId, groupOwnerId: target.groupOwnerId, ownerId: target.ownerId, reason, details, reportCount: count, contentHash: hash, updatedAt: stamp(), snapshot: fresh.data() };
+    if (repeatEnabled) base.reportRound = round;
     if (!sameRound) base.createdAt = stamp();
-    if (warn) {
+    if (warn && !repeat?.duplicate) {
       base.status = 'warned';
       base.deadline = Timestamp.fromMillis(now + rules.warningHours * 3600000);
-      tx.set(notificationRef, { recipientId: target.ownerId, actorId: target.ownerId, actorName: 'Linko', type: 'moderation', body: 'มีรายงานโพสต์ของคุณ เปิดดูเหตุผลและแก้ไขก่อนหมดเวลา', caseId: caseRef.id, isRead: false, createdAt: stamp() });
+      if (repeat) {
+        recordRepeatReport(tx, repeat, caseRef);
+        base.repeatReportLevel = repeat.level;
+        if (repeat.level === 2) {
+          base.status = 'suspended';
+          base.deadline = FieldValue.delete();
+          base.suspensionUntil = Timestamp.fromMillis(repeat.suspensionUntil);
+        } else {
+          base.suspensionUntil = FieldValue.delete();
+        }
+      }
+      tx.set(notificationRef, { recipientId: target.ownerId, actorId: target.ownerId, actorName: 'Linko', type: 'moderation', body: repeat?.level === 2 ? 'มีรายงานถึงเกณฑ์ซ้ำภายใน 90 วัน พักสิทธิ์โพสต์ 72 ชั่วโมงแล้ว' : 'มีรายงานโพสต์ของคุณ เปิดดูเหตุผลและแก้ไขก่อนหมดเวลา', caseId: caseRef.id, isRead: false, createdAt: stamp() });
     } else if (!sameRound) base.status = 'queued';
     tx.set(caseRef, base, { merge: true });
     if (groupId && target.groupOwnerId !== target.ownerId) {
@@ -305,14 +357,27 @@ export const reviewGroupReport = onCall(async request => {
     }
     const now = Date.now();
     const update = { reviewedBy: uid, reviewedAt: stamp(), updatedAt: stamp() };
+    const round = data.reportRound ?? 1;
+    const repeat = decision === 'warn' ? await prepareRepeatReport(tx, { rules, caseRef: ref, ownerId: data.ownerId, groupId: data.groupId, round, now }) : null;
+    if (repeat?.duplicate) return;
     if (decision === 'dismiss') update.status = 'dismissed';
-    if (decision === 'warn') { update.status = 'warned'; update.deadline = Timestamp.fromMillis(now + rules.warningHours * 3600000); }
+    if (decision === 'warn') {
+      update.status = 'warned'; update.deadline = Timestamp.fromMillis(now + rules.warningHours * 3600000);
+      if (repeat) {
+        recordRepeatReport(tx, repeat, ref);
+        update.repeatReportLevel = repeat.level;
+        if (repeat.level === 2) {
+          update.status = 'suspended'; update.deadline = FieldValue.delete();
+          update.suspensionUntil = Timestamp.fromMillis(repeat.suspensionUntil);
+        } else { update.suspensionUntil = FieldValue.delete(); }
+      }
+    }
     if (decision === 'remove') {
       update.status = 'removed';
       if (post.exists) { tx.set(db.doc(`moderation_archives/${ref.id}`), { ...data, snapshot: post.data(), archivedAt: stamp() }); tx.delete(post.ref); }
     }
     tx.update(ref, update);
-    tx.set(db.doc(`notifications/moderation_${ref.id}_${decision}`), { recipientId: data.ownerId, actorId: uid, actorName: 'ผู้ดูแลกลุ่ม', type: 'moderation', body: decision === 'warn' ? 'โพสต์ในกลุ่มได้รับคำเตือน เปิดดูรายละเอียดและกำหนดแก้ไข' : decision === 'remove' ? 'เจ้าของกลุ่มนำโพสต์ของคุณออกแล้ว' : 'ปิดรายงานโพสต์ในกลุ่มแล้ว', caseId: ref.id, isRead: false, createdAt: stamp() });
+    tx.set(db.doc(`notifications/moderation_${ref.id}_${decision}`), { recipientId: data.ownerId, actorId: uid, actorName: 'ผู้ดูแลกลุ่ม', type: 'moderation', body: repeat?.level === 2 ? 'มีรายงานในกลุ่มถึงเกณฑ์ซ้ำภายใน 90 วัน พักสิทธิ์โพสต์ในกลุ่มนี้ 72 ชั่วโมงแล้ว' : decision === 'warn' ? 'โพสต์ในกลุ่มได้รับคำเตือน เปิดดูรายละเอียดและกำหนดแก้ไข' : decision === 'remove' ? 'เจ้าของกลุ่มนำโพสต์ของคุณออกแล้ว' : 'ปิดรายงานโพสต์ในกลุ่มแล้ว', caseId: ref.id, isRead: false, createdAt: stamp() });
   });
   return { ok: true };
 });
