@@ -43,8 +43,8 @@ class PostService {
   CollectionReference<Map<String, dynamic>> get _posts =>
       _firestore.collection('posts');
 
-  /// อ่านโพสต์สาธารณะพร้อมโพสต์ส่วนตัวของผู้ใช้ปัจจุบัน เรียงใหม่ไปเก่า
-  /// Filter.or ทำให้เงื่อนไขที่ส่งไป Firestore ตรงกับสิทธิ์ใน Rules
+  /// รวมโพสต์ทั่วไป โพสต์ของผู้ติดตามที่อนุมัติ และโพสต์ของตนเอง เรียงใหม่ไปเก่า
+  /// แยก query ให้ตรงกับ Rules โดยไม่รวมโพสต์เฉพาะฉันของผู้ใช้คนอื่น
   Stream<List<Post>> watchFeed({int limit = 30}) {
     final userId = _currentUser.uid;
     late final StreamController<List<Post>> controller;
@@ -87,6 +87,9 @@ class PostService {
       },
       onError: (Object error, StackTrace stack) {
         if (!cancelled && (version == null || version == generation)) {
+          // ล้างข้อมูลจาก listener ที่เสียสิทธิ์ เช่น เจ้าของยกเลิกการติดตาม
+          sources.remove(key);
+          emit();
           controller.addError(FeedQueryException(key, error), stack);
         }
       },
@@ -138,8 +141,10 @@ class PostService {
                         'follow:$i',
                         _posts
                             .where('userId', whereIn: batch)
-                            .where('visibility', isEqualTo: 'followers')
-                            .where('authorIsPrivate', isEqualTo: false)
+                            .where(
+                              'visibility',
+                              whereIn: ['public', 'followers'],
+                            )
                             .orderBy('createdAt', descending: true)
                             .limit(limit),
                         version: version,
@@ -247,24 +252,32 @@ class PostService {
     final original = _storage.ref(oldPath);
     final bytes = await original.getData(5 * 1024 * 1024);
     if (bytes == null) {
-      throw const PostServiceException('ย้ายรูปโปรไฟล์ก่อนเปิดบัญชีส่วนตัวไม่สำเร็จ');
+      throw const PostServiceException(
+        'ย้ายรูปโปรไฟล์ก่อนเปิดบัญชีส่วนตัวไม่สำเร็จ',
+      );
     }
     String? newThumb;
     String? newPath;
     try {
       if (oldThumb == null) {
-        newThumb = 'profile_thumbnails/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.png';
-        await _storage.ref(newThumb).putData(
-          await makeAvatarThumbnail(bytes),
-          SettableMetadata(contentType: 'image/png'),
-        );
+        newThumb =
+            'profile_thumbnails/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.png';
+        await _storage
+            .ref(newThumb)
+            .putData(
+              await makeAvatarThumbnail(bytes),
+              SettableMetadata(contentType: 'image/png'),
+            );
       }
-      newPath = 'profile_images/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      newPath =
+          'profile_images/$uid/avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
       final metadata = await original.getMetadata();
-      await _storage.ref(newPath).putData(
-        bytes,
-        SettableMetadata(contentType: metadata.contentType ?? 'image/jpeg'),
-      );
+      await _storage
+          .ref(newPath)
+          .putData(
+            bytes,
+            SettableMetadata(contentType: metadata.contentType ?? 'image/jpeg'),
+          );
       await userRef.update({
         'avatarPath': newPath,
         'avatarThumbPath': ?newThumb,
@@ -276,10 +289,14 @@ class PostService {
       // the migration marker. Do not delete an object referenced by the profile.
       final currentPath = (await userRef.get()).data()?['avatarPath'];
       if (currentPath != newPath && newPath != null) {
-        try { await _storage.ref(newPath).delete(); } catch (_) {}
+        try {
+          await _storage.ref(newPath).delete();
+        } catch (_) {}
       }
       if (currentPath != newPath && newThumb != null) {
-        try { await _storage.ref(newThumb).delete(); } catch (_) {}
+        try {
+          await _storage.ref(newThumb).delete();
+        } catch (_) {}
       }
       rethrow;
     }

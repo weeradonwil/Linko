@@ -468,30 +468,40 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ),
                   ),
                   if (widget.groupId != null)
-                    const Chip(label: Text('สมาชิกกลุ่ม'))
-                  else
-                    DropdownButton<String>(
-                      value: _visibility,
-                      onChanged: _isSaving
-                          ? null
-                          : (value) {
-                              if (value != null) {
-                                setState(() => _visibility = value);
-                              }
-                            },
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'public',
-                          child: Text('สาธารณะ'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'private',
-                          child: Text('ส่วนตัว'),
-                        ),
-                      ],
-                    ),
+                    const Chip(label: Text('สมาชิกกลุ่ม')),
                 ],
               ),
+              if (widget.groupId == null) ...[
+                const SizedBox(height: 12),
+                // แยกช่องสิทธิ์จากชื่อผู้เขียนให้ข้อความครบและไม่ล้นจอโทรศัพท์เล็ก
+                DropdownButtonFormField<String>(
+                  initialValue: _visibility,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'ผู้ที่เห็นโพสต์',
+                  ),
+                  onChanged: _isSaving
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            setState(() => _visibility = value);
+                          }
+                        },
+                  items: const [
+                    DropdownMenuItem(value: 'public', child: Text('สาธารณะ')),
+                    DropdownMenuItem(value: 'private', child: Text('เฉพาะฉัน')),
+                  ],
+                ),
+              ],
+              // แสดงคำอธิบายเฉพาะตัวเลือกส่วนตัว ให้ตัวเลือกสาธารณะกระชับ
+              if (widget.groupId == null && _visibility == 'private')
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'โพสต์นี้เห็นได้เฉพาะคุณ แม้จะเปลี่ยนโปรไฟล์เป็นสาธารณะ',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _contentController,

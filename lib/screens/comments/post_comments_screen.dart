@@ -1,5 +1,7 @@
 import '../../core/widgets/content_visibility.dart';
 
+import 'dart:async';
+
 // หน้าความคิดเห็นของโพสต์ แสดงรายการสดและเปิดให้สมาชิกเพิ่ม/ลบคอมเมนต์ของตน
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,11 +23,15 @@ class PostCommentsScreen extends StatefulWidget {
     required this.user,
     required this.post,
     this.groupId,
+    this.canComment = true,
   });
 
   final User user;
   final Post post;
   final String? groupId;
+
+  /// กลุ่มสาธารณะเปิดอ่านความคิดเห็นได้ โดยซ่อนช่องเขียนจากผู้ที่ยังไม่ใช่สมาชิก
+  final bool canComment;
 
   @override
   State<PostCommentsScreen> createState() => _PostCommentsScreenState();
@@ -37,15 +43,41 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   bool _sending = false;
   int _limit = 50;
   int _statsRefreshKey = 0;
+  late bool _canComment;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _membership;
+
+  @override
+  void initState() {
+    super.initState();
+    _canComment = widget.canComment;
+    if (widget.groupId != null) {
+      // ออกจากกลุ่มในอีกหน้าต่างแล้ว ช่องเขียนต้องปิดตามสิทธิ์สมาชิกปัจจุบัน
+      _membership = FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('members')
+          .doc(widget.user.uid)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              if (mounted) setState(() => _canComment = snapshot.exists);
+            },
+            onError: (Object error) {
+              if (mounted) setState(() => _canComment = false);
+            },
+          );
+    }
+  }
 
   @override
   void dispose() {
+    _membership?.cancel();
     _textController.dispose();
     super.dispose();
   }
 
   Future<void> _send() async {
-    if (_sending) return;
+    if (_sending || !_canComment) return;
     setState(() => _sending = true);
     try {
       final result = await _service.addComment(
@@ -152,7 +184,9 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                 if (comments.isEmpty) {
                   return Center(
                     child: Text(
-                      'ยังไม่มีความคิดเห็น เริ่มพูดคุยได้เลย',
+                      _canComment
+                          ? 'ยังไม่มีความคิดเห็น เริ่มพูดคุยได้เลย'
+                          : 'ยังไม่มีความคิดเห็น',
                       style: TextStyle(color: colors.onSurfaceVariant),
                     ),
                   );
@@ -177,8 +211,9 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
                         comment: comment,
                         viewer: widget.user,
                         canDelete:
-                            comment.authorId == widget.user.uid ||
-                            widget.post.userId == widget.user.uid,
+                            _canComment &&
+                            (comment.authorId == widget.user.uid ||
+                                widget.post.userId == widget.user.uid),
                         onDelete: () => _delete(comment),
                       ),
                     );
@@ -189,46 +224,53 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
           ),
           SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  MemberAvatar(uid: widget.user.uid, radius: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 1000,
-                      textCapitalization: TextCapitalization.sentences,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
-                        hintText: 'เขียนความคิดเห็น...',
-                        counterText: '',
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+            child: !_canComment
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('เข้าร่วมกลุ่มเพื่อแสดงความคิดเห็น'),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        MemberAvatar(uid: widget.user.uid, radius: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            minLines: 1,
+                            maxLines: 4,
+                            maxLength: 1000,
+                            textCapitalization: TextCapitalization.sentences,
+                            onSubmitted: (_) => _send(),
+                            decoration: const InputDecoration(
+                              hintText: 'เขียนความคิดเห็น...',
+                              counterText: '',
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          tooltip: 'ส่งความคิดเห็น',
+                          onPressed: _sending ? null : _send,
+                          icon: _sending
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: 'ส่งความคิดเห็น',
-                    onPressed: _sending ? null : _send,
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
-              ),
-            ),
           ),
         ],
       ),

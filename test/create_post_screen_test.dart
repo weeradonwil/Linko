@@ -132,6 +132,30 @@ Future<void> _open(
 Finder get _save => find.widgetWithText(TextButton, 'โพสต์');
 
 void main() {
+  testWidgets('only-me audience remains private on a small phone', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final posts = _Posts();
+    await _open(tester, posts);
+    expect(find.text('สาธารณะ'), findsOneWidget);
+    expect(find.textContaining('โปรไฟล์สาธารณะ:'), findsNothing);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เฉพาะฉัน').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('แม้จะเปลี่ยนโปรไฟล์เป็นสาธารณะ'),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byType(TextFormField).first, 'Only me');
+    await tester.tap(_save);
+    await tester.pumpAndSettle();
+    expect(posts.visibility, 'private');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('text post submits once and closes the composer', (tester) async {
     final posts = _Posts();
     await _open(tester, posts);
@@ -242,22 +266,26 @@ void main() {
     expect(find.byType(CreatePostScreen), findsNothing);
   });
 
-  testWidgets('Firestore permission error does not guess that deployment is missing', (
-    tester,
-  ) async {
-    final posts = _Posts()
-      ..failure = FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'permission-denied',
+  testWidgets(
+    'Firestore permission error does not guess that deployment is missing',
+    (tester) async {
+      final posts = _Posts()
+        ..failure = FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'permission-denied',
+        );
+      await _open(tester, posts);
+      await tester.enterText(find.byType(TextFormField).first, 'draft');
+      await tester.tap(_save);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Firestore'), findsOneWidget);
+      expect(find.textContaining('permission-denied'), findsOneWidget);
+      expect(
+        find.textContaining('ตรวจ Firestore Rules ที่ deploy'),
+        findsNothing,
       );
-    await _open(tester, posts);
-    await tester.enterText(find.byType(TextFormField).first, 'draft');
-    await tester.tap(_save);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Firestore'), findsOneWidget);
-    expect(find.textContaining('permission-denied'), findsOneWidget);
-    expect(find.textContaining('ตรวจ Firestore Rules ที่ deploy'), findsNothing);
-  });
+    },
+  );
 
   testWidgets('rapid taps while saving do not create duplicate posts', (
     tester,

@@ -37,7 +37,7 @@ allowed(publicFeed, 'Chronological public feed query');
 assert(publicFeed.body.some(item => item.document), 'Public feed query should return posts');
 const userPath = 'users/' + owner.uid;
 allowed(await commit(owner.token, [write(userPath, { privacyMigrationTarget: b(true) }, { mask: ['privacyMigrationTarget'] })]), 'Start private transition');
-denied(await get(follower.token, 'posts/' + prefix + '0001'), 'Private transition hides stale public snapshots from followers');
+allowed(await get(follower.token, 'posts/' + prefix + '0001'), 'Approved follower keeps access during private transition');
 denied(await get(outsider.token, 'posts/' + prefix + '0001'), 'Private transition hides stale public snapshots from everyone else');
 denied(await commit(outsider.token, [write(`users/${owner.uid}/followers/${outsider.uid}`, {
   uid: s(outsider.uid),
@@ -82,7 +82,7 @@ async function migrate(isPrivate) {
 }
 await migrate(true);
 const regularPost = 'posts/' + prefix + '0001';
-denied(await get(follower.token, regularPost), 'Approved follower cannot see posts from private account');
+allowed(await get(follower.token, regularPost), 'Approved follower sees ordinary posts from private account');
 denied(await get(outsider.token, regularPost), 'Outsider cannot read completed private posts');
 denied(await get(follower.token, 'posts/' + prefix + '0000'), 'Explicit private post stays private');
 allowed(await commit(owner.token, [write(userPath, { isPrivate: b(false), privacyMigrationTarget: b(false) }, {

@@ -15,17 +15,21 @@ for (const [index, author] of authors.entries()) {
     userId: s(author.uid), authorName: s('Author'), content: s('Follower post'),
     tags: a([]), visibility: s('followers'), authorIsPrivate: b(true), mediaType: s('none'),
   }, { timestamps: ['createdAt', 'updatedAt'] })]), 'Create follower-only post');
+  allowed(await commit(author.token, ['public', 'private'].map(visibility => write(`posts/feed_${suffix}_${index}_${visibility}`, {
+    userId: s(author.uid), authorName: s('Author'), content: s('Account audience test'),
+    tags: a([]), visibility: s(visibility), authorIsPrivate: b(true), mediaType: s('none'),
+  }, { timestamps: ['createdAt', 'updatedAt'] }))), 'Create ordinary and only-me posts');
 }
 const structuredQuery = {
   from: [{ collectionId: 'posts' }],
   where: { compositeFilter: { op: 'AND', filters: [
     { fieldFilter: { field: { fieldPath: 'userId' }, op: 'IN', value: a(authors.map(u => s(u.uid))) } },
-    { fieldFilter: { field: { fieldPath: 'visibility' }, op: 'EQUAL', value: s('followers') } },
+    { fieldFilter: { field: { fieldPath: 'visibility' }, op: 'IN', value: a([s('public'), s('followers')]) } },
   ] } }, orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }], limit: 30,
 };
 const followed = await request(':runQuery', { token: viewer.token, method: 'POST', body: { structuredQuery } });
 allowed(followed, 'Grouped query for five approved authors');
-assert(followed.body.filter(r => r.document).length === 5, 'All five author posts visible');
+assert(followed.body.filter(r => r.document).length === 10, 'Both ordinary audiences of five private authors are visible, but no only-me posts');
 denied(await request(':runQuery', { token: outsider.token, method: 'POST', body: { structuredQuery } }), 'Outsider grouped query');
 
 // Seed deterministic legacy timestamps to check actual newest-first query and

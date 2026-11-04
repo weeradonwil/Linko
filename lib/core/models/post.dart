@@ -48,8 +48,15 @@ class Post {
   /// คำค้นของโพสต์ ใช้แสดงเป็นป้ายกำกับและต่อยอดทำหน้าค้นหาตามแท็ก
   final List<String> tags;
 
-  /// public คือสมาชิกที่ล็อกอินเห็นได้; private คือเห็นได้เฉพาะเจ้าของ
+  /// public ยึดสิทธิ์โปรไฟล์ (บัญชีส่วนตัวต้องเป็นผู้ติดตามที่อนุมัติ); private เห็นเฉพาะเจ้าของ
   final String visibility;
+
+  /// ชื่อสิทธิ์ที่แสดงบนหน้าจอ โดยคงค่า public/private เดิมในฐานข้อมูล
+  String get visibilityLabel => switch (visibility) {
+    'private' => 'เฉพาะฉัน',
+    'followers' => 'ผู้ติดตาม',
+    _ => 'สาธารณะ',
+  };
 
   /// Path ใน Firebase Storage; อ่านผ่าน SDK เพื่อให้ Storage Rules ตรวจสิทธิ์ทุกครั้ง
   final String? mediaPath;

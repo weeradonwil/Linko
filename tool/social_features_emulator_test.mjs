@@ -70,7 +70,7 @@ assert(addedTagNotice?.exists,'newly added account did not receive a tag notific
 pass('editing a post notifies newly tagged accounts');
 // This is the production-shaped case: a private profile tags a followed
 // account and attaches a photo. Saving must work, but the recipient cannot
-// open the private post, so the worker must not send an unusable notification.
+// open the private post before approval, so the worker must not send an unusable notification.
 await db.doc(`users/${tagAuthor.uid}`).update({isPrivate:true});
 const privateTaggedId = `private_tagged_${suffix}`;
 const privateMediaPath = `post_media/${tagAuthor.uid}/${privateTaggedId}/image.jpg`;
@@ -84,10 +84,29 @@ await processTaggedPosts();
 assert(!(await db.doc(`notifications/tag_feed_${privateTaggedId}_${tagFriend.uid}`).get()).exists,
   'private post sent an inaccessible tag notification');
 const privateUpdateTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${privateTaggedId}`,taggedUserIds:[tagFriend.uid,second.uid],update:true});
+// ความสัมพันธ์ที่ผู้เขียนติดตามเพื่อนยังไม่พอ เพื่อนต้องได้รับอนุมัติให้ติดตามผู้เขียนด้วย
+allowed(await commit(tagFriend.token, [write(`users/${tagAuthor.uid}/follow_requests/${tagFriend.uid}`, {
+  uid: s(tagFriend.uid),
+}, { timestamps: ['createdAt'] })]), 'Tagged friend requests approval');
+allowed(await commit(tagAuthor.token, [
+  write(`users/${tagAuthor.uid}/followers/${tagFriend.uid}`, { uid: s(tagFriend.uid) }, { timestamps: ['createdAt'] }),
+  write(`users/${tagFriend.uid}/following/${tagAuthor.uid}`, { uid: s(tagAuthor.uid) }, { timestamps: ['createdAt'] }),
+  { delete: documentName(`users/${tagAuthor.uid}/follow_requests/${tagFriend.uid}`) },
+]), 'Author approves tagged follower');
 allowed(await commit(tagAuthor.token,[write(`posts/${privateTaggedId}`,{
   content:s('Edited private photo'),taggedUserIds:a([s(tagFriend.uid),s(second.uid)]),
 },{mask:['content','taggedUserIds','updatedAt','editedAt'],timestamps:['updatedAt','editedAt']}),
 {delete:documentName(`write_tickets/${privateUpdateTicket.ticketId}`)}]),'Edit private photo tags');
+await processTaggedPosts();
+allowed(await get(tagFriend.token, `posts/${privateTaggedId}`), 'Approved tagged follower reads private-account post');
+assert((await db.doc(`notifications/tag_feed_${privateTaggedId}_${tagFriend.uid}`).get()).exists,
+  'approved follower did not receive the accessible tag notification');
+assert(!(await db.doc(`notifications/tag_feed_${privateTaggedId}_${second.uid}`).get()).exists,
+  'unapproved tagged account received a private-account notification');
+await report(tagFriend, privateTaggedId);
+await rpc(second, 'submitReport', {postId:privateTaggedId,reason:'สแปม'}, false);
+await rpc(tagFriend, 'sharePost', {postId:privateTaggedId,destination:'feed',requestId:`private_follower_share_${suffix}`,caption:''}, false);
+pass('approved followers can read, receive tags and report, while unapproved users and private-account resharing stay restricted');
 const privateRemoveTicket = await rpc(tagAuthor,'reserveWrite',{path:`posts/${privateTaggedId}`,taggedUserIds:[],update:true});
 allowed(await commit(tagAuthor.token,[write(`posts/${privateTaggedId}`,{
   content:s('Removed friend tags'),taggedUserIds:a([]),

@@ -14,7 +14,7 @@ for (const [user, count] of [[author, 2], [reader, 3]]) {
   allowed(await commit(user.token, [write(group, { memberCount: n(count) }, { mask: ['memberCount'] }), membership(user)]), 'Join group');
 }
 allowed(await commit(author.token, [write(post, {
-  authorId: s(author.uid), authorName: s('Author'), content: s('Original'), mediaType: s('none'), tags: a([s('linko')]),
+  authorId: s(author.uid), authorName: s('Author'), content: s('Original'), mediaType: s('none'), tags: a([s('linko')]), groupVisibility: s('public'),
 }, { timestamps: ['createdAt'] })]), 'Create tagged group post');
 const edit = (content, extra = {}) => write(post, { content: s(content), ...extra }, {
   mask: ['content', ...Object.keys(extra)], timestamps: ['updatedAt', 'editedAt'],
@@ -23,7 +23,7 @@ allowed(await commit(author.token, [edit('Edited', { tags: a([s('updated')]) })]
 denied(await commit(reader.token, [edit('Stolen')]), 'Member cannot edit another author');
 denied(await commit(author.token, [edit('Moved owner', { authorId: s(reader.uid) })]), 'Author cannot transfer ownership');
 denied(await commit(author.token, [edit('')]), 'Text-only post cannot become empty');
-denied(await get(outsider.token, post), 'Outsider cannot read group post');
+allowed(await get(outsider.token, post), 'Nonmember reads a public group post');
 
 const comment = (id, user, text = 'Comment') => write(`${post}/comments/${id}`, {
   authorId: s(user.uid), authorName: s('Member'), content: s(text),
@@ -37,7 +37,7 @@ allowed(await commit(reader.token, [notice(`group_comment_${groupId}_${postId}_f
 denied(await commit(reader.token, [notice('forged_group_notice', owner.uid)]), 'Group comment cannot notify an unrelated recipient');
 denied(await commit(outsider.token, [comment('outside', outsider)]), 'Outsider cannot comment');
 denied(await commit(reader.token, [comment('too_long', reader, 'x'.repeat(1001))]), 'Reject long comment');
-denied(await get(outsider.token, `${post}/comments/first`), 'Outsider cannot read comment');
+allowed(await get(outsider.token, `${post}/comments/first`), 'Nonmember reads public group comments');
 allowed(await commit(author.token, [{ delete: `projects/${process.env.GCLOUD_PROJECT ?? 'demo-linko'}/databases/(default)/documents/${post}/comments/first` }]), 'Post author moderates comments');
 allowed(await commit(reader.token, [comment('cleanup', reader)]), 'Comment for cleanup');
 for (const reaction of ['like', 'love', 'haha', 'wow', 'sad', 'angry', 'dislike']) {
@@ -78,8 +78,8 @@ allowed(await commit(reader.token, [
   write(group, { memberCount: n(2) }, { mask: ['memberCount'] }),
   { delete: `projects/${process.env.GCLOUD_PROJECT ?? 'demo-linko'}/databases/(default)/documents/${group}/members/${reader.uid}` },
 ]), 'Member leaves group');
-denied(await storage(reader.token, media), 'Former member cannot read media again');
-denied(await get(reader.token, `${post}/comments/cleanup`), 'Former member loses comment access');
+allowed(await storage(reader.token, media), 'Former member can still read public group media');
+allowed(await get(reader.token, `${post}/comments/cleanup`), 'Former member can still read public comments');
 denied(await commit(reader.token, [edit('After leaving')]), 'Former member cannot edit');
 denied(await commit(owner.token, [edit('Owner cannot rewrite member text')]), 'Group owner moderates by deletion, not impersonation');
 allowed(await commit(author.token, [write(post, { isDeleting: b(true) }, {

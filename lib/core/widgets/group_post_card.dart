@@ -30,12 +30,16 @@ class GroupPostCard extends StatefulWidget {
     required this.post,
     required this.user,
     this.canModerate = false,
+    this.canInteract = true,
     super.key,
   });
   final String groupId;
   final GroupPost post;
   final User user;
   final bool canModerate;
+
+  /// ผู้อ่านที่ยังไม่เข้ากลุ่มดูโพสต์/ความคิดเห็นได้ แต่ยังเขียนหรือแสดงความรู้สึกไม่ได้
+  final bool canInteract;
 
   @override
   State<GroupPostCard> createState() => _GroupPostCardState();
@@ -124,6 +128,7 @@ class _GroupPostCardState extends State<GroupPostCard> {
           user: widget.user,
           post: widget.post.asPost(),
           groupId: widget.groupId,
+          canComment: widget.canInteract,
         ),
       ),
     );
@@ -133,7 +138,9 @@ class _GroupPostCardState extends State<GroupPostCard> {
   Widget build(BuildContext context) {
     final post = widget.post;
     if (post.isDeleting) {
-      if (!_ownsPost && !widget.canModerate) return const SizedBox.shrink();
+      if ((!_ownsPost || !widget.canInteract) && !widget.canModerate) {
+        return const SizedBox.shrink();
+      }
       return Card(
         child: ListTile(
           title: const Text('กำลังลบโพสต์'),
@@ -199,42 +206,44 @@ class _GroupPostCardState extends State<GroupPostCard> {
                       ),
                     ),
                   ),
-                  PopupMenuButton<String>(
-                    enabled: !_busy,
-                    tooltip: 'จัดการโพสต์',
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<bool>(
-                            builder: (_) => CreatePostScreen(
-                              user: widget.user,
-                              post: post.asPost(),
-                              groupId: widget.groupId,
+                  if (widget.canInteract || widget.canModerate)
+                    PopupMenuButton<String>(
+                      enabled: !_busy,
+                      tooltip: 'จัดการโพสต์',
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<bool>(
+                              builder: (_) => CreatePostScreen(
+                                user: widget.user,
+                                post: post.asPost(),
+                                groupId: widget.groupId,
+                              ),
                             ),
+                          );
+                        }
+                        if (value == 'delete') _delete();
+                        if (value == 'report') _report();
+                      },
+                      itemBuilder: (_) => [
+                        if (_ownsPost && widget.canInteract)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('แก้ไขโพสต์'),
                           ),
-                        );
-                      }
-                      if (value == 'delete') _delete();
-                      if (value == 'report') _report();
-                    },
-                    itemBuilder: (_) => [
-                      if (_ownsPost)
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Text('แก้ไขโพสต์'),
-                        ),
-                      if (_ownsPost || widget.canModerate)
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('ลบโพสต์'),
-                        ),
-                      if (!_ownsPost)
-                        const PopupMenuItem(
-                          value: 'report',
-                          child: Text('รายงานโพสต์'),
-                        ),
-                    ],
-                  ),
+                        if ((_ownsPost && widget.canInteract) ||
+                            widget.canModerate)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('ลบโพสต์'),
+                          ),
+                        if (!_ownsPost && widget.canInteract)
+                          const PopupMenuItem(
+                            value: 'report',
+                            child: Text('รายงานโพสต์'),
+                          ),
+                      ],
+                    ),
                 ],
               ),
               if (post.content.isNotEmpty || post.taggedUserIds.isNotEmpty)
@@ -321,8 +330,10 @@ class _GroupPostCardState extends State<GroupPostCard> {
                                   ? Theme.of(context).colorScheme.primary
                                   : null,
                               inlineCount: likeCount,
-                              onPressed: _busy ? null : () => react('like'),
-                              onLongPress: _busy
+                              onPressed: _busy || !widget.canInteract
+                                  ? null
+                                  : () => react('like'),
+                              onLongPress: _busy || !widget.canInteract
                                   ? null
                                   : (anchor) async {
                                       final choice =
@@ -344,7 +355,9 @@ class _GroupPostCardState extends State<GroupPostCard> {
                               color: mine == 'dislike'
                                   ? Theme.of(context).colorScheme.error
                                   : null,
-                              onPressed: _busy ? null : () => react('dislike'),
+                              onPressed: _busy || !widget.canInteract
+                                  ? null
+                                  : () => react('dislike'),
                             ),
                           ),
                           Expanded(

@@ -549,6 +549,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     required int? memberCount,
   }) {
     final canReadMembers = _group.visibility == 'public' || isMember || isOwner;
+    // สิทธิ์อ่านของกลุ่มสาธารณะไม่ผูกกับสมาชิก แต่ช่องเขียนยังเปิดเฉพาะสมาชิก
+    final canReadPosts = _group.visibility == 'public' || isMember;
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
@@ -605,7 +607,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               child: _groupComposer(),
             ),
           ),
-        if (!isMember)
+        if (!isMember && canReadPosts)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                'อ่านโพสต์ได้เลย เข้าร่วมกลุ่มเพื่อโพสต์ แสดงความคิดเห็น และแสดงความรู้สึก',
+              ),
+            ),
+          ),
+        if (!canReadPosts)
           SliverFillRemaining(
             hasScrollBody: false,
             child: _GroupJoinMessage(
@@ -655,6 +666,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                               groupId: _group.id,
                               post: posts[index],
                               user: widget.user,
+                              canInteract: isMember && !_group.isDeleting,
                               canModerate:
                                   _isAdmin || _group.ownerId == widget.user.uid,
                             ),
@@ -913,7 +925,7 @@ class _GroupDetailHeader extends StatelessWidget {
                   child: Text(
                     isPrivate
                         ? 'ส่งคำขอเข้าร่วมได้ โพสต์จะแสดงหลังเจ้าของอนุมัติ'
-                        : 'กลุ่มสาธารณะ เข้าร่วมและดูโพสต์ได้ทันที',
+                        : 'กลุ่มสาธารณะ ดูโพสต์ได้แม้ยังไม่ได้เข้าร่วม',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: colors.onSurfaceVariant),
                   ),
@@ -1010,7 +1022,7 @@ class _GroupJoinMessage extends StatelessWidget {
                 ? 'ส่งคำขอแล้ว โพสต์จะเปิดให้ดูเมื่อเจ้าของอนุมัติ'
                 : isPrivate
                 ? 'กลุ่มนี้เป็นส่วนตัว ส่งคำขอและรอเจ้าของอนุมัติก่อนเข้าดูโพสต์'
-                : 'เข้าร่วมกลุ่มเพื่อดูโพสต์และเขียนข้อความ',
+                : 'อ่านโพสต์ได้เลย เข้าร่วมกลุ่มเพื่อเขียนข้อความ',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),

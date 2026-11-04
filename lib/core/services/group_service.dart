@@ -498,12 +498,17 @@ class GroupService {
       post.path,
       taggedUserIds: taggedUserIds,
     );
+    // เก็บประเภทกลุ่มคู่กับโพสต์ให้ Storage ตรวจโพสต์/สิทธิ์ได้ภายใน 2 เอกสาร
+    // Rules เทียบกับกลุ่มจริง ป้องกันสมาชิกกลุ่มส่วนตัวปลอมค่าเป็นสาธารณะ
+    final groupVisibility = (await _groups.doc(groupId).get())
+        .data()?['visibility'];
     final media = attachment == null
         ? null
         : await _uploadGroupMedia(groupId, post.id, attachment);
     try {
       final create = _firestore.batch();
       create.set(post, {
+        'groupVisibility': groupVisibility,
         'authorId': _uid,
         'authorName': user?.displayName?.trim().isNotEmpty == true
             ? user!.displayName!.trim()
@@ -572,6 +577,8 @@ class GroupService {
       taggedUserIds: taggedUserIds,
       update: true,
     );
+    final groupVisibility = (await _groups.doc(groupId).get())
+        .data()?['visibility'];
     final media = newAttachment == null
         ? null
         : await _uploadGroupMedia(groupId, postId, newAttachment);
@@ -589,6 +596,7 @@ class GroupService {
           );
         }
         transaction.update(reference, {
+          'groupVisibility': groupVisibility,
           'content': text,
           'tags': _cleanTags(tags),
           'taggedUserIds': taggedUserIds,

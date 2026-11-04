@@ -625,11 +625,7 @@ class _PostCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                post.visibility == 'private'
-                                    ? 'ส่วนตัว'
-                                    : post.visibility == 'followers'
-                                    ? 'Followers'
-                                    : 'สาธารณะ',
+                                post.visibilityLabel,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),

@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { readPolicy, caseId, contentHash, needsWarning, suspensionEnd, reserveRate } from './policy.mjs';
 import { isValidTaggedUserIds } from './tag_policy.mjs';
+import { canReadPostAudience } from './post_access.mjs';
 
 initializeApp();
 setGlobalOptions({ region: 'asia-southeast1', maxInstances: 5 });
@@ -39,11 +40,13 @@ async function source(uid, postId, groupId) {
   const snap = await db.doc(path).get();
   if (!snap.exists || snap.data().isDeleting) fail('not-found', 'โพสต์นี้ไม่พร้อมใช้งาน');
   const post = snap.data();
-  // Stop a public post snapshot from bypassing its owner's private profile.
+  // ผู้ติดตามที่อนุมัติเข้าถึงโพสต์ทั่วไปได้ แม้บัญชีเป็นส่วนตัวหรือกำลังเปลี่ยนสถานะ
   if (!groupId && post.userId && post.userId !== uid) {
-    const profile = (await db.doc(`users/${post.userId}`).get()).data() ?? {};
-    if (profile.privacyMigrationTarget === true || profile.privacyTarget === true || profile.isPrivate === true || post.authorIsPrivate === true) {
-      fail('permission-denied', 'Private accounts cannot be shared');
+    const [profile, follower] = await db.getAll(
+      db.doc(`users/${post.userId}`), db.doc(`users/${post.userId}/followers/${uid}`),
+    );
+    if (!canReadPostAudience(post, profile.data() ?? {}, { isFollower: follower.exists })) {
+      fail('permission-denied', 'ไม่มีสิทธิ์ดูโพสต์นี้');
     }
   }
   const ownerId = post.userId ?? post.authorId;
@@ -53,9 +56,6 @@ async function source(uid, postId, groupId) {
     const [group, membership] = await db.getAll(db.doc(`groups/${groupId}`), db.doc(`groups/${groupId}/members/${uid}`));
     groupOwnerId = group.data()?.ownerId;
     if (!membership.exists && groupOwnerId !== uid) fail('permission-denied', 'เฉพาะสมาชิกกลุ่มเท่านั้น');
-  } else if (ownerId !== uid && post.visibility !== 'public') {
-    const follower = await db.doc(`users/${ownerId}/followers/${uid}`).get();
-    if (post.visibility !== 'followers' || !follower.exists) fail('permission-denied', 'ไม่มีสิทธิ์ดูโพสต์นี้');
   }
   return { path, post, ownerId, groupOwnerId };
 }
@@ -147,16 +147,12 @@ async function notifyPostTags({ after, postId, groupId = null }) {
       );
       if (!member.exists && group.data()?.ownerId !== recipientId) continue;
     } else {
-      const profile = authorSnap.data() ?? {};
-      if (profile.isPrivate === true || profile.privacyTarget === true ||
-          profile.privacyMigrationTarget === true || after.authorIsPrivate === true) continue;
-      const visibility = after.visibility ?? 'public';
-      if (visibility === 'private') continue;
-      if (visibility === 'followers' && !(await db.doc(`users/${authorId}/followers/${recipientId}`).get()).exists) continue;
       const [follower, following] = await db.getAll(
         db.doc(`users/${authorId}/followers/${recipientId}`),
         db.doc(`users/${authorId}/following/${recipientId}`),
       );
+      // แจ้งเตือนเฉพาะคนที่เปิดโพสต์ได้จริง การติดตามเพียงขาเดียวไม่เปิดบัญชีส่วนตัวให้
+      if (!canReadPostAudience(after, authorSnap.data() ?? {}, { isFollower: follower.exists })) continue;
       if (!follower.exists && !following.exists) continue;
     }
     const notificationId = `tag_${groupId ?? 'feed'}_${postId}_${recipientId}`;
@@ -172,6 +168,20 @@ async function notifyPostTags({ after, postId, groupId = null }) {
   }
 }
 
+// เติมประเภทกลุ่มให้โพสต์จากแอปรุ่นเก่า เพื่อให้ Storage อ่านได้ด้วยไม่เกิน 2 เอกสาร
+// ใช้ transaction อ่านกลุ่มจริง และไม่แก้เวลา/เนื้อหาโพสต์หรือสิทธิ์สมาชิก
+export async function syncGroupPostVisibility(postRef) {
+  const groupRef = postRef.parent.parent;
+  await db.runTransaction(async tx => {
+    const [post, group] = await tx.getAll(postRef, groupRef);
+    const visibility = group.data()?.visibility;
+    if (!post.exists || !['public', 'private'].includes(visibility)) return;
+    if (post.data().groupVisibility !== visibility) {
+      tx.update(postRef, { groupVisibility: visibility });
+    }
+  });
+}
+
 export async function processTaggedPosts() {
   const scans = [
     ['tag_feed_created', 'posts', 'createdAt', false],
@@ -183,6 +193,9 @@ export async function processTaggedPosts() {
     await scanWork(db, cursor, source, field, async doc => {
       const parts = doc.ref.path.split('/');
       if ((parts.length === 4) !== groupOnly) return;
+      if (groupOnly && !['public', 'private'].includes(doc.data().groupVisibility)) {
+        await syncGroupPostVisibility(doc.ref);
+      }
       await notifyPostTags({
         after: doc.data(), postId: doc.id,
         ...(groupOnly ? { groupId: parts[1] } : {}),
@@ -451,7 +464,7 @@ export const sharePost = onCall(async request => {
     tx.set(db.doc(`rate_limits/${uid}_share`), next);
     const common = { content: caption, sharedPostId: postId, createdAt: stamp(), mediaType: 'none', tags: [] };
     if (destination === 'feed') tx.create(db.doc(path), { ...common, userId: uid, authorName: myProfile.displayName ?? 'สมาชิก', visibility: 'public', authorIsPrivate: myProfile.privacyTarget ?? myProfile.isPrivate ?? false });
-    if (destination === 'group') tx.create(db.doc(path), { ...common, authorId: uid, authorName: myProfile.displayName ?? 'สมาชิก' });
+    if (destination === 'group') tx.create(db.doc(path), { ...common, authorId: uid, authorName: myProfile.displayName ?? 'สมาชิก', groupVisibility: group.data().visibility });
     if (destination === 'chat') {
       tx.create(db.doc(path), { senderId: uid, type: 'post', text: caption, sharedPostId: postId, createdAt: stamp() });
       tx.update(db.doc(`conversations/${targetId}`), { lastMessageText: 'แชร์โพสต์ให้คุณ', lastMessageType: 'post', lastMessageSenderId: uid, lastMessageId: requestId, lastMessageAt: stamp(), updatedAt: stamp(), [`unreadCounts.${peer}`]: FieldValue.increment(1), [`hiddenFor.${uid}`]: false, [`hiddenFor.${peer}`]: false });

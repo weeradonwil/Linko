@@ -60,20 +60,23 @@ service firebase.storage {
           validShareMediaGrant(firestore.get(shareGrantPath()).data);
       }
 
-      // เจ้าของจัดการไฟล์ของตัวเองได้; ผู้ใช้คนอื่นอ่านได้เฉพาะไฟล์ของโพสต์สาธารณะ
+      // สิทธิ์รูป/วิดีโอตรงกับโพสต์: ผู้ติดตามที่อนุมัติเห็นโพสต์ทั่วไปของบัญชีส่วนตัวได้
+      // ตรวจ visibility ก่อนสิทธิ์ผู้ติดตามเสมอ เพื่อไม่เปิดไฟล์ของโพสต์เฉพาะฉัน
+      // เริ่มจากสาธารณะก่อน: post + profile ใช้ครบ 2 Firestore lookups แล้ว
+      // ห้ามตรวจ follower ก่อนเส้นทางนี้ เพราะผู้ชมทั่วไปจะใช้ lookup ที่สามและถูกปฏิเสธใน production
       // Firebase Console อาจขอเปิดการเชื่อมต่อ Rules ระหว่าง Storage กับ Firestore
       allow read: if request.auth != null &&
         (request.auth.uid == ownerUid ||
          (firestore.exists(postDocument()) &&
           firestore.get(postDocument()).data.userId == ownerUid &&
-          firestore.get(postDocument()).data.get('authorIsPrivate', false) == false &&
-          firestore.exists(ownerProfile()) &&
-          firestore.get(ownerProfile()).data.get('privacyMigrationTarget',
-            firestore.get(ownerProfile()).data.get('privacyTarget',
-              firestore.get(ownerProfile()).data.get('isPrivate', false))) != true &&
-          (firestore.get(postDocument()).data.visibility == 'public' ||
-           (firestore.get(postDocument()).data.visibility == 'followers' &&
-            firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid))))) ||
+          firestore.get(postDocument()).data.visibility in ['public', 'followers'] &&
+          ((firestore.get(postDocument()).data.visibility == 'public' &&
+            firestore.get(postDocument()).data.get('authorIsPrivate', false) == false &&
+            firestore.exists(ownerProfile()) &&
+            firestore.get(ownerProfile()).data.get('privacyMigrationTarget',
+              firestore.get(ownerProfile()).data.get('privacyTarget',
+                firestore.get(ownerProfile()).data.get('isPrivate', false))) != true) ||
+           firestore.exists(/databases/(default)/documents/users/$(ownerUid)/followers/$(request.auth.uid)))) ||
          canReadSharedMedia());
 
       // เจ้าของลบไฟล์ได้; การอัปโหลดต้องผ่าน MIME type และขนาดใน isValidMediaUpload()
@@ -114,9 +117,22 @@ service firebase.storage {
         return request.auth.token.get('admin', false) == true ||
           (firestore.exists(groupPath()) && firestore.get(groupPath()).data.ownerId == request.auth.uid);
       }
-      allow read: if request.auth != null && (isGroupMember() || isGroupManager()) &&
-        firestore.exists(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)) &&
-        firestore.get(/databases/(default)/documents/groups/$(groupId)/posts/$(postId)).data.authorId == ownerUid;
+      function postPath() {
+        return /databases/(default)/documents/groups/$(groupId)/posts/$(postId);
+      }
+      // ใช้สำเนาประเภทกลุ่มเลือกเส้นทางตรวจสิทธิ์ให้ไม่เกิน 2 เอกสารต่อการโหลดสื่อ
+      // public: โพสต์ + กลุ่มจริง / private และข้อมูลเก่า: โพสต์ + สมาชิก
+      // ต้องตรวจกลุ่มจริงอีกครั้งเสมอสำหรับ public เพื่อกันสำเนาค้างเมื่อกลุ่มปิด
+      function canReadPostMedia() {
+        let post = firestore.get(postPath()).data;
+        return post.authorId == ownerUid &&
+          (request.auth.token.get('admin', false) == true ||
+           (post.get('groupVisibility', 'private') == 'public'
+             ? (firestore.exists(groupPath()) &&
+                firestore.get(groupPath()).data.visibility == 'public')
+             : (isGroupMember() || isGroupManager())));
+      }
+      allow read: if request.auth != null && firestore.exists(postPath()) && canReadPostMedia();
       allow write: if request.auth != null &&
         ((request.resource == null && (request.auth.uid == ownerUid || isGroupManager())) ||
          (request.resource != null && request.auth.uid == ownerUid && isGroupMember() &&

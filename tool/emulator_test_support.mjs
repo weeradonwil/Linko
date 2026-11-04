@@ -67,9 +67,9 @@ export function adminToken(user) {
   payload.admin = true;
   return `${parts[0]}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${parts[2]}`;
 }
-export async function storage(token, path, { method = 'GET', bytes, contentType = 'image/png' } = {}) {
+export async function storage(token, path, { method = 'GET', bytes, contentType = 'image/png', download = false } = {}) {
   const base = `http://${storageHost}/v0/b/${projectId}.appspot.com/o`;
-  const url = method === 'POST' ? `${base}?name=${encodeURIComponent(path)}` : `${base}/${encodeURIComponent(path)}`;
+  const url = method === 'POST' ? `${base}?name=${encodeURIComponent(path)}` : `${base}/${encodeURIComponent(path)}${download ? '?alt=media' : ''}`;
   const response = await fetch(url, {
     method, headers: { Authorization: `Firebase ${token}`, ...(bytes ? { 'Content-Type': contentType } : {}) }, ...(bytes ? { body: bytes } : {}),
   });

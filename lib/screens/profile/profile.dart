@@ -96,7 +96,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           initialName: name,
           initialBio: bio,
           initialAvatarPath: avatarPath,
-          initialAvatarThumbPath: readOptionalString(currentProfile?['avatarThumbPath']),
+          initialAvatarThumbPath: readOptionalString(
+            currentProfile?['avatarThumbPath'],
+          ),
           initialCoverPath: currentCover,
         ),
       ),
@@ -664,16 +666,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Public posts stay visible regardless of account privacy.
+  /// บัญชีส่วนตัวให้เฉพาะผู้ติดตามที่อนุมัติอ่านโพสต์ทั่วไป โดยไม่รวมโพสต์เฉพาะฉัน
   Widget _buildProfilePosts({required bool isPrivate}) {
     if (_isOwnProfile) return _profilePostsList(includeFollowers: true);
-    if (isPrivate) {
-      return const _ProfileMessage('บัญชีนี้เป็นส่วนตัว จึงยังดูโพสต์ไม่ได้');
-    }
     return StreamBuilder<bool>(
       stream: _followService.watchIsFollowing(_profileUid),
-      builder: (context, following) =>
-          _profilePostsList(includeFollowers: following.data == true),
+      builder: (context, following) {
+        if (following.hasError) {
+          return const _ProfileMessage('ตรวจสอบสิทธิ์ดูโพสต์ไม่สำเร็จ');
+        }
+        if (isPrivate && !following.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (isPrivate && following.data != true) {
+          return const _ProfileMessage(
+            'บัญชีนี้เป็นส่วนตัว เฉพาะผู้ติดตามที่อนุมัติแล้วจึงจะเห็นโพสต์',
+          );
+        }
+        return _profilePostsList(includeFollowers: following.data == true);
+      },
     );
   }
 
@@ -752,7 +763,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       query = includeFollowers
           ? query.where('visibility', whereIn: ['public', 'followers'])
           : query.where('visibility', isEqualTo: 'public');
-      query = query.where('authorIsPrivate', isEqualTo: false);
+      // ผู้ติดตามที่อนุมัติอ่านโพสต์ทั่วไปได้แม้เจ้าของเป็นบัญชีส่วนตัว
+      if (!includeFollowers) {
+        query = query.where('authorIsPrivate', isEqualTo: false);
+      }
     }
     return query
         .orderBy('createdAt', descending: true)

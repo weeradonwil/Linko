@@ -112,7 +112,6 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, viewport) {
-            final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
             final compact = viewport.maxHeight < 920;
             final veryCompact = viewport.maxHeight < 680;
             final horizontalPadding = viewport.maxWidth < 380 ? 16.0 : 24.0;
@@ -166,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
               );
             }
 
-            Widget content = ConstrainedBox(
+            final content = ConstrainedBox(
               constraints: BoxConstraints(minHeight: availableHeight),
               child: Align(
                 alignment: Alignment.topCenter,
@@ -572,22 +571,15 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             );
 
-            final page = keyboardOpen
-                ? SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: horizontalPadding,
-                      vertical: 8,
-                    ),
-                    child: content,
-                  )
-                : Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: horizontalPadding,
-                      vertical: 8,
-                    ),
-                    child: content,
-                  );
-            return page;
+            // Scaffold ย่อพื้นที่เมื่อเปิดแป้นพิมพ์และอาจล้าง viewInsets ของ body แล้ว
+            // ให้เลื่อนได้เสมอเพื่อรองรับจอเล็ก/ตัวอักษรใหญ่ และคง Form เดิมเมื่อแป้นพิมพ์เปิดปิด
+            return SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: 8,
+              ),
+              child: content,
+            );
           },
         ),
       ),

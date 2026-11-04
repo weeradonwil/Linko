@@ -131,10 +131,12 @@ service cloud.firestore {
       let visibility = postData.get('visibility', 'public');
       return signedIn() && (
         isAdmin() || postData.userId == request.auth.uid ||
-        (postData.get('authorIsPrivate', false) != true &&
-         !isPrivateProfile(postData.userId) &&
-         (visibility == 'public' ||
-          (visibility == 'followers' && isApprovedFollower(postData.userId))))
+        // โพสต์เฉพาะฉันไม่เปิดให้ผู้ติดตาม ส่วนโพสต์ทั่วไปยึดสิทธิ์โปรไฟล์
+        (visibility in ['public', 'followers'] &&
+         (isApprovedFollower(postData.userId) ||
+          (visibility == 'public' &&
+           postData.get('authorIsPrivate', false) != true &&
+           !isPrivateProfile(postData.userId))))
       );
     }
 
@@ -314,7 +316,8 @@ service cloud.firestore {
         let grantPath = /databases/$(database)/documents/posts/$(postId)/share_access/$(request.auth.uid);
         return exists(grantPath) && sharedGrantIsValid(get(grantPath).data);
       }
-      // โพสต์สาธารณะอ่านได้โดยสมาชิก; โพสต์ส่วนตัวอ่านได้เฉพาะเจ้าของ
+      // ผู้ติดตามที่อนุมัติอ่านโพสต์ทั่วไปได้ทั้งบัญชีสาธารณะ/ส่วนตัว
+      // โพสต์เฉพาะฉันยังอ่านได้เฉพาะเจ้าของและผู้ดูแลตามสิทธิ์เดิม
       // Single-document reads can use the full policy, including legacy docs.
       allow get: if canReadPostData(resource.data) || (signedIn() && canReadSharedPost());
 
@@ -330,8 +333,7 @@ service cloud.firestore {
       allow list: if signedIn() && resource.data.get('userId', '') == request.auth.uid;
       allow list: if signedIn() && resource.data.get('visibility', '') == 'public' &&
         resource.data.get('authorIsPrivate', false) == false;
-      allow list: if signedIn() && resource.data.get('visibility', '') == 'followers' &&
-        resource.data.get('authorIsPrivate', false) == false &&
+      allow list: if signedIn() && resource.data.get('visibility', '') in ['public', 'followers'] &&
         isApprovedFollower(resource.data.get('userId', ''));
 
       allow create: if canPost() && validWriteTicket('posts/' + postId, postId) &&
@@ -875,6 +877,10 @@ service cloud.firestore {
         return exists(groupPath()) &&
           get(groupPath()).data.visibility == 'public';
       }
+      // กลุ่มสาธารณะเปิดอ่านก่อนเข้าร่วม ส่วนการเขียนยังตรวจสมาชิกแยกต่างหาก
+      function canReadGroupContent() {
+        return signedIn() && (publicGroup() || isGroupMember() || isGroupManager());
+      }
       function validCountIncrement() {
         let beforeCount = resource.data.get('memberCount', null);
         let afterCount = request.resource.data.get('memberCount', null);
@@ -1020,6 +1026,7 @@ service cloud.firestore {
         // ใช้ schema เดียวกันทั้งสร้างและแก้ไข โดยคงเจ้าของ เวลาเดิม และ path สื่อของโพสต์
         function validGroupPost(data) {
           return data.authorName is string && data.content is string && data.content.size() <= 1000 &&
+            (!('groupVisibility' in data) || data.groupVisibility == get(groupPath()).data.visibility) &&
             (!('tags' in data) || validPostTags(data.tags)) &&
             (data.content.size() > 0 || data.mediaType != 'none' || data.get('sharedPostId', null) is string) &&
             data.mediaType in ['none', 'image', 'video'] &&
@@ -1030,7 +1037,7 @@ service cloud.firestore {
                (data.mediaType == 'video' && data.thumbnailPath is string &&
                 data.thumbnailPath.matches('group_media/' + groupId + '/' + groupPostId + '/' + data.authorId + '/[^/]+')))));
         }
-        allow read: if isGroupMember() || isGroupManager();
+        allow read: if canReadGroupContent();
         allow create: if canPostInGroup(groupId) && validWriteTicket('groups/' + groupId + '/posts/' + groupPostId, groupPostId) && isGroupMember() &&
           get(groupPath()).data.get('isDeleting', false) != true &&
           request.resource.data.keys().hasAll([
@@ -1038,7 +1045,7 @@ service cloud.firestore {
           ]) &&
           request.resource.data.keys().hasOnly([
             'authorId', 'authorName', 'content', 'createdAt', 'mediaType',
-            'mediaPath', 'thumbnailPath', 'tags', 'taggedUserIds'
+            'mediaPath', 'thumbnailPath', 'tags', 'taggedUserIds', 'groupVisibility'
           ]) &&
           request.resource.data.authorId == request.auth.uid &&
           validGroupPost(request.resource.data) &&
@@ -1070,7 +1077,7 @@ service cloud.firestore {
           get(groupPath()).data.get('isDeleting', false) != true &&
           resource.data.get('isDeleting', false) != true &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'content', 'tags', 'mediaPath', 'mediaType', 'thumbnailPath', 'updatedAt', 'editedAt', 'taggedUserIds'
+            'content', 'tags', 'mediaPath', 'mediaType', 'thumbnailPath', 'updatedAt', 'editedAt', 'taggedUserIds', 'groupVisibility'
           ]) && validGroupPost(request.resource.data) &&
           validTaggedUserIds(request.resource.data) &&
           (request.resource.data.get('taggedUserIds', []) == resource.data.get('taggedUserIds', []) ||
@@ -1084,9 +1091,9 @@ service cloud.firestore {
         allow delete: if (isGroupMember() || isGroupManager()) &&
           (resource.data.authorId == request.auth.uid || isGroupManager());
 
-        // ความคิดเห็นอยู่ในกลุ่มเดียวกับโพสต์ และสืบทอดสิทธิ์สมาชิก/ผู้ดูแลของกลุ่ม
+        // อ่านตามสิทธิ์กลุ่ม แต่ต้องเป็นสมาชิกจึงเพิ่มความคิดเห็นหรือปฏิกิริยาได้
         match /comments/{commentId} {
-          allow read: if isGroupMember() || isGroupManager();
+          allow read: if canReadGroupContent();
           allow create: if verifiedMember() && notBlocked(get(postPath()).data.authorId) && isGroupMember() && exists(postPath()) &&
             get(groupPath()).data.get('isDeleting', false) != true &&
             get(postPath()).data.get('isDeleting', false) != true &&
@@ -1101,7 +1108,7 @@ service cloud.firestore {
         }
 
         match /reactions/{reactorUid} {
-          allow read: if isGroupMember() || isGroupManager();
+          allow read: if canReadGroupContent();
           allow create, update: if verifiedMember() && notBlocked(get(postPath()).data.authorId) && isGroupMember() && request.auth.uid == reactorUid &&
             get(groupPath()).data.get('isDeleting', false) != true &&
             exists(postPath()) && get(postPath()).data.get('isDeleting', false) != true &&
